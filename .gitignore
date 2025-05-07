@@ -1,4 +1,5 @@
 .env
 .venv
 .langgraph_api
+.local
 **/__pycache__/**
