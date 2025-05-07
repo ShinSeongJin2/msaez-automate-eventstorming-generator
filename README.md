@@ -6,7 +6,7 @@
 1. .env.example 파일을 참조해서 적절한 .env 파일을 생성
 2. 프로젝트 루트 터미널에서 아래 명령어 실행
 ```bash
-uv init
+uv run pip install -e .
 uv pip install -U "langgraph-cli[inmem]"
 uv run langgraph dev
 ```

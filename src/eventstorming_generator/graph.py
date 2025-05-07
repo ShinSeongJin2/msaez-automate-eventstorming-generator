@@ -1,16 +1,17 @@
 from langgraph.graph import StateGraph, START, END
-from langgraph.graph.message import add_messages
-from langchain.chat_models import init_chat_model
-from typing import Annotated
-from pydantic import BaseModel, Field
-import os
+from typing import Optional, Dict
+from pydantic import BaseModel
+
+from eventstorming_generator.models import SelectedDraftOptionItem, UserInfoModel, InformationModel
 
 class State(BaseModel):
-    messages: Annotated[list, add_messages] = Field(default_factory=list)
+    selectedDraftOptions: Optional[Dict[str, SelectedDraftOptionItem]] = None
+    userInfo: Optional[UserInfoModel] = None
+    information: Optional[InformationModel] = None
 
 def chatbot(state: State):
-    llm = init_chat_model(os.environ["AI_MODEL"])
-    return {"messages": [llm.invoke(state.messages)]}
+    print(state)
+    return state
 
 graph_builder = StateGraph(State)
 

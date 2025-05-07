@@ -3,3 +3,4 @@
 .langgraph_api
 .local
 **/__pycache__/**
+**/*.egg-info
