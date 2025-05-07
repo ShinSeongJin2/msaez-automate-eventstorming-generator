@@ -1,0 +1,11 @@
+[project]
+name = "msaez-automate-eventstorming-generator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain[openai]>=0.3.25",
+    "langgraph>=0.4.2",
+    "langsmith>=0.3.42",
+]
