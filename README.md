@@ -10,3 +10,9 @@ uv run pip install -e .
 uv pip install -U "langgraph-cli[inmem]"
 uv run langgraph dev
 ```
+
+## 단위 테스트
+1. 프로젝트 루트 터미널에서 아래 명령어 실행
+```bash
+uv run python ./src/eventstorming_generator/test.py
+```

@@ -1,15 +1,17 @@
 from typing import Any
-from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 
-class UserInfoModel(BaseModel):
+from .base import BaseModelWithItem
+
+class UserInfoModel(BaseModelWithItem):
     uid: str
     model_config = ConfigDict(extra="allow")
 
-class InformationModel(BaseModel):
+class InformationModel(BaseModelWithItem):
     projectId: str
     model_config = ConfigDict(extra="allow")
 
-class InputsModel(BaseModel):
+class InputsModel(BaseModelWithItem):
     selectedDraftOptions: Any = None
     userInfo: UserInfoModel = None
     information: InformationModel = None

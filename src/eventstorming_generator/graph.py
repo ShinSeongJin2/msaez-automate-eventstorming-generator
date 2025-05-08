@@ -1,9 +1,8 @@
 from langgraph.graph import StateGraph, START, END
-from pydantic import BaseModel
 
-from eventstorming_generator.models import InputsModel, OutputsModel
+from eventstorming_generator.models import InputsModel, OutputsModel, BaseModelWithItem
 
-class State(BaseModel):
+class State(BaseModelWithItem):
     inputs: InputsModel = InputsModel()
     outputs: OutputsModel = OutputsModel()
 
