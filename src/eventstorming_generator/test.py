@@ -1,7 +1,8 @@
-from eventstorming_generator.tests import test_bounded_context_creation
+from eventstorming_generator.tests import test_bounded_context_creation, test_create_bounded_contexts
 
 TEST_COMMANDS = {
-    "test_bounded_context_creation": test_bounded_context_creation
+    "test_bounded_context_creation": test_bounded_context_creation,
+    "test_create_bounded_contexts": test_create_bounded_contexts
 }
 
 def run_test():
