@@ -1,13 +1,12 @@
 from langgraph.graph import StateGraph, START, END
-from typing import Optional, Dict
+from typing import Any
 from pydantic import BaseModel
 
-from eventstorming_generator.models import SelectedDraftOptionItem, UserInfoModel, InformationModel
-
 class State(BaseModel):
-    selectedDraftOptions: Optional[Dict[str, SelectedDraftOptionItem]] = None
-    userInfo: Optional[UserInfoModel] = None
-    information: Optional[InformationModel] = None
+    selectedDraftOptions: Any = None
+    userInfo: Any = None
+    information: Any = None
+    createEsValue: Any = None
 
 def chatbot(state: State):
     print(state)

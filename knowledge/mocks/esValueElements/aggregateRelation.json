@@ -1,0 +1,479 @@
+"relations": {
+    "ee63b54a-951e-43cc-02d4-5d97fee189d3": {
+        "name": "user",
+        "id": "ee63b54a-951e-43cc-02d4-5d97fee189d3",
+        "_type": "org.uengine.uml.model.Relation",
+        "sourceElement": {
+            "_type": "org.uengine.uml.model.Class",
+            "id": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+            "name": "ApplicationForm",
+            "namePascalCase": "ApplicationForm",
+            "nameCamelCase": "applicationForm",
+            "namePlural": "ApplicationForms",
+            "fieldDescriptors": [
+                {
+                    "className": "String",
+                    "isCopy": false,
+                    "isKey": true,
+                    "name": "formId",
+                    "nameCamelCase": "formId",
+                    "namePascalCase": "FormId",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                },
+                {
+                    "className": "User",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "user",
+                    "nameCamelCase": "user",
+                    "namePascalCase": "User",
+                    "displayName": "사용자",
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor",
+                    "isVO": true,
+                    "classId": "9cdf1bef-be98-b591-4aea-646cb362e98c",
+                    "isList": false,
+                    "label": "- 사용자: User"
+                },
+                {
+                    "className": "String",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "serviceType",
+                    "nameCamelCase": "serviceType",
+                    "namePascalCase": "ServiceType",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                },
+                {
+                    "className": "ApplicationFormStatus",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "status",
+                    "nameCamelCase": "status",
+                    "namePascalCase": "Status",
+                    "displayName": "",
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor",
+                    "classId": "bf957a7b-ab09-88c6-7ceb-0f6bffdb630e"
+                },
+                {
+                    "className": "String",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "applicationData",
+                    "nameCamelCase": "applicationData",
+                    "namePascalCase": "ApplicationData",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                }
+            ],
+            "operations": [
+                {
+                    "name": "StartApplication",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ StartApplication(): void",
+                    "isOverride": false,
+                    "isRootMethod": false
+                },
+                {
+                    "name": "SaveApplicationFormTemporarily",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ SaveApplicationFormTemporarily(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "SubmitApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ SubmitApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "VerifyApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ VerifyApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "WriteApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ WriteApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "ValidateApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ ValidateApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                }
+            ],
+            "elementView": {
+                "_type": "org.uengine.uml.model.Class",
+                "id": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+                "x": 200,
+                "y": 200,
+                "width": 250,
+                "height": 340,
+                "style": "{}",
+                "titleH": 50,
+                "subEdgeH": 205,
+                "fieldH": 290,
+                "methodH": 135
+            },
+            "selected": false,
+            "relations": [
+                "ee63b54a-951e-43cc-02d4-5d97fee189d3",
+                "040ee934-9096-b8fe-4e5f-d696c7ba0b75"
+            ],
+            "parentOperations": [],
+            "relationType": null,
+            "isVO": false,
+            "isAbstract": false,
+            "isInterface": false,
+            "isAggregateRoot": true,
+            "parentId": "b7e47d07-dc75-5f33-c4dd-21015cd539b1",
+            "displayName": "신청서"
+        },
+        "targetElement": {
+            "_type": "org.uengine.uml.model.vo.Class",
+            "id": "9cdf1bef-be98-b591-4aea-646cb362e98c",
+            "name": "User",
+            "displayName": "사용자",
+            "namePascalCase": "User",
+            "nameCamelCase": "user",
+            "fieldDescriptors": [
+                {
+                    "className": "String",
+                    "isKey": true,
+                    "label": "- userId: String",
+                    "name": "userId",
+                    "nameCamelCase": "userId",
+                    "namePascalCase": "UserId",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                },
+                {
+                    "className": "String",
+                    "isKey": false,
+                    "label": "- name: String",
+                    "name": "name",
+                    "nameCamelCase": "name",
+                    "namePascalCase": "Name",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                },
+                {
+                    "className": "String",
+                    "isKey": false,
+                    "label": "- contactInfo: String",
+                    "name": "contactInfo",
+                    "nameCamelCase": "contactInfo",
+                    "namePascalCase": "ContactInfo",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                }
+            ],
+            "operations": [],
+            "elementView": {
+                "_type": "org.uengine.uml.model.vo.address.Class",
+                "id": "9cdf1bef-be98-b591-4aea-646cb362e98c",
+                "x": 700,
+                "y": 152,
+                "width": 200,
+                "height": 150,
+                "style": "{}",
+                "titleH": 50,
+                "subEdgeH": 120,
+                "fieldH": 100,
+                "methodH": 30
+            },
+            "selected": false,
+            "parentOperations": [],
+            "relationType": null,
+            "isVO": true,
+            "relations": [
+                "ee63b54a-951e-43cc-02d4-5d97fee189d3"
+            ],
+            "groupElement": null,
+            "isAggregateRoot": false,
+            "namePlural": "Users",
+            "isAbstract": false,
+            "isInterface": false
+        },
+        "from": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+        "to": "9cdf1bef-be98-b591-4aea-646cb362e98c",
+        "selected": false,
+        "relationView": {
+            "id": "ee63b54a-951e-43cc-02d4-5d97fee189d3",
+            "style": "{\"arrow-start\":\"none\",\"arrow-end\":\"none\"}",
+            "value": "[[325,200],[452,200],[452,152],[600,152]]",
+            "from": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+            "to": "9cdf1bef-be98-b591-4aea-646cb362e98c",
+            "needReconnect": true
+        },
+        "sourceMultiplicity": "1",
+        "targetMultiplicity": "1",
+        "relationType": "Association",
+        "fromLabel": "",
+        "toLabel": "",
+        "displayName": "사용자"
+    },
+    "040ee934-9096-b8fe-4e5f-d696c7ba0b75": {
+        "name": "status",
+        "id": "040ee934-9096-b8fe-4e5f-d696c7ba0b75",
+        "_type": "org.uengine.uml.model.Relation",
+        "sourceElement": {
+            "_type": "org.uengine.uml.model.Class",
+            "id": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+            "name": "ApplicationForm",
+            "namePascalCase": "ApplicationForm",
+            "nameCamelCase": "applicationForm",
+            "namePlural": "ApplicationForms",
+            "fieldDescriptors": [
+                {
+                    "className": "String",
+                    "isCopy": false,
+                    "isKey": true,
+                    "name": "formId",
+                    "nameCamelCase": "formId",
+                    "namePascalCase": "FormId",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                },
+                {
+                    "className": "User",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "user",
+                    "nameCamelCase": "user",
+                    "namePascalCase": "User",
+                    "displayName": "사용자",
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor",
+                    "isVO": true,
+                    "classId": "9cdf1bef-be98-b591-4aea-646cb362e98c",
+                    "isList": false,
+                    "label": "- 사용자: User"
+                },
+                {
+                    "className": "String",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "serviceType",
+                    "nameCamelCase": "serviceType",
+                    "namePascalCase": "ServiceType",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                },
+                {
+                    "className": "ApplicationFormStatus",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "status",
+                    "nameCamelCase": "status",
+                    "namePascalCase": "Status",
+                    "displayName": "",
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor",
+                    "classId": "bf957a7b-ab09-88c6-7ceb-0f6bffdb630e"
+                },
+                {
+                    "className": "String",
+                    "isCopy": false,
+                    "isKey": false,
+                    "name": "applicationData",
+                    "nameCamelCase": "applicationData",
+                    "namePascalCase": "ApplicationData",
+                    "displayName": "",
+                    "referenceClass": null,
+                    "isOverrideField": false,
+                    "_type": "org.uengine.model.FieldDescriptor"
+                }
+            ],
+            "operations": [
+                {
+                    "name": "StartApplication",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ StartApplication(): void",
+                    "isOverride": false,
+                    "isRootMethod": false
+                },
+                {
+                    "name": "SaveApplicationFormTemporarily",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ SaveApplicationFormTemporarily(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "SubmitApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ SubmitApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "VerifyApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ VerifyApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "WriteApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ WriteApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                },
+                {
+                    "name": "ValidateApplicationForm",
+                    "class": "ApplicationForm",
+                    "returnType": "void",
+                    "parameters": [],
+                    "label": "+ ValidateApplicationForm(): void",
+                    "isOverride": false,
+                    "isRootMethod": true
+                }
+            ],
+            "elementView": {
+                "_type": "org.uengine.uml.model.Class",
+                "id": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+                "x": 200,
+                "y": 200,
+                "width": 250,
+                "height": 340,
+                "style": "{}",
+                "titleH": 50,
+                "subEdgeH": 205,
+                "fieldH": 290,
+                "methodH": 135
+            },
+            "selected": false,
+            "relations": [
+                "ee63b54a-951e-43cc-02d4-5d97fee189d3",
+                "040ee934-9096-b8fe-4e5f-d696c7ba0b75"
+            ],
+            "parentOperations": [],
+            "relationType": null,
+            "isVO": false,
+            "isAbstract": false,
+            "isInterface": false,
+            "isAggregateRoot": true,
+            "parentId": "b7e47d07-dc75-5f33-c4dd-21015cd539b1",
+            "displayName": "신청서"
+        },
+        "targetElement": {
+            "_type": "org.uengine.uml.model.enum",
+            "id": "bf957a7b-ab09-88c6-7ceb-0f6bffdb630e",
+            "name": "ApplicationFormStatus",
+            "displayName": "신청서 상태",
+            "nameCamelCase": "applicationFormStatus",
+            "namePascalCase": "ApplicationFormStatus",
+            "namePlural": "applicationFormStatuses",
+            "elementView": {
+                "_type": "org.uengine.uml.model.enum",
+                "id": "bf957a7b-ab09-88c6-7ceb-0f6bffdb630e",
+                "x": 700,
+                "y": 456,
+                "width": 200,
+                "height": 100,
+                "style": "{}",
+                "titleH": 50,
+                "subEdgeH": 50
+            },
+            "selected": false,
+            "items": [
+                {
+                    "value": "SavedTemporarily"
+                },
+                {
+                    "value": "Submitted"
+                },
+                {
+                    "value": "Verified"
+                },
+                {
+                    "value": "Rejected"
+                },
+                {
+                    "value": "Written"
+                },
+                {
+                    "value": "WrittenTemporarily"
+                },
+                {
+                    "value": "Validated"
+                },
+                {
+                    "value": "Accepted"
+                }
+            ],
+            "useKeyValue": false,
+            "relations": [
+                "040ee934-9096-b8fe-4e5f-d696c7ba0b75"
+            ]
+        },
+        "from": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+        "to": "bf957a7b-ab09-88c6-7ceb-0f6bffdb630e",
+        "selected": false,
+        "relationView": {
+            "id": "040ee934-9096-b8fe-4e5f-d696c7ba0b75",
+            "style": "{\"arrow-start\":\"none\",\"arrow-end\":\"none\"}",
+            "value": "[[325,200],[452,200],[452,456],[600,456]]",
+            "from": "88b137f9-e872-e790-37d4-cbcd7665e59d",
+            "to": "bf957a7b-ab09-88c6-7ceb-0f6bffdb630e",
+            "needReconnect": true
+        },
+        "sourceMultiplicity": "1",
+        "targetMultiplicity": "1",
+        "relationType": "Realization",
+        "fromLabel": "",
+        "toLabel": "",
+        "displayName": "신청서 상태"
+    }
+}
