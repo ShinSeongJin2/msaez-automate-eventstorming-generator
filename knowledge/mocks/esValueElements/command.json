@@ -1,0 +1,150 @@
+{
+    "_type": "org.uengine.modeling.model.Command",
+    "outputEvents": [
+        "BookCreated"
+    ],
+    "aggregate": {
+        "id": "cc721073-c579-8aaa-e6d4-5475304059a7"
+    },
+    "author": "EYCl46CwWAWvpz2E1BCUpVgPIpa2",
+    "boundedContext": {
+        "id": "e0e608d4-baed-ebff-9767-02d44ab21c02"
+    },
+    "controllerInfo": {
+        "apiPath": "registerbook",
+        "method": "POST",
+        "fullApiPath": ""
+    },
+    "fieldDescriptors": [
+        {
+            "className": "String",
+            "isCopy": false,
+            "isKey": false,
+            "name": "bookTitle",
+            "nameCamelCase": "bookTitle",
+            "namePascalCase": "BookTitle",
+            "displayName": "",
+            "_type": "org.uengine.model.FieldDescriptor"
+        },
+        {
+            "className": "String",
+            "isCopy": false,
+            "isKey": true,
+            "name": "ISBN",
+            "nameCamelCase": "isbn",
+            "namePascalCase": "Isbn",
+            "displayName": "",
+            "_type": "org.uengine.model.FieldDescriptor"
+        },
+        {
+            "className": "String",
+            "isCopy": false,
+            "isKey": false,
+            "name": "author",
+            "nameCamelCase": "author",
+            "namePascalCase": "Author",
+            "displayName": "",
+            "_type": "org.uengine.model.FieldDescriptor"
+        },
+        {
+            "className": "String",
+            "isCopy": false,
+            "isKey": false,
+            "name": "publisher",
+            "nameCamelCase": "publisher",
+            "namePascalCase": "Publisher",
+            "displayName": "",
+            "_type": "org.uengine.model.FieldDescriptor"
+        },
+        {
+            "className": "Category",
+            "isCopy": false,
+            "isKey": false,
+            "name": "category",
+            "nameCamelCase": "category",
+            "namePascalCase": "Category",
+            "displayName": "",
+            "_type": "org.uengine.model.FieldDescriptor"
+        }
+    ],
+    "description": null,
+    "id": "3224f5d9-f39f-f06c-2da8-132252aa2b01",
+    "elementView": {
+        "_type": "org.uengine.modeling.model.Command",
+        "height": 116,
+        "id": "3224f5d9-f39f-f06c-2da8-132252aa2b01",
+        "style": "{}",
+        "width": 100,
+        "x": 556,
+        "y": 250,
+        "z-index": 999
+    },
+    "hexagonalView": {
+        "_type": "org.uengine.modeling.model.CommandHexagonal",
+        "height": 0,
+        "id": "3224f5d9-f39f-f06c-2da8-132252aa2b01",
+        "style": "{}",
+        "width": 0,
+        "x": 0,
+        "y": 0
+    },
+    "isRestRepository": false,
+    "name": "RegisterBook",
+    "displayName": "도서 등록",
+    "nameCamelCase": "registerBook",
+    "namePascalCase": "RegisterBook",
+    "namePlural": "registerBooks",
+    "relationCommandInfo": [],
+    "relationEventInfo": [],
+    "restRepositoryInfo": {
+        "method": "POST"
+    },
+    "rotateStatus": false,
+    "selected": false,
+    "trigger": "@PrePersist",
+    "examples": [
+        {
+            "given": [
+                {
+                    "type": "Aggregate",
+                    "name": "Book",
+                    "value": {
+                        "bookTitle": "N/A",
+                        "ISBN": "N/A",
+                        "author": "N/A",
+                        "publisher": "N/A",
+                        "category": "N/A",
+                        "status": "N/A"
+                    }
+                }
+            ],
+            "when": [
+                {
+                    "type": "Command",
+                    "name": "RegisterBook",
+                    "value": {
+                        "bookTitle": "Effective Java",
+                        "ISBN": "9783161484100",
+                        "author": "Joshua Bloch",
+                        "publisher": "Addison-Wesley",
+                        "category": "ACADEMIC"
+                    }
+                }
+            ],
+            "then": [
+                {
+                    "type": "Event",
+                    "name": "BookCreated",
+                    "value": {
+                        "ISBN": "9783161484100",
+                        "bookTitle": "Effective Java",
+                        "author": "Joshua Bloch",
+                        "publisher": "Addison-Wesley",
+                        "category": "ACADEMIC",
+                        "status": "AVAILABLE"
+                    }
+                }
+            ]
+        }
+    ]
+}

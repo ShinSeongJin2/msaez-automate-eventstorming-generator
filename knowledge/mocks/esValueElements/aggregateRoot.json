@@ -1,0 +1,297 @@
+{
+    "aggregateRoot": {
+        "_type": "org.uengine.modeling.model.AggregateRoot",
+        "fieldDescriptors": [
+            {
+                "className": "String",
+                "isCopy": false,
+                "isKey": false,
+                "name": "bookTitle",
+                "nameCamelCase": "bookTitle",
+                "namePascalCase": "BookTitle",
+                "displayName": "",
+                "referenceClass": null,
+                "isOverrideField": false,
+                "_type": "org.uengine.model.FieldDescriptor"
+            },
+            {
+                "className": "String",
+                "isCopy": false,
+                "isKey": true,
+                "name": "ISBN",
+                "nameCamelCase": "isbn",
+                "namePascalCase": "Isbn",
+                "displayName": "",
+                "referenceClass": null,
+                "isOverrideField": false,
+                "_type": "org.uengine.model.FieldDescriptor"
+            },
+            {
+                "className": "String",
+                "isCopy": false,
+                "isKey": false,
+                "name": "author",
+                "nameCamelCase": "author",
+                "namePascalCase": "Author",
+                "displayName": "",
+                "referenceClass": null,
+                "isOverrideField": false,
+                "_type": "org.uengine.model.FieldDescriptor"
+            },
+            {
+                "className": "String",
+                "isCopy": false,
+                "isKey": false,
+                "name": "publisher",
+                "nameCamelCase": "publisher",
+                "namePascalCase": "Publisher",
+                "displayName": "",
+                "referenceClass": null,
+                "isOverrideField": false,
+                "_type": "org.uengine.model.FieldDescriptor"
+            },
+            {
+                "className": "Category",
+                "isCopy": false,
+                "isKey": false,
+                "name": "category",
+                "nameCamelCase": "category",
+                "namePascalCase": "Category",
+                "displayName": "",
+                "referenceClass": null,
+                "isOverrideField": false,
+                "_type": "org.uengine.model.FieldDescriptor"
+            },
+            {
+                "className": "Status",
+                "isCopy": false,
+                "isKey": false,
+                "name": "status",
+                "nameCamelCase": "status",
+                "namePascalCase": "Status",
+                "displayName": "",
+                "referenceClass": null,
+                "isOverrideField": false,
+                "_type": "org.uengine.model.FieldDescriptor"
+            }
+        ],
+        "entities": {
+            "elements": {
+                "e0d58b29-379c-d099-bd6f-207f3efa547d": {
+                    "_type": "org.uengine.uml.model.Class",
+                    "id": "e0d58b29-379c-d099-bd6f-207f3efa547d",
+                    "name": "Book",
+                    "namePascalCase": "Book",
+                    "nameCamelCase": "book",
+                    "namePlural": "Books",
+                    "fieldDescriptors": [
+                        {
+                            "className": "String",
+                            "isCopy": false,
+                            "isKey": false,
+                            "name": "bookTitle",
+                            "displayName": "",
+                            "nameCamelCase": "bookTitle",
+                            "namePascalCase": "BookTitle",
+                            "_type": "org.uengine.model.FieldDescriptor",
+                            "inputUI": null,
+                            "options": null
+                        },
+                        {
+                            "className": "String",
+                            "isCopy": false,
+                            "isKey": true,
+                            "name": "ISBN",
+                            "displayName": "",
+                            "nameCamelCase": "isbn",
+                            "namePascalCase": "Isbn",
+                            "_type": "org.uengine.model.FieldDescriptor",
+                            "inputUI": null,
+                            "options": null
+                        },
+                        {
+                            "className": "String",
+                            "isCopy": false,
+                            "isKey": false,
+                            "name": "author",
+                            "displayName": "",
+                            "nameCamelCase": "author",
+                            "namePascalCase": "Author",
+                            "_type": "org.uengine.model.FieldDescriptor",
+                            "inputUI": null,
+                            "options": null
+                        },
+                        {
+                            "className": "String",
+                            "isCopy": false,
+                            "isKey": false,
+                            "name": "publisher",
+                            "displayName": "",
+                            "nameCamelCase": "publisher",
+                            "namePascalCase": "Publisher",
+                            "_type": "org.uengine.model.FieldDescriptor",
+                            "inputUI": null,
+                            "options": null
+                        },
+                        {
+                            "className": "Category",
+                            "isCopy": false,
+                            "isKey": false,
+                            "name": "category",
+                            "displayName": "",
+                            "nameCamelCase": "category",
+                            "namePascalCase": "Category",
+                            "_type": "org.uengine.model.FieldDescriptor",
+                            "inputUI": null,
+                            "options": null
+                        },
+                        {
+                            "className": "Status",
+                            "isCopy": false,
+                            "isKey": false,
+                            "name": "status",
+                            "displayName": "",
+                            "nameCamelCase": "status",
+                            "namePascalCase": "Status",
+                            "_type": "org.uengine.model.FieldDescriptor",
+                            "inputUI": null,
+                            "options": null
+                        }
+                    ],
+                    "operations": [],
+                    "elementView": {
+                        "_type": "org.uengine.uml.model.Class",
+                        "id": "e0d58b29-379c-d099-bd6f-207f3efa547d",
+                        "x": 200,
+                        "y": 200,
+                        "width": 200,
+                        "height": 100,
+                        "style": "{}",
+                        "titleH": 50,
+                        "subEdgeH": 120,
+                        "fieldH": 90,
+                        "methodH": 30
+                    },
+                    "selected": false,
+                    "relations": [],
+                    "parentOperations": [],
+                    "relationType": null,
+                    "isVO": false,
+                    "isAbstract": false,
+                    "isInterface": false,
+                    "isAggregateRoot": true,
+                    "parentId": "cc721073-c579-8aaa-e6d4-5475304059a7"
+                },
+                "3f2fbb3f-20e7-3d60-59b6-955db20de2a5": {
+                    "_type": "org.uengine.uml.model.enum",
+                    "id": "3f2fbb3f-20e7-3d60-59b6-955db20de2a5",
+                    "name": "Category",
+                    "displayName": "카테고리",
+                    "nameCamelCase": "category",
+                    "namePascalCase": "Category",
+                    "namePlural": "categories",
+                    "elementView": {
+                        "_type": "org.uengine.uml.model.enum",
+                        "id": "3f2fbb3f-20e7-3d60-59b6-955db20de2a5",
+                        "x": 700,
+                        "y": 456,
+                        "width": 200,
+                        "height": 100,
+                        "style": "{}",
+                        "titleH": 50,
+                        "subEdgeH": 50
+                    },
+                    "selected": false,
+                    "items": [
+                        {
+                            "value": "NOVEL"
+                        },
+                        {
+                            "value": "NONFICTION"
+                        },
+                        {
+                            "value": "ACADEMIC"
+                        },
+                        {
+                            "value": "MAGAZINE"
+                        }
+                    ],
+                    "useKeyValue": false,
+                    "relations": []
+                },
+                "9daf41d9-2adf-adb7-d3d1-7be155f58be7": {
+                    "_type": "org.uengine.uml.model.enum",
+                    "id": "9daf41d9-2adf-adb7-d3d1-7be155f58be7",
+                    "name": "Status",
+                    "displayName": "도서상태",
+                    "nameCamelCase": "status",
+                    "namePascalCase": "Status",
+                    "namePlural": "statuses",
+                    "elementView": {
+                        "_type": "org.uengine.uml.model.enum",
+                        "id": "9daf41d9-2adf-adb7-d3d1-7be155f58be7",
+                        "x": 950,
+                        "y": 456,
+                        "width": 200,
+                        "height": 100,
+                        "style": "{}",
+                        "titleH": 50,
+                        "subEdgeH": 50
+                    },
+                    "selected": false,
+                    "items": [
+                        {
+                            "value": "AVAILABLE"
+                        },
+                        {
+                            "value": "BORROWED"
+                        },
+                        {
+                            "value": "RESERVED"
+                        },
+                        {
+                            "value": "DISCARDED"
+                        }
+                    ],
+                    "useKeyValue": false,
+                    "relations": []
+                }
+            },
+            "relations": {}
+        },
+        "operations": []
+    },
+    "author": "EYCl46CwWAWvpz2E1BCUpVgPIpa2",
+    "boundedContext": {
+        "name": "e0e608d4-baed-ebff-9767-02d44ab21c02",
+        "id": "e0e608d4-baed-ebff-9767-02d44ab21c02"
+    },
+    "commands": [],
+    "description": null,
+    "id": "cc721073-c579-8aaa-e6d4-5475304059a7",
+    "elementView": {
+        "_type": "org.uengine.modeling.model.Aggregate",
+        "id": "cc721073-c579-8aaa-e6d4-5475304059a7",
+        "x": 650,
+        "y": 450,
+        "width": 130,
+        "height": 400
+    },
+    "events": [],
+    "hexagonalView": {
+        "_type": "org.uengine.modeling.model.AggregateHexagonal",
+        "id": "cc721073-c579-8aaa-e6d4-5475304059a7",
+        "x": 0,
+        "y": 0,
+        "subWidth": 0,
+        "width": 0
+    },
+    "name": "Book",
+    "displayName": "도서",
+    "nameCamelCase": "book",
+    "namePascalCase": "Book",
+    "namePlural": "books",
+    "rotateStatus": false,
+    "selected": false,
+    "_type": "org.uengine.modeling.model.Aggregate"
+}
