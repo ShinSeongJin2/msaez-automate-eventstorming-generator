@@ -1,12 +1,11 @@
 from langgraph.graph import StateGraph, START, END
-from typing import Any
 from pydantic import BaseModel
 
+from eventstorming_generator.models import InputsModel, OutputsModel
+
 class State(BaseModel):
-    selectedDraftOptions: Any = None
-    userInfo: Any = None
-    information: Any = None
-    createEsValue: Any = None
+    inputs: InputsModel = InputsModel()
+    outputs: OutputsModel = OutputsModel()
 
 def chatbot(state: State):
     print(state)
