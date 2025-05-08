@@ -6,6 +6,12 @@
             "type": "shell",
             "command": "uv run langgraph dev",
             "problemMatcher": []
+        },
+        {
+            "label": "단위 테스트 실행",
+            "type": "shell",
+            "command": "uv run python ./src/eventstorming_generator/test.py",
+            "problemMatcher": []
         }
     ]
 }

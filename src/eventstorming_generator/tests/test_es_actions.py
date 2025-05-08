@@ -1,5 +1,5 @@
 from ..models import EsValueModel
-from ..utils.es_actions_util import EsActionsUtil
+from ..utils import EsActionsUtil
 from .mocks import actions, user_info, information
 
 def test_bounded_context_creation():
