@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor
+from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor
 
 class EsActionsUtil:
     @staticmethod
@@ -113,5 +113,9 @@ class EsActionsUtil:
             )
         elif action.objectType == "ValueObject":
             ValueObjectProcessor.get_action_applied_es_value(
+                action, user_info, information, es_value, callbacks
+            )
+        elif action.objectType == "Enumeration":
+            EnumerationProcessor.get_action_applied_es_value(
                 action, user_info, information, es_value, callbacks
             )

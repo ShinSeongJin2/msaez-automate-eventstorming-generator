@@ -40,6 +40,10 @@ actions = [
                 {
                     "name": "bookAuthor",
                     "type": "BookAuthor"
+                },
+                {
+                    "name": "bookStatus",
+                    "type": "BookStatus"
                 }
             ]
         }
@@ -64,6 +68,27 @@ actions = [
                 {
                     "name": "bookAuthorName",
                     "type": "String"
+                }
+            ]
+        }
+    ),
+
+    ActionModel(
+        objectType="Enumeration",
+        type="create",
+        ids={
+            "boundedContextId": "bc-bookManagement",
+            "aggregateId": "agg-book",
+            "enumerationId": "enum-bookStatus"
+        },
+        args={
+            "enumerationName": "BookStatus",
+            "properties": [
+                {
+                    "name": "RENTED"
+                },
+                {
+                    "name": "RETURNED"
                 }
             ]
         }
