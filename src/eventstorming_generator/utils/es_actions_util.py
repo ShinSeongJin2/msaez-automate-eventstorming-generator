@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .processors import BoundedContextProcessor
+from .processors import BoundedContextProcessor, AggregateContextProcessor
 
 class EsActionsUtil:
     @staticmethod
@@ -105,5 +105,9 @@ class EsActionsUtil:
         """액션 유형에 따라 적절한 처리 로직을 실행합니다"""
         if action.objectType == "BoundedContext":
             BoundedContextProcessor.get_action_applied_es_value(
+                action, user_info, information, es_value, callbacks
+            )
+        elif action.objectType == "Aggregate":
+            AggregateContextProcessor.get_action_applied_es_value(
                 action, user_info, information, es_value, callbacks
             )

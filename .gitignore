@@ -2,5 +2,6 @@
 .venv
 .langgraph_api
 .local
+.temp
 **/__pycache__/**
 **/*.egg-info

@@ -5,9 +5,11 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "convert-case>=1.2.3",
     "langchain[openai]>=0.3.25",
     "langgraph>=0.4.2",
     "langsmith>=0.3.42",
+    "pluralizer>=1.2.0",
 ]
 
 [project.optional-dependencies]
