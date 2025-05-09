@@ -118,114 +118,12 @@ class ESAliasTransManager {
     }
 
 
-    /**
-     * summarizedESValue에 존재하는 UUID를 의미있는 별칭으로 변환
-     * @param {*} summarizedESValue 요약된 이벤트 스토밍 정보
-     * @example
-     * const summarizedESValue = ESValueSummarizeUtil.getSummarizedESValue(this.value)
-     * const esAliasTransManager = new ESAliasTransManager(this.value)
-     * const transToAliasInSummarizedESValue = esAliasTransManager.transToAliasInSummarizedESValue(summarizedESValue)
-     * @returns UUID가 별칭으로 변환된 요약된 이벤트 스토밍 정보
-     */
-    transToAliasInSummarizedESValue(summarizedESValue){
-        return this._transSummarizedESValue(summarizedESValue, (uuid) => this.getAliasSafely(uuid))
-    }
-
-    /**
-     * summarizedESValue에 존재하는 별칭을 기존의 UUID로 변환
-     * @param {*} summarizedESValue 요약된 이벤트 스토밍 정보
-     * @example
-     * const summarizedESValue = ESValueSummarizeUtil.getSummarizedESValue(this.value)
-     * const esAliasTransManager = new ESAliasTransManager(this.value)
-     * const transToUUIDInSummarizedESValue = esAliasTransManager.transToUUIDInSummarizedESValue(summarizedESValue)
-     * @returns 별칭이 UUID로 변환된 요약된 이벤트 스토밍 정보
-     */
-    transToUUIDInSummarizedESValue(summarizedESValue){
-        return this._transSummarizedESValue(summarizedESValue, (alias) => this.getUUIDSafely(alias))
-    }
-
     transToAliasInActions(actions){
         return this._transActions(actions, (uuid) => this.getAliasSafely(uuid))
     }
 
     transToUUIDInActions(actions){
         return this._transActions(actions, (alias) => this.getUUIDSafelyWithNewUUID(alias))
-    }
-
-    /**
-     * 주어진 요약된 이벤트 스토밍 정보를 토대로 엘리먼트 이름을 변환하는 함수를 적용해서 반환
-     * @param {*} summarizedESValue 요약된 이벤트 스토밍 정보
-     * @param {*} transFunc 엘리먼트 이름을 변환하는 함수
-     * @returns 엘리먼트 이름이 변환된 요약된 이벤트 스토밍 정보
-     */
-    _transSummarizedESValue(summarizedESValue, transFunc){
-        const getTranslatedAggregate = (aggregate) => {
-            aggregate.id = transFunc(aggregate.id)
-
-            if(aggregate.entities)
-                aggregate.entities.forEach(entity => {
-                    entity.id = transFunc(entity.id)
-                })
-
-            if(aggregate.enumerations)
-                aggregate.enumerations.forEach(enumeration => {
-                    enumeration.id = transFunc(enumeration.id)
-                })
-            
-            if(aggregate.valueObjects)
-                aggregate.valueObjects.forEach(valueObject => {
-                    valueObject.id = transFunc(valueObject.id)
-                })
-            
-            if(aggregate.commands)
-                aggregate.commands.forEach(command => {
-                    command.id = transFunc(command.id)
-                    if(command.outputEvents)
-                        command.outputEvents.forEach(outputEvent => {
-                            outputEvent.relationId = transFunc(outputEvent.relationId)
-                            outputEvent.id = transFunc(outputEvent.id)
-                        })
-                })
-            
-            if(aggregate.events)
-                aggregate.events.forEach(event => {
-                    event.id = transFunc(event.id)
-                    if(event.outputCommands)
-                        event.outputCommands.forEach(outputCommand => {
-                            outputCommand.relationId = transFunc(outputCommand.relationId)
-                            outputCommand.id = transFunc(outputCommand.id)
-                        })
-                })
-            
-            if(aggregate.readModels)
-                aggregate.readModels.forEach(readModel => {
-                    readModel.id = transFunc(readModel.id)
-                })
-            
-            return aggregate
-        }
-
-        let translatedSummarizedESValue = {}
-        for(const bcKey of Object.keys(summarizedESValue)){
-            const boundedContext = summarizedESValue[bcKey]
-            boundedContext.id = transFunc(boundedContext.id)
-
-            if(boundedContext.actors)
-                boundedContext.actors.forEach(actor => {
-                    actor.id = transFunc(actor.id)
-                })
-
-            if(boundedContext.aggregates) {
-                let translatedAggregates = {}
-                for(const aggKey of Object.keys(boundedContext.aggregates)){
-                    const translatedAggregate = getTranslatedAggregate(boundedContext.aggregates[aggKey])
-                    translatedAggregates[translatedAggregate.id] = translatedAggregate
-                }
-                boundedContext.aggregates = translatedAggregates
-            }
-            translatedSummarizedESValue[boundedContext.id] = boundedContext
-        }
-        return translatedSummarizedESValue
     }
 
     _transActions(actions, transFunc){
