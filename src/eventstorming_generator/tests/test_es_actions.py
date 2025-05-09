@@ -1,22 +1,13 @@
 from ..models import EsValueModel
 from ..utils import EsActionsUtil
 from .mocks import actions, user_info, information
-from datetime import datetime
+from .save_to_temp_file import save_to_temp_file
 
 def test_es_value_creation():
-    """ES Value 생성 테스트"""
     try:
         es_value = EsValueModel()
-        
         result = EsActionsUtil.apply_actions(es_value, actions, user_info, information)
-        
-        print("=== 테스트 결과 ===")
-        print(result.model_dump_json(indent=4))
-        
-        FILE_PATH = f".temp/test_es_actions_output_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(FILE_PATH, "w") as f:
-            f.write(result.model_dump_json(indent=4))
-        print(f"{FILE_PATH} 파일에 생성 결과 저장 완료")
+        save_to_temp_file(result, "test_es_value_creation")
     except Exception as e:
         print(f"테스트 실패: {str(e)}")
         raise
