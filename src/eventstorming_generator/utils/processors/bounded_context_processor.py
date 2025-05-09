@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
-from .es_utils import EsUtils
-from ..models import ActionModel
+from ..es_utils import EsUtils
+from ...models import ActionModel
 
 class BoundedContextProcessor:
     @staticmethod

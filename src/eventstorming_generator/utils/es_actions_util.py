@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .bounded_context_processor import BoundedContextProcessor
+from .processors import BoundedContextProcessor
 
 class EsActionsUtil:
     @staticmethod
