@@ -7,11 +7,28 @@ from ..utils import EsAliasTransManager, ESValueSummarizeWithFilter
 class TestUtils:
     @staticmethod
     def save_dict_to_temp_file(data: Any, file_name: str) -> None:
-        # Pydantic BaseModel인 경우와 dict인 경우를 구분하여 처리
-        if hasattr(data, 'model_dump_json'):
+        # 데이터 변환 함수
+        def convert_data(item):
+            if hasattr(item, 'model_dump_json'):
+                return json.loads(item.model_dump_json())
+            elif isinstance(item, dict):
+                return item
+            else:
+                return str(item)
+        
+        # 리스트인 경우 각 항목을 개별적으로 처리
+        if isinstance(data, list):
+            processed_data = [convert_data(item) for item in data]
+            json_data = json.dumps(processed_data, indent=4, ensure_ascii=False)
+        # Pydantic BaseModel인 경우
+        elif hasattr(data, 'model_dump_json'):
             json_data = data.model_dump_json(indent=4)
-        else:
+        # 딕셔너리인 경우
+        elif isinstance(data, dict):
             json_data = json.dumps(data, indent=4, ensure_ascii=False)
+        # 그 외의 경우
+        else:
+            json_data = str(data)
         
         print(json_data)
         

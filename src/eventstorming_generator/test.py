@@ -1,10 +1,5 @@
 import os
-from eventstorming_generator.tests import test_es_value_creation, test_create_bounded_contexts
-
-TEST_COMMANDS = {
-    "test_es_value_creation": test_es_value_creation,
-    "test_create_bounded_contexts": test_create_bounded_contexts
-}
+from eventstorming_generator.tests import test_commands
 
 def run_test():
     """
@@ -15,7 +10,7 @@ def run_test():
 
 
     print("실행 가능한 테스트 목록:")
-    for idx, test_name in enumerate(TEST_COMMANDS.keys(), 1):
+    for idx, test_name in enumerate(test_commands.keys(), 1):
         print(f"{idx}. {test_name}")
     
     user_input = input("\n테스트 이름 또는 번호를 입력하세요: ")
@@ -23,16 +18,16 @@ def run_test():
 
     if user_input.isdigit():
         idx = int(user_input)
-        if 1 <= idx <= len(TEST_COMMANDS):
-            test_name = list(TEST_COMMANDS.keys())[idx-1]
+        if 1 <= idx <= len(test_commands):
+            test_name = list(test_commands.keys())[idx-1]
             print(f"\n'{test_name}' 테스트를 실행합니다...\n")
-            TEST_COMMANDS[test_name]()
+            test_commands[test_name]()
         else:
             print(f"오류: {idx}번 테스트가 존재하지 않습니다.")
     else:
-        if user_input in TEST_COMMANDS:
+        if user_input in test_commands:
             print(f"\n'{user_input}' 테스트를 실행합니다...\n")
-            TEST_COMMANDS[user_input]()
+            test_commands[user_input]()
         else:
             print(f"오류: '{user_input}' 테스트가 존재하지 않습니다.")
 
