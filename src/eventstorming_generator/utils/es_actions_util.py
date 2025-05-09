@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .processors import BoundedContextProcessor, AggregateContextProcessor
+from .processors import BoundedContextProcessor, AggregateProcessor
 
 class EsActionsUtil:
     @staticmethod
@@ -108,6 +108,6 @@ class EsActionsUtil:
                 action, user_info, information, es_value, callbacks
             )
         elif action.objectType == "Aggregate":
-            AggregateContextProcessor.get_action_applied_es_value(
+            AggregateProcessor.get_action_applied_es_value(
                 action, user_info, information, es_value, callbacks
             )

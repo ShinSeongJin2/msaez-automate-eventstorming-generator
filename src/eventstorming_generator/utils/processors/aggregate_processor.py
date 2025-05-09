@@ -5,16 +5,16 @@ from pluralizer import Pluralizer
 from ..es_utils import EsUtils
 
 pluralizer = Pluralizer()
-class AggregateContextProcessor:
+class AggregateProcessor:
     @staticmethod
     def get_action_applied_es_value(action: Dict[str, Any], user_info: Dict[str, Any], 
                                    information: Dict[str, Any], es_value: Dict[str, Any], 
                                    callbacks: Dict[str, List]) -> None:
         """액션에 따라 Aggregate를 처리합니다"""
         if action.type == "create":
-            AggregateContextProcessor._create_aggregate(action, user_info, information, es_value, callbacks)
+            AggregateProcessor._create_aggregate(action, user_info, information, es_value, callbacks)
         elif action.type == "update":
-            AggregateContextProcessor._update_aggregate(action, user_info, information, es_value, callbacks)
+            AggregateProcessor._update_aggregate(action, user_info, information, es_value, callbacks)
     
     @staticmethod
     def _create_aggregate(action: Dict[str, Any], user_info: Dict[str, Any], 
@@ -28,23 +28,23 @@ class AggregateContextProcessor:
         aggregate_id = action.ids.get("aggregateId", EsUtils.get_uuid())
         
         # Aggregate 객체 생성
-        aggregate_object = AggregateContextProcessor._get_aggregate_base(
+        aggregate_object = AggregateProcessor._get_aggregate_base(
             user_info, aggregate_name, aggregate_alias, bounded_context_id, 0, 0, aggregate_id
         )
         
         # BoundedContext 레이아웃 조정
-        AggregateContextProcessor._adjust_bounded_context_layout(es_value, action, aggregate_object)
+        AggregateProcessor._adjust_bounded_context_layout(es_value, action, aggregate_object)
         
         # 위치 설정
-        valid_position = AggregateContextProcessor._get_valid_position(es_value, action, aggregate_object)
+        valid_position = AggregateProcessor._get_valid_position(es_value, action, aggregate_object)
         aggregate_object["elementView"]["x"] = valid_position["x"]
         aggregate_object["elementView"]["y"] = valid_position["y"]
         
         # 속성 설정
-        action.args["properties"] = AggregateContextProcessor._make_primary_key_property_if_not_exists(
+        action.args["properties"] = AggregateProcessor._make_primary_key_property_if_not_exists(
             action.args.get("properties", [])
         )
-        aggregate_object["aggregateRoot"]["fieldDescriptors"] = AggregateContextProcessor._get_field_descriptors(
+        aggregate_object["aggregateRoot"]["fieldDescriptors"] = AggregateProcessor._get_field_descriptors(
             action.args.get("properties", [])
         )
         
@@ -54,10 +54,10 @@ class AggregateContextProcessor:
         es_value["elements"][aggregate_object["id"]] = aggregate_object
         
         # Root Aggregate 객체 생성 및 추가
-        root_aggregate_object = AggregateContextProcessor._get_root_aggregate_base(
+        root_aggregate_object = AggregateProcessor._get_root_aggregate_base(
             aggregate_name, 
             aggregate_id,
-            AggregateContextProcessor._get_field_descriptors_for_root_aggregate(action.args.get("properties", []))
+            AggregateProcessor._get_field_descriptors_for_root_aggregate(action.args.get("properties", []))
         )
         aggregate_object["aggregateRoot"]["entities"]["elements"][root_aggregate_object["id"]] = root_aggregate_object
     
@@ -71,7 +71,7 @@ class AggregateContextProcessor:
             
             # Aggregate Root의 필드 업데이트
             if "aggregateRoot" in aggregate_object and "fieldDescriptors" in aggregate_object["aggregateRoot"]:
-                aggregate_object["aggregateRoot"]["fieldDescriptors"] = AggregateContextProcessor._merge_field_descriptors(
+                aggregate_object["aggregateRoot"]["fieldDescriptors"] = AggregateProcessor._merge_field_descriptors(
                     aggregate_object["aggregateRoot"]["fieldDescriptors"],
                     action.args.get("properties", [])
                 )
@@ -79,7 +79,7 @@ class AggregateContextProcessor:
             # Root Aggregate 객체의 필드 업데이트
             root_aggregate_object = EsUtils.get_aggregate_root_object(aggregate_object)
             if root_aggregate_object:
-                root_aggregate_object["fieldDescriptors"] = AggregateContextProcessor._merge_field_descriptors(
+                root_aggregate_object["fieldDescriptors"] = AggregateProcessor._merge_field_descriptors(
                     root_aggregate_object["fieldDescriptors"],
                     action.args.get("properties", [])
                 )
@@ -225,7 +225,7 @@ class AggregateContextProcessor:
             es_value["elements"][bounded_context_id] = target_bounded_context
             
             # 인접 BoundedContext 이동
-            AggregateContextProcessor._shift_adjacent_bounded_contexts(es_value, target_bounded_context, width_delta, height_delta)
+            AggregateProcessor._shift_adjacent_bounded_contexts(es_value, target_bounded_context, width_delta, height_delta)
         
         # Aggregate 목록 업데이트
         if "aggregates" not in target_bounded_context:
@@ -240,7 +240,7 @@ class AggregateContextProcessor:
 
 
         # 인접 BoundedContext 이동
-        AggregateContextProcessor._shift_adjacent_bounded_contexts(es_value, target_bounded_context, AGGREGATE_SPACING, 0)
+        AggregateProcessor._shift_adjacent_bounded_contexts(es_value, target_bounded_context, AGGREGATE_SPACING, 0)
         
         # BoundedContext 크기 업데이트
         target_bounded_context["elementView"]["x"] = target_bounded_context["elementView"].get("x", 0) + AGGREGATE_SPACING//2
@@ -249,7 +249,7 @@ class AggregateContextProcessor:
     @staticmethod
     def _shift_adjacent_bounded_contexts(es_value: Dict[str, Any], target_bounded_context: Dict[str, Any], offset_x: int, offset_y: int) -> None:
         """인접한 BoundedContext를 이동시킵니다"""
-        for bounded_context_id in AggregateContextProcessor._find_right_side_bounded_context_ids(es_value, target_bounded_context):
+        for bounded_context_id in AggregateProcessor._find_right_side_bounded_context_ids(es_value, target_bounded_context):
             bounded_context = es_value["elements"].get(bounded_context_id, {})
             bounded_context["elementView"]["x"] = bounded_context["elementView"].get("x", 0) + offset_x
             es_value["elements"][bounded_context_id] = bounded_context
@@ -339,6 +339,6 @@ class AggregateContextProcessor:
                 })
             else:
                 # 새 필드 추가
-                merged.append(AggregateContextProcessor._get_field_descriptors([new_prop])[0])
+                merged.append(AggregateProcessor._get_field_descriptors([new_prop])[0])
         
         return merged

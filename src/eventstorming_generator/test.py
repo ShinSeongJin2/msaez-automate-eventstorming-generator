@@ -1,3 +1,4 @@
+import os
 from eventstorming_generator.tests import test_es_value_creation, test_create_bounded_contexts
 
 TEST_COMMANDS = {
@@ -9,6 +10,10 @@ def run_test():
     """
     사용자로부터 테스트 문자열 또는 인덱스를 입력받아 해당 테스트를 실행합니다.
     """
+    if not os.path.exists(".temp"):
+        os.makedirs(".temp")
+
+
     print("실행 가능한 테스트 목록:")
     for idx, test_name in enumerate(TEST_COMMANDS.keys(), 1):
         print(f"{idx}. {test_name}")
