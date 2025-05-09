@@ -55,3 +55,24 @@ class EsUtils:
                 return element
         
         return None 
+
+    @staticmethod
+    def get_entities_for_aggregate(es_value: Dict[str, Any], aggregate_id: str) -> Dict[str, Any]:
+        """Aggregate의 entities 객체를 가져옵니다. 없으면 초기화합니다."""
+        aggregate = es_value["elements"].get(aggregate_id, {})
+        
+        if not aggregate.get("aggregateRoot"):
+            aggregate["aggregateRoot"] = {}
+            
+        if not aggregate["aggregateRoot"].get("entities"):
+            aggregate["aggregateRoot"]["entities"] = {}
+            
+        entities = aggregate["aggregateRoot"]["entities"]
+        
+        if not entities.get("elements"):
+            entities["elements"] = {}
+            
+        if not entities.get("relations"):
+            entities["relations"] = {}
+            
+        return entities

@@ -36,6 +36,34 @@ actions = [
                 {
                     "name": "bookTitle",
                     "type": "String"
+                },
+                {
+                    "name": "bookAuthor",
+                    "type": "BookAuthor"
+                }
+            ]
+        }
+    ),
+
+    ActionModel(
+        objectType="ValueObject",
+        type="create",
+        ids={
+            "boundedContextId": "bc-bookManagement",
+            "aggregateId": "agg-book",
+            "valueObjectId": "vo-bookAuthor"
+        },
+        args={
+            "valueObjectName": "BookAuthor",
+            "properties": [
+                {
+                    "name": "bookAuthorId",
+                    "type": "String",
+                    "isKey": True
+                },
+                {
+                    "name": "bookAuthorName",
+                    "type": "String"
                 }
             ]
         }
