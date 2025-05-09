@@ -12,3 +12,13 @@ class BaseModelWithItem(BaseModel):
 
     def items(self):
         return self.model_dump().items()
+
+    def get(self, key, default=None):
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            return default
+            
+    def set(self, key, value):
+        setattr(self, key, value)
+        return value
