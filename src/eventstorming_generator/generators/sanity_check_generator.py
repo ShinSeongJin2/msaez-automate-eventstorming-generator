@@ -3,7 +3,9 @@ from .base import BaseGenerator
 
 class SanityCheckGenerator(BaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
+        self.inputs_types_to_check = ["text"]
         super().__init__(model_name, model_kwargs, client)
+        
         self.client["disableLanguageGuide"] = True
 
     def _build_agent_role_prompt(self) -> str:

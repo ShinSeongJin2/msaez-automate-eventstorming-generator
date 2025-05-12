@@ -1,4 +1,3 @@
-from eventstorming_generator.models import EsValueModel
+d = {"a": 1, "b": {"d": 5}, "c": 3}
 
-es_value = EsValueModel()
-print(es_value.get("elements"))
+print(str(d))

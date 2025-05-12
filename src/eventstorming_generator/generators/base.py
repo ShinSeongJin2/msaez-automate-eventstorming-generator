@@ -6,6 +6,8 @@ from langchain_community.cache import SQLiteCache
 from langchain_core.globals import set_llm_cache
 import os
 
+from ..utils import JsonUtil
+
 
 def init_cache():
     if not os.path.exists(".cache"):
@@ -41,6 +43,11 @@ class BaseGenerator(ABC):
         if not client.get("inputs"): client["inputs"] = {}
         if not client.get("preferredLanguage"): client["preferredLanguage"] = "English"
         if not client.get("disableLanguageGuide"): client["disableLanguageGuide"] = False
+
+        if self.inputs_types_to_check:
+            for input_type in self.inputs_types_to_check:
+                if not client.get("inputs").get(input_type):
+                    raise ValueError(f"{input_type} is required")
 
         self.set_model(model_name, model_kwargs)
         self.client = client
@@ -95,16 +102,14 @@ class BaseGenerator(ABC):
         if not example_outputs:
             return []
         
-        import json
-        return ["Approved.", f"```json\n{json.dumps(example_outputs, indent=2)}\n```"]
+        return ["Approved.", f"```json\n{JsonUtil.convert_to_json(example_outputs)}\n```"]
     
     def _inputs_to_string(self, inputs: Dict[str, Any]) -> str:
         """입력 파라미터를 문자열로 변환"""
-        import json
         result = []
         
         for key, value in inputs.items():
-            formatted_value = value if isinstance(value, str) else json.dumps(value)
+            formatted_value = value if isinstance(value, str) else JsonUtil.convert_to_json(value)
             result.append(f"- {key.strip()}\n{formatted_value.strip()}")
             
         return "\n\n".join(result)
