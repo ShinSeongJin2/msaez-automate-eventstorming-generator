@@ -1,8 +1,19 @@
-from pyexpat.errors import messages
 from typing import Dict, List, Any, Optional, Union
 from abc import ABC, abstractmethod
 from langchain.chat_models import init_chat_model
 from langchain.schema import HumanMessage, SystemMessage, AIMessage, BaseMessage
+from langchain_community.cache import SQLiteCache
+from langchain_core.globals import set_llm_cache
+import os
+
+
+def init_cache():
+    if not os.path.exists(".cache"):
+        os.makedirs(".cache")
+
+    set_llm_cache(SQLiteCache(database_path=".cache/llm_cache.db"))
+
+init_cache()
 
 
 class BaseGenerator(ABC):

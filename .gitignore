@@ -3,5 +3,6 @@
 .langgraph_api
 .local
 .temp
+.cache
 **/__pycache__/**
 **/*.egg-info
