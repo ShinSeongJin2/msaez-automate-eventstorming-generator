@@ -24,6 +24,7 @@ class BaseGenerator(ABC):
             client: 클라이언트
         """
         if model_kwargs is None: model_kwargs = {}
+        if model_kwargs.get("temperature") is None: model_kwargs["temperature"] = 0.2
 
         if client is None: client = {}
         if not client.get("inputs"): client["inputs"] = {}
