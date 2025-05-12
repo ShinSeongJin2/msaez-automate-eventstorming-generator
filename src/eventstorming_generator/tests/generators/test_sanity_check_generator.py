@@ -1,5 +1,5 @@
-from .test_utils import TestUtils
-from ..generators import SanityCheckGenerator
+from ..test_utils import TestUtils
+from ...generators import SanityCheckGenerator
 import os
 
 def test_sanity_check_generator():

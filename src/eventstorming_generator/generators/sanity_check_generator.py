@@ -32,6 +32,7 @@ class SanityCheckGenerator(BaseGenerator):
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
+        inputs = self.client.get("inputs")
         return {
-            "text": self.client.get("inputs").get("text")
+            "text": inputs.get("text")
         }

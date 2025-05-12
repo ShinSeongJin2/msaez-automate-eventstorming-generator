@@ -102,14 +102,14 @@ class BaseGenerator(ABC):
         if not example_outputs:
             return []
         
-        return ["Approved.", f"```json\n{JsonUtil.convert_to_json(example_outputs)}\n```"]
+        return ["Approved.", f"```json\n{JsonUtil.convert_to_json(example_outputs, 4)}\n```"]
     
     def _inputs_to_string(self, inputs: Dict[str, Any]) -> str:
         """입력 파라미터를 문자열로 변환"""
         result = []
         
         for key, value in inputs.items():
-            formatted_value = value if isinstance(value, str) else JsonUtil.convert_to_json(value)
+            formatted_value = value if isinstance(value, str) else JsonUtil.convert_to_json(value, 0)
             result.append(f"- {key.strip()}\n{formatted_value.strip()}")
             
         return "\n\n".join(result)
