@@ -271,14 +271,7 @@ def validate_aggregate_generation(state: State) -> State:
         state.subgraphs.createAggregateByFunctionsModel.completed_generations.append(current_gen)
         # 현재 작업 초기화
         state.subgraphs.createAggregateByFunctionsModel.current_generation = None
-    else:
-        # 최대 재시도 횟수 초과 확인
-        if current_gen.retry_count >= state.subgraphs.createAggregateByFunctionsModel.max_retry_count:
-            # 재시도 횟수 초과 시 완료 목록에 추가 (실패로 처리)
-            state.subgraphs.createAggregateByFunctionsModel.completed_generations.append(current_gen)
-            # 현재 작업 초기화
-            state.subgraphs.createAggregateByFunctionsModel.current_generation = None
-    
+
     return state
 
 
@@ -303,8 +296,12 @@ def decide_next_step(state: State) -> str:
     if not state.subgraphs.createAggregateByFunctionsModel.current_generation:
         return "select_next"
     
-    # 현재 작업이 완료되었으면 검증 단계로 이동
     current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
+    if current_gen.retry_count > state.subgraphs.createAggregateByFunctionsModel.max_retry_count:
+        state.subgraphs.createAggregateByFunctionsModel.is_failed = True
+        return "complete"
+
+    # 현재 작업이 완료되었으면 검증 단계로 이동
     if current_gen.generation_complete:
         return "validate"
     

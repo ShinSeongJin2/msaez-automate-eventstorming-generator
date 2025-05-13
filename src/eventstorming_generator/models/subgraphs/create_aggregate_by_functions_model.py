@@ -36,3 +36,5 @@ class CreateAggregateByFunctionsModel(BaseModelWithItem):
     # 최대 재시도 횟수
     max_retry_count: int = 3
 
+    # 최종적으로 실행 실패 여부
+    is_failed: bool = False
