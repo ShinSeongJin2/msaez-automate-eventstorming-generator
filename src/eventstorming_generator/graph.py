@@ -1,11 +1,8 @@
 from langgraph.graph import StateGraph, START, END
 
-from eventstorming_generator.models import InputsModel, OutputsModel, BaseModelWithItem, ActionModel
+from eventstorming_generator.models import ActionModel, State
 from eventstorming_generator.utils import EsActionsUtil
-
-class State(BaseModelWithItem):
-    inputs: InputsModel = InputsModel()
-    outputs: OutputsModel = OutputsModel()
+from eventstorming_generator.subgraphs.create_aggregate_by_functions_sub_graph import create_aggregate_by_functions_subgraph
 
 def create_bounded_contexts(state: State):
     # 모든 BoundedContext들에 대해 반복
@@ -56,7 +53,10 @@ def create_bounded_contexts(state: State):
 graph_builder = StateGraph(State)
 
 graph_builder.add_node("create_bounded_contexts", create_bounded_contexts)
+graph_builder.add_node("create_aggregates", create_aggregate_by_functions_subgraph())
 
 graph_builder.add_edge(START, "create_bounded_contexts")
-graph_builder.add_edge("create_bounded_contexts", END)
+graph_builder.add_edge("create_bounded_contexts", "create_aggregates")
+graph_builder.add_edge("create_aggregates", END)
+
 graph = graph_builder.compile()

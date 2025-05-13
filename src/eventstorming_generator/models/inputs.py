@@ -15,3 +15,4 @@ class InputsModel(BaseModelWithItem):
     selectedDraftOptions: Any = None
     userInfo: UserInfoModel = None
     information: InformationModel = None
+    preferedLanguage: str = "Korean"

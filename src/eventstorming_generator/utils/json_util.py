@@ -8,11 +8,13 @@ class JsonUtil:
             if hasattr(item, 'model_dump_json'):
                 return json.loads(item.model_dump_json())
             elif isinstance(item, dict):
-                return item
+                return {k: convert_data(v) for k, v in item.items()}
+            elif isinstance(item, list):
+                return [convert_data(i) for i in item]
             else:
-                return str(item)
+                return item if isinstance(item, (str, int, float, bool, type(None))) else str(item)
         
-        # 리스트인 경우 각 항목을 개별적으로 처리
+        # 데이터 타입에 따른 처리
         if isinstance(data, list):
             processed_data = [convert_data(item) for item in data]
             json_data = json.dumps(processed_data, indent=indent, ensure_ascii=False)
@@ -21,7 +23,8 @@ class JsonUtil:
             json_data = data.model_dump_json(indent=indent)
         # 딕셔너리인 경우
         elif isinstance(data, dict):
-            json_data = json.dumps(data, indent=indent, ensure_ascii=False)
+            processed_data = convert_data(data)
+            json_data = json.dumps(processed_data, indent=indent, ensure_ascii=False)
         # 그 외의 경우
         else:
             json_data = str(data)
@@ -30,5 +33,11 @@ class JsonUtil:
 
     @staticmethod
     def convert_to_dict(json_str: str) -> dict:
+        if "```json" in json_str:
+            import re
+            match = re.search(r'```json\s*([\s\S]*?)\s*```', json_str)
+            if match:
+                json_str = match.group(1).strip()
+        
         return json.loads(json_str)
 
