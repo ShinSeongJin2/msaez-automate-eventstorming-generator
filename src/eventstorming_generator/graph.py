@@ -2,8 +2,7 @@ from langgraph.graph import StateGraph, START, END
 
 from eventstorming_generator.models import ActionModel, State
 from eventstorming_generator.utils import EsActionsUtil
-from eventstorming_generator.subgraphs.create_aggregate_by_functions_sub_graph import create_aggregate_by_functions_subgraph
-
+from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph
 
 def create_bounded_contexts(state: State):
     # 모든 BoundedContext들에 대해 반복
@@ -55,7 +54,13 @@ def route_after_create_aggregates(state: State):
     if state.subgraphs.createAggregateByFunctionsModel.is_failed:
         return "complete"
 
-    return "complete" # TODO: 추후 수정 필요
+    return "create_class_id" 
+
+def route_after_create_class_id(state: State):
+    if state.subgraphs.createAggregateClassIdByDraftsModel.is_failed:
+        return "complete"
+    
+    return "complete"  # TODO: 추후 수정 필요
 
 def complete(state: State):
     return state
@@ -65,11 +70,16 @@ graph_builder = StateGraph(State)
 
 graph_builder.add_node("create_bounded_contexts", create_bounded_contexts)
 graph_builder.add_node("create_aggregates", create_aggregate_by_functions_subgraph())
+graph_builder.add_node("create_class_id", create_aggregate_class_id_by_drafts_subgraph())
 graph_builder.add_node("complete", complete)
 
 graph_builder.add_edge(START, "create_bounded_contexts")
 graph_builder.add_edge("create_bounded_contexts", "create_aggregates")
 graph_builder.add_conditional_edges("create_aggregates", route_after_create_aggregates, {
+    "create_class_id": "create_class_id",
+    "complete": "complete"
+})
+graph_builder.add_conditional_edges("create_class_id", route_after_create_class_id, {
     "complete": "complete"
 })
 

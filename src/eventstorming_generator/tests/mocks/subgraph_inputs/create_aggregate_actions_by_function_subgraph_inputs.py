@@ -1,5 +1,5 @@
 from ....graph import State
-from ....models import InputsModel, OutputsModel, UserInfoModel, InformationModel, EsValueModel, SubgraphsModel, CreateAggregateByFunctionsModel
+from ....models import InputsModel, OutputsModel, UserInfoModel, InformationModel, EsValueModel, SubgraphsModel, CreateAggregateByFunctionsModel, CreateAggregateClassIdByDraftsModel
 
 create_aggregate_actions_by_function_subgraph_inputs = State(
     inputs=InputsModel(
@@ -221,7 +221,8 @@ create_aggregate_actions_by_function_subgraph_inputs = State(
         )
     ),
     subgraphs=SubgraphsModel(
-        createAggregateByFunctionsModel=CreateAggregateByFunctionsModel()
+        createAggregateByFunctionsModel=CreateAggregateByFunctionsModel(),
+        createAggregateClassIdByDraftsModel=CreateAggregateClassIdByDraftsModel()
     ),
     outputs=OutputsModel(
         esValue=EsValueModel(

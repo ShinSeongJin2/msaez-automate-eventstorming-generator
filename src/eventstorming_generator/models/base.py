@@ -7,6 +7,9 @@ class BaseModelWithItem(BaseModel):
     def __setitem__(self, key, value):
         setattr(self, key, value)
     
+    def __contains__(self, key):
+        return key in self.model_dump()
+    
     def keys(self):
         return self.model_dump().keys()
 

@@ -2,7 +2,7 @@ from .inputs import InputsModel, InformationModel, UserInfoModel
 from .outputs import OutputsModel, EsValueModel
 from .action_model import ActionModel
 from .base import BaseModelWithItem
-from .subgraphs import SubgraphsModel, CreateAggregateByFunctionsModel, AggregateGenerationState
+from .subgraphs import SubgraphsModel, CreateAggregateByFunctionsModel, AggregateGenerationState, CreateAggregateClassIdByDraftsModel, ClassIdGenerationState
 from .state import State
 
 __all__ = [
@@ -16,6 +16,8 @@ __all__ = [
     "SubgraphsModel",
     "CreateAggregateByFunctionsModel",
     "AggregateGenerationState",
+    "CreateAggregateClassIdByDraftsModel",
+    "ClassIdGenerationState",
     "State"
 ]
 

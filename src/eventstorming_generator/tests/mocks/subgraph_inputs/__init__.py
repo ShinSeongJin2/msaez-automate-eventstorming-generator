@@ -1,7 +1,9 @@
 from .create_aggregate_actions_by_function_subgraph_inputs import create_aggregate_actions_by_function_subgraph_inputs
+from .create_aggregate_class_id_by_drafts_sub_graph_inputs import create_aggregate_class_id_by_drafts_sub_graph_inputs
 
 __all__ = [
-    "create_aggregate_actions_by_function_subgraph_inputs"
+    "create_aggregate_actions_by_function_subgraph_inputs",
+    "create_aggregate_class_id_by_drafts_sub_graph_inputs"
 ]
 
 

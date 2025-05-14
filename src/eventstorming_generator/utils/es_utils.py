@@ -76,3 +76,38 @@ class EsUtils:
             entities["relations"] = {}
             
         return entities
+
+    @staticmethod
+    def getEventStormingRelationObjectBase(fromObject: Dict[str, Any], toObject: Dict[str, Any]) -> Dict[str, Any]:
+        elementUUIDtoUse = EsUtils.get_uuid()
+        FROM_OBJECT_ID = fromObject["id"] if fromObject["id"] else fromObject["elementView"]["id"]
+        TO_OBJECT_ID = toObject["id"] if toObject["id"] else toObject["elementView"]["id"]
+
+        return {
+            "_type": "org.uengine.modeling.model.Relation",
+            "name": "",
+            "id": elementUUIDtoUse,
+            "sourceElement": fromObject,
+            "targetElement": toObject,
+            "from": FROM_OBJECT_ID,
+            "to": TO_OBJECT_ID,
+            "relationView": {
+                "id": elementUUIDtoUse,
+                "style": '{"arrow-start":"none","arrow-end":"none"}',
+                "from": FROM_OBJECT_ID,
+                "to": TO_OBJECT_ID,
+                "needReconnect": True,
+                "value": "[]"
+            },
+            "hexagonalView": {
+                "_type": "org.uengine.modeling.model.RelationHexagonal",
+                "from": FROM_OBJECT_ID,
+                "id": elementUUIDtoUse,
+                "needReconnect": True,
+                "style": '{"arrow-start":"none","arrow-end":"none"}',
+                "to": TO_OBJECT_ID,
+                "value": None
+            },
+            "sourceMultiplicity": "1",
+            "targetMultiplicity": "1",
+        }

@@ -5,14 +5,18 @@ class JsonUtil:
     def convert_to_json(data: any, indent: int = 4) -> str:
         # 데이터 변환 함수
         def convert_data(item):
-            if hasattr(item, 'model_dump_json'):
-                return json.loads(item.model_dump_json())
-            elif isinstance(item, dict):
-                return {k: convert_data(v) for k, v in item.items()}
-            elif isinstance(item, list):
-                return [convert_data(i) for i in item]
-            else:
-                return item if isinstance(item, (str, int, float, bool, type(None))) else str(item)
+            try :
+                if hasattr(item, 'model_dump_json'):
+                    return json.loads(item.model_dump_json())
+                elif isinstance(item, dict):
+                    return {k: convert_data(v) for k, v in item.items()}
+                elif isinstance(item, list):
+                    return [convert_data(i) for i in item]
+                else:
+                    return item if isinstance(item, (str, int, float, bool, type(None))) else str(item)
+            except Exception as e:
+                print(f"Error converting to json: {e}")
+                return item
         
         # 데이터 타입에 따른 처리
         if isinstance(data, list):
