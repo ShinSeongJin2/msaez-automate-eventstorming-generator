@@ -92,6 +92,62 @@ actions = [
                 }
             ]
         }
+    ),
+
+    ActionModel(
+        objectType="Command",
+        type="create",
+        ids={
+            "boundedContextId": "bc-bookManagement",
+            "aggregateId": "agg-book",
+            "commandId": "cmd-loanBook"
+        },
+        args={
+            "commandName": "LoanBook",
+            "commandAlias": "Loan Book",
+            "api_verb": "POST",
+
+            "properties": [
+                {
+                    "name": "bookId",
+                    "type": "String",
+                    "isKey": True
+                },
+                {
+                    "name": "bookTitle",
+                    "type": "String"
+                }
+            ],
+
+            "outputEventIds": ["evt-bookLoaned"],
+            "actor": "User"
+        }
+    ),
+
+    ActionModel(
+        objectType="Event",
+        type="create",
+        ids={
+            "boundedContextId": "bc-bookManagement",
+            "aggregateId": "agg-book",
+            "eventId": "evt-bookLoaned"
+        },
+        args={
+            "eventName": "BookLoaned",
+            "eventAlias": "Book Loaned",
+
+            "properties": [
+                {
+                    "name": "bookId",
+                    "type": "String",
+                    "isKey": True
+                },
+                {
+                    "name": "bookTitle",
+                    "type": "String"
+                }
+            ]
+        }
     )
 ]
 

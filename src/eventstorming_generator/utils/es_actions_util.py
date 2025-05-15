@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor
+from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, ActorProcessor
 
 class EsActionsUtil:
     @staticmethod
@@ -53,7 +53,8 @@ class EsActionsUtil:
             'Enumeration': 5,
             'Event': 6,
             'Command': 7,
-            'ReadModel': 8
+            'Actor': 8,
+            'ReadModel': 9
         }
         
         return sorted(actions, key=lambda a: priority_map.get(a.objectType, 999))
@@ -80,6 +81,11 @@ class EsActionsUtil:
                         cmd_obj["commandId"] = EsActionsUtil._get_or_create_uuid(
                             cmd_obj["commandId"], id_to_uuid_dic, es_value
                         )
+                        
+            if "relatedCommandId" in action.args:
+                action.args["relatedCommandId"] = EsActionsUtil._get_or_create_uuid(
+                    action.args["relatedCommandId"], id_to_uuid_dic, es_value
+                )
     
     @staticmethod
     def _get_or_create_uuid(id_value: str, id_to_uuid_dic: Dict[str, str], es_value: Dict[str, Any]) -> str:
@@ -117,5 +123,13 @@ class EsActionsUtil:
             )
         elif action.objectType == "Enumeration":
             EnumerationProcessor.get_action_applied_es_value(
+                action, user_info, information, es_value, callbacks
+            )
+        elif action.objectType == "Command":
+            CommandProcessor.get_action_applied_es_value(
+                action, user_info, information, es_value, callbacks
+            )
+        elif action.objectType == "Actor":
+            ActorProcessor.get_action_applied_es_value(
                 action, user_info, information, es_value, callbacks
             )
