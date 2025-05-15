@@ -3,17 +3,17 @@ from .aggregate_processor import AggregateProcessor
 from .value_object_processor import ValueObjectProcessor
 from .enumeration_processor import EnumerationProcessor
 from .command_processor import CommandProcessor
-from .actor_processor import ActorProcessor
 from .event_processor import EventProcessor
-from .policy_processor import PolicyProcessor
+from .actor_processor import ActorProcessor
+from .read_model_processor import ReadModelProcessor
 
 __all__ = [
     'BoundedContextProcessor',
     'AggregateProcessor',
     'ValueObjectProcessor',
-    'EnumerationProcessor', 
+    'EnumerationProcessor',
     'CommandProcessor',
-    'ActorProcessor',
     'EventProcessor',
-    'PolicyProcessor'
+    'ActorProcessor',
+    'ReadModelProcessor',
 ]

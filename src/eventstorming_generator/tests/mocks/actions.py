@@ -151,6 +151,35 @@ actionsCollection = [
             }
         ),
 
+        ActionModel(
+            objectType="ReadModel",
+            type="create",
+            ids={
+                "boundedContextId": "bc-bookManagement",
+                "aggregateId": "agg-book",
+                "readModelId": "rm-bookLoaned"
+            },
+            args={
+                "readModelName": "BookLoaned",
+                "readModelAlias": "Book Loaned",
+                "isMultipleResult": False,
+
+                "queryParameters": [
+                    {
+                        "name": "bookId",
+                        "type": "String",
+                        "isKey": True
+                    },
+                    {
+                        "name": "bookTitle",
+                        "type": "String"
+                    }
+                ],
+                
+                "actor": "User"
+            }
+        ),
+
 
         ActionModel(
             objectType="BoundedContext",

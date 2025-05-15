@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, EventProcessor
+from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, EventProcessor, ReadModelProcessor
 
 class EsActionsUtil:
     @staticmethod
@@ -125,5 +125,9 @@ class EsActionsUtil:
             )
         elif action.objectType == "Event":
             EventProcessor.get_action_applied_es_value(
+                action, user_info, information, es_value, callbacks
+            )
+        elif action.objectType == "ReadModel":
+            ReadModelProcessor.get_action_applied_es_value(
                 action, user_info, information, es_value, callbacks
             )
