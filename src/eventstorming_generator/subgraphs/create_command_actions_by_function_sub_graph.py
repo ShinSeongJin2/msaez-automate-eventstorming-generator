@@ -2,12 +2,11 @@ import os
 from typing import Callable, Dict, Any, List
 from langgraph.graph import StateGraph
 
-from eventstorming_generator.graph import State
-from eventstorming_generator.utils import ESFakeActionsUtil, JsonUtil, ESValueSummarizeWithFilter
-from eventstorming_generator.models import ActionModel, CommandActionGenerationState
-from eventstorming_generator.utils.es_alias_trans_manager import EsAliasTransManager
-from eventstorming_generator.utils.es_actions_util import EsActionsUtil
-from eventstorming_generator.generators.create_command_actions_by_function import CreateCommandActionsByFunction
+from ..utils import ESFakeActionsUtil, JsonUtil, ESValueSummarizeWithFilter
+from ..models import ActionModel, CommandActionGenerationState, State
+from ..utils.es_alias_trans_manager import EsAliasTransManager
+from ..utils.es_actions_util import EsActionsUtil
+from ..generators.create_command_actions_by_function import CreateCommandActionsByFunction
 
 def prepare_command_actions_generation(state: State) -> State:
     """
