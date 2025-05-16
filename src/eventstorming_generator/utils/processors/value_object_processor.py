@@ -1,10 +1,8 @@
 from typing import Dict, Any, List
-from convert_case import camel_case, pascal_case
-from pluralizer import Pluralizer
 
+from ..convert_case_util import CaseConvertUtil
 from ..es_utils import EsUtils
 
-pluralizer = Pluralizer()
 class ValueObjectProcessor:
     @staticmethod
     def get_action_applied_es_value(action: Dict[str, Any], user_info: Dict[str, Any], 
@@ -91,9 +89,9 @@ class ValueObjectProcessor:
             "id": element_uuid_to_use,
             "name": name,
             "displayName": display_name,
-            "namePascalCase": pascal_case(name),
-            "nameCamelCase": camel_case(name),
-            "namePlural": pluralizer.plural(camel_case(name)),
+            "namePascalCase": CaseConvertUtil.pascal_case(name),
+            "nameCamelCase": CaseConvertUtil.camel_case(name),
+            "namePlural": CaseConvertUtil.plural(name),
             "fieldDescriptors": field_descriptors,
             "operations": [],
             "elementView": {
@@ -136,8 +134,8 @@ class ValueObjectProcessor:
                 "isKey": prop.get("isKey", False),
                 "label": f"- {prop.get('name', '')}: {prop.get('type', 'String')}",
                 "name": prop.get("name", ""),
-                "nameCamelCase": camel_case(prop.get("name", "")),
-                "namePascalCase": pascal_case(prop.get("name", "")),
+                "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
+                "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
                 "displayName": prop.get("displayName", ""),
                 "referenceClass": prop.get("referenceClass", None),
                 "isOverrideField": prop.get("isOverrideField", False),

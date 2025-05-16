@@ -1,7 +1,6 @@
 from typing import Dict, Any, List
-from convert_case import camel_case, pascal_case
-from pluralizer import Pluralizer
 
+from ..convert_case_util import CaseConvertUtil
 from ..es_utils import EsUtils
 from .policy_processor import PolicyProcessor
 
@@ -130,8 +129,8 @@ class EventProcessor:
             },
             "name": name,
             "displayName": display_name,
-            "nameCamelCase": camel_case(name),
-            "namePascalCase": pascal_case(name),
+            "nameCamelCase": CaseConvertUtil.camel_case(name),
+            "namePascalCase": CaseConvertUtil.pascal_case(name),
             "namePlural": "",
             "relationCommandInfo": [],
             "relationPolicyInfo": [],
@@ -190,8 +189,8 @@ class EventProcessor:
                     "isCopy": False,
                     "isKey": prop.get("isKey", False),
                     "name": prop.get("name", ""),
-                    "nameCamelCase": camel_case(prop.get("name", "")),
-                    "namePascalCase": pascal_case(prop.get("name", "")),
+                    "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
+                    "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
                     "displayName": prop.get("displayName", ""),
                     "_type": "org.uengine.model.FieldDescriptor"
                 }

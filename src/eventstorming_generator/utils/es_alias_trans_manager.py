@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
-from convert_case import camel_case
 
 from .es_utils import EsUtils
+from .convert_case_util import CaseConvertUtil
 
 class EsAliasTransManager:
     """
@@ -99,7 +99,7 @@ class EsAliasTransManager:
         if element.get("id") in self.uuid_to_alias_dic:
             return self.uuid_to_alias_dic[element["id"]]
         
-        base_alias = f"{get_front_id(element)}-{camel_case(element.get('name', ''))}"
+        base_alias = f"{get_front_id(element)}-{CaseConvertUtil.camel_case(element.get('name', ''))}"
         alias_to_use = base_alias
         i = 2
         

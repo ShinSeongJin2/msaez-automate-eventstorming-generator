@@ -1,12 +1,11 @@
 from typing import Dict, Any, List, Optional, Callable
 from copy import deepcopy
 from langgraph.graph import StateGraph
-from convert_case import camel_case, pascal_case
 import os
 
 from ..models import ClassIdGenerationState, State, ActionModel, EsValueModel
 from ..generators import CreateAggregateClassIdByDrafts
-from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, JsonUtil, EsUtils
+from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, JsonUtil, EsUtils, CaseConvertUtil
 
 
 # 노드 정의: 클래스 ID 생성 준비
@@ -509,7 +508,7 @@ def _modify_actions_for_reference_class_value_object(actions: List[ActionModel],
                 args={
                     "properties": [
                         {
-                            "name": camel_case(action.args["valueObjectName"]),
+                            "name": CaseConvertUtil.camel_case(action.args["valueObjectName"]),
                             "type": action.args["valueObjectName"],
                             "referenceClass": to_aggregate["name"],
                             "isOverrideField": True

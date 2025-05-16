@@ -1,10 +1,7 @@
 from typing import Dict, Any, List
-from convert_case import camel_case, pascal_case
-from pluralizer import Pluralizer
 
+from ..convert_case_util import CaseConvertUtil
 from ..es_utils import EsUtils
-
-pluralizer = Pluralizer()
 
 class PolicyProcessor:
     @staticmethod
@@ -90,9 +87,9 @@ class PolicyProcessor:
             "isSaga": False,
             "name": name,
             "displayName": display_name,
-            "nameCamelCase": camel_case(name),
-            "namePascalCase": pascal_case(name),
-            "namePlural": pluralizer.plural(camel_case(name)),
+            "nameCamelCase": CaseConvertUtil.camel_case(name),
+            "namePascalCase": CaseConvertUtil.pascal_case(name),
+            "namePlural": CaseConvertUtil.plural(name),
             "oldName": "",
             "rotateStatus": False,
             "_type": "org.uengine.modeling.model.Policy"
