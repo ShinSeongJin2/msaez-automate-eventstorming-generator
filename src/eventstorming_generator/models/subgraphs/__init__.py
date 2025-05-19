@@ -2,11 +2,13 @@ from ..base import BaseModelWithItem
 from .create_aggregate_by_functions_model import CreateAggregateByFunctionsModel, AggregateGenerationState
 from .create_aggregate_class_id_by_drafts_model import CreateAggregateClassIdByDraftsModel, ClassIdGenerationState
 from .create_command_actions_by_function_model import CreateCommandActionsByFunctionModel, CommandActionGenerationState
+from .create_policy_actions_by_function_model import CreatePolicyActionsByFunctionModel, PolicyActionGenerationState
 
 class SubgraphsModel(BaseModelWithItem):
     createAggregateByFunctionsModel: CreateAggregateByFunctionsModel = CreateAggregateByFunctionsModel()
     createAggregateClassIdByDraftsModel: CreateAggregateClassIdByDraftsModel = CreateAggregateClassIdByDraftsModel()
     createCommandActionsByFunctionModel: CreateCommandActionsByFunctionModel = CreateCommandActionsByFunctionModel()
+    createPolicyActionsByFunctionModel: CreatePolicyActionsByFunctionModel = CreatePolicyActionsByFunctionModel()
 
 __all__ = [
     "SubgraphsModel",
@@ -15,5 +17,7 @@ __all__ = [
     "CreateAggregateClassIdByDraftsModel",
     "ClassIdGenerationState",
     "CreateCommandActionsByFunctionModel",
-    "CommandActionGenerationState"
+    "CommandActionGenerationState",
+    "CreatePolicyActionsByFunctionModel",
+    "PolicyActionGenerationState"
 ]
