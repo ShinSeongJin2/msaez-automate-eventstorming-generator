@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, START, END
 
 from eventstorming_generator.models import ActionModel, State
 from eventstorming_generator.utils import EsActionsUtil
-from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph, create_command_actions_by_function_subgraph, create_policy_actions_by_function_subgraph
+from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph, create_command_actions_by_function_subgraph, create_policy_actions_by_function_subgraph, create_gwt_generator_by_function_subgraph
 
 
 def create_bounded_contexts(state: State):
@@ -73,6 +73,12 @@ def route_after_create_policy_actions(state: State):
     if state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
         return "complete"
     
+    return "create_gwt"
+
+def route_after_create_gwt(state: State):
+    if state.subgraphs.createGwtGeneratorByFunctionModel.is_failed:
+        return "complete"
+    
     return "complete"
 
 def complete(state: State):
@@ -86,6 +92,7 @@ graph_builder.add_node("create_aggregates", create_aggregate_by_functions_subgra
 graph_builder.add_node("create_class_id", create_aggregate_class_id_by_drafts_subgraph())
 graph_builder.add_node("create_command_actions", create_command_actions_by_function_subgraph())
 graph_builder.add_node("create_policy_actions", create_policy_actions_by_function_subgraph())
+graph_builder.add_node("create_gwt", create_gwt_generator_by_function_subgraph())
 graph_builder.add_node("complete", complete)
 
 graph_builder.add_edge(START, "create_bounded_contexts")
@@ -103,6 +110,10 @@ graph_builder.add_conditional_edges("create_command_actions", route_after_create
     "complete": "complete"
 })
 graph_builder.add_conditional_edges("create_policy_actions", route_after_create_policy_actions, {
+    "create_gwt": "create_gwt",
+    "complete": "complete"
+})
+graph_builder.add_conditional_edges("create_gwt", route_after_create_gwt, {
     "complete": "complete"
 })
 

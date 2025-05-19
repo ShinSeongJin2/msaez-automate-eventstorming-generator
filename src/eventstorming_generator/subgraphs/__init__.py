@@ -2,10 +2,12 @@ from .create_aggregate_by_functions_sub_graph import create_aggregate_by_functio
 from .create_aggregate_class_id_by_drafts_sub_graph import create_aggregate_class_id_by_drafts_subgraph
 from .create_command_actions_by_function_sub_graph import create_command_actions_by_function_subgraph
 from .create_policy_actions_by_function_sub_graph import create_policy_actions_by_function_subgraph
+from .create_gwt_generator_by_function_sub_graph import create_gwt_generator_by_function_subgraph
 
 __all__ = [
     "create_aggregate_by_functions_subgraph",
     "create_aggregate_class_id_by_drafts_subgraph",
     "create_command_actions_by_function_subgraph",
-    "create_policy_actions_by_function_subgraph"
+    "create_policy_actions_by_function_subgraph",
+    "create_gwt_generator_by_function_subgraph"
 ]
