@@ -46,7 +46,7 @@ class BaseGenerator(ABC):
 
         if self.inputs_types_to_check:
             for input_type in self.inputs_types_to_check:
-                if not client.get("inputs").get(input_type):
+                if client.get("inputs").get(input_type) == None:
                     raise ValueError(f"{input_type} is required")
 
         self.set_model(model_name, model_kwargs)
