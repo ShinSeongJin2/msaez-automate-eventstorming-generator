@@ -6,7 +6,7 @@ import os
 def test_create_aggregate_actions_by_function():
     try:
 
-        result = CreateAggregateActionsByFunction(os.getenv("AI_MODEL"), {}, {
+        generator = CreateAggregateActionsByFunction(os.getenv("AI_MODEL"), {}, {
             "preferredLanguage": "Korean",
             "inputs": {
                 "summarizedESValue": create_aggregate_actions_by_function_inputs["summarizedESValue"],
@@ -15,7 +15,10 @@ def test_create_aggregate_actions_by_function():
                 "draftOption": create_aggregate_actions_by_function_inputs["draftOption"],
                 "targetAggregate": create_aggregate_actions_by_function_inputs["targetAggregate"]
             }
-        }).generate()
+        })
+        print(f"토큰 수: {generator.get_token_count()}")
+        
+        result = generator.generate()
         TestUtils.save_dict_to_temp_file(result, "test_create_aggregate_actions_by_function")
 
     except Exception as e:

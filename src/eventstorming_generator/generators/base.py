@@ -194,6 +194,18 @@ The returned format should be as follows.
         if model_kwargs is None: model_kwargs = {}
         self.model = init_chat_model(model_name, **model_kwargs)
     
+    def get_token_count(self) -> int:
+        """
+        현재 구축된 메세지들의 전체 토큰 수 반환
+        """
+        messages = self._get_messages()
+
+        total_contents = ""
+        for message in messages:
+            total_contents += message.content
+        
+        return self.model.get_num_tokens(total_contents)
+    
     # 아래 메서드들은 상속 클래스에서 구현해야 함
     
     @abstractmethod
