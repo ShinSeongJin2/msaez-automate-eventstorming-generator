@@ -1,7 +1,7 @@
-from ..models import EsValueModel
-from ..utils import ESFakeActionsUtil
-from .mocks import actions_for_fake_test
-from .test_utils import TestUtils
+from ...models import EsValueModel
+from ...utils import ESFakeActionsUtil
+from ..mocks import actions_for_fake_test
+from ..test_utils import TestUtils
 
 def test_fake_actions_util():
     try:

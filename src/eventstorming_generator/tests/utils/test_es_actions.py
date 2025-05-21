@@ -1,7 +1,7 @@
-from ..models import EsValueModel
-from ..utils import EsActionsUtil, EsAliasTransManager
-from .mocks import actionsCollection, user_info, information
-from .test_utils import TestUtils
+from ...models import EsValueModel
+from ...utils import EsActionsUtil, EsAliasTransManager
+from ..mocks import actionsCollection, user_info, information
+from ..test_utils import TestUtils
 
 def test_es_value_creation():
     try:
