@@ -3,11 +3,10 @@ from typing import Callable, Dict, Any, List
 from copy import deepcopy
 from langgraph.graph import StateGraph
 
-from ..utils import ESFakeActionsUtil, JsonUtil, ESValueSummarizeWithFilter
-from ..models import ActionModel, PolicyActionGenerationState, State
-from ..utils.es_alias_trans_manager import EsAliasTransManager
-from ..utils.es_actions_util import EsActionsUtil
-from ..generators.create_policy_actions_by_function import CreatePolicyActionsByFunction
+from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
+from ..generators import CreatePolicyActionsByFunction, ESValueSummaryGenerator
+from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil
+from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 
 # 노드 정의: 초안으로부터 Policy 액션 생성 준비
 def prepare_policy_actions_generation(state: State) -> State:
@@ -121,9 +120,25 @@ def generate_policy_actions(state: State) -> State:
     current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
     
     try:
+        # 요약 서브그래프에서 처리 결과를 받아온 경우
+        if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
+            state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
+            state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
+            
+            # 요약된 결과로 상태 업데이트
+            current_gen.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
+            
+            # 요약 상태 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
+            
+            current_gen.is_token_over_limit = False
+
+        # 모델명 가져오기
+        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        
         # Generator 생성
         generator = CreatePolicyActionsByFunction(
-            model_name=os.getenv("AI_MODEL"),
+            model_name=model_name,
             client={
                 "inputs": {
                     "summarizedESValue": current_gen.summarized_es_value,
@@ -133,6 +148,45 @@ def generate_policy_actions(state: State) -> State:
             }
         )
         
+        # 토큰 초과 체크
+        token_count = generator.get_token_count()
+        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        
+        if token_count > model_max_input_limit:  # 토큰 제한 초과시 요약 처리
+            left_generator = CreatePolicyActionsByFunction(
+                model_name=model_name,
+                client={
+                    "inputs": {
+                        "summarizedESValue": {},
+                        "description": current_gen.description
+                    },
+                    "preferredLanguage": state.inputs.preferedLanguage
+                }
+            )
+            
+            left_token_count = model_max_input_limit - left_generator.get_token_count()
+            if left_token_count < 50:
+                state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
+                return state
+            
+            # ES 요약 생성 서브그래프 호출 준비
+            # 요약 생성 모델 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
+                is_processing=False,
+                is_complete=False,
+                context=_build_request_context(current_gen),
+                es_value=state.outputs.esValue.model_dump(),
+                keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateInnerStickers"] + 
+                               ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["detailedProperties"],
+                max_tokens=left_token_count,
+                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
+                token_calc_model_name=state.inputs.llmModel.model_name
+            )
+            
+            # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
+            current_gen.is_token_over_limit = True
+            return state
+
         # Generator 실행 결과
         result = generator.generate()
         result = JsonUtil.convert_to_dict(result)
@@ -264,6 +318,13 @@ def decide_next_step(state: State) -> str:
     if current_gen.generation_complete:
         return "validate"
     
+    # 토큰 초과 상태 확인
+    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+            return "generate"
+        else:
+            return "es_value_summary_generator"
+    
     # 전처리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
     if not current_gen.summarized_es_value:
         return "preprocess"
@@ -363,6 +424,27 @@ def _to_event_update_actions(policies: List[Dict[str, Any]],
     
     return actions
 
+
+# 요약 요청 컨텍스트 빌드 함수
+def _build_request_context(current_gen) -> str:
+    """
+    요약 요청 컨텍스트 빌드
+    """
+    bounded_context_name = current_gen.target_bounded_context.get("name", "")
+    bounded_context_display_name = current_gen.target_bounded_context.get("displayName", bounded_context_name)
+    
+    return f"""Task: Creating policies for {bounded_context_display_name} Bounded Context
+    
+Business Context:
+{current_gen.description}
+
+Focus:
+- Events that should trigger commands in different aggregates or bounded contexts
+- Business rules that require automatic reactions to system events
+- Integration points between different parts of the domain
+- Process flows that need automation through policies"""
+
+
 # 서브그래프 생성 함수
 def create_policy_actions_by_function_subgraph() -> Callable:
     """
@@ -379,6 +461,7 @@ def create_policy_actions_by_function_subgraph() -> Callable:
     subgraph.add_node("postprocess", postprocess_policy_actions_generation)
     subgraph.add_node("validate", validate_policy_actions_generation)
     subgraph.add_node("complete", complete_processing)
+    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
     subgraph.add_conditional_edges(
@@ -413,7 +496,16 @@ def create_policy_actions_by_function_subgraph() -> Callable:
         decide_next_step,
         {
             "postprocess": "postprocess",
-            "validate": "validate"
+            "validate": "validate",
+            "es_value_summary_generator": "es_value_summary_generator"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "es_value_summary_generator",
+        decide_next_step,
+        {
+            "generate": "generate"
         }
     )
     

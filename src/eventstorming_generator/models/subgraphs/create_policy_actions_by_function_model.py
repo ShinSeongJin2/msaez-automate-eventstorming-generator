@@ -14,6 +14,7 @@ class PolicyActionGenerationState(BaseModelWithItem):
     created_actions: List[ActionModel] = []
     generation_complete: bool = False
     subject_text: str = ""
+    is_token_over_limit: bool = False
 
 class CreatePolicyActionsByFunctionModel(BaseModelWithItem):
     """Policy 액션 생성 관련 상태 관리 모델"""

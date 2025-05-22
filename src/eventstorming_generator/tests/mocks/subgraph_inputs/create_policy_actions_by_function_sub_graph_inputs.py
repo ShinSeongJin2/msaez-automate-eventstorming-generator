@@ -1,4 +1,4 @@
-from ....models import State, InputsModel, OutputsModel, UserInfoModel, InformationModel, EsValueModel, SubgraphsModel, CreateAggregateByFunctionsModel, CreateAggregateClassIdByDraftsModel, CreateCommandActionsByFunctionModel, CreatePolicyActionsByFunctionModel
+from ....models import State, InputsModel, OutputsModel, UserInfoModel, InformationModel, EsValueModel, SubgraphsModel, CreateAggregateByFunctionsModel, CreateAggregateClassIdByDraftsModel, CreateCommandActionsByFunctionModel, CreatePolicyActionsByFunctionModel, LLMModel
 
 create_policy_actions_by_function_sub_graph_inputs = State(
     inputs=InputsModel(
@@ -228,6 +228,11 @@ create_policy_actions_by_function_sub_graph_inputs = State(
         ),
         information=InformationModel(
             projectId="My-Project-ID",
+        ),
+        llmModel=LLMModel(
+            model_vendor="openai",
+            model_name="gpt-4.1-2025-04-14",
+#            model_max_input_limit=6685
         )
     ),
     subgraphs=SubgraphsModel(
