@@ -3,9 +3,10 @@ from typing import Callable, Dict, Any, List
 from copy import deepcopy
 from langgraph.graph import StateGraph
 
+from ..models import GWTGenerationState, State, ESValueSummaryGeneratorModel
 from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager
-from ..models import GWTGenerationState, State
 from ..generators import CreateGWTGeneratorByFunction
+from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 
 # 노드 정의: GWT 생성 준비
 def prepare_gwt_generation(state: State) -> State:
@@ -144,6 +145,7 @@ def generate_gwt_generation(state: State) -> State:
     """
     GWT 생성 실행
     - Generator를 통한 GWT 생성
+    - 토큰 초과 확인 및 필요한 경우 요약 요청
     """
     # 현재 처리 중인 작업이 없으면 상태 유지
     if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
@@ -152,9 +154,25 @@ def generate_gwt_generation(state: State) -> State:
     current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
     
     try:
+        # 요약 서브그래프에서 처리 결과를 받아온 경우
+        if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
+            state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
+            state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
+            
+            # 요약된 결과로 상태 업데이트
+            current_gen.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
+            
+            # 요약 상태 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
+            
+            current_gen.is_token_over_limit = False
+
+        # 모델명 가져오기
+        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        
         # Generator 생성
         generator = CreateGWTGeneratorByFunction(
-            model_name=os.getenv("AI_MODEL"),
+            model_name=model_name,
             client={
                 "inputs": {
                     "summarizedESValue": current_gen.summarized_es_value,
@@ -164,6 +182,49 @@ def generate_gwt_generation(state: State) -> State:
                 "preferredLanguage": state.inputs.preferedLanguage
             }
         )
+        
+        # 토큰 초과 체크
+        token_count = generator.get_token_count()
+        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        
+        if token_count > model_max_input_limit:  # 토큰 제한 초과 시 요약 처리
+            # 빈 요약 ES 값을 사용하여 기본 요청 구조의 토큰 수 계산
+            left_generator = CreateGWTGeneratorByFunction(
+                model_name=model_name,
+                client={
+                    "inputs": {
+                        "summarizedESValue": {},
+                        "description": current_gen.description,
+                        "targetCommandAliases": current_gen.target_command_aliases
+                    },
+                    "preferredLanguage": state.inputs.preferedLanguage
+                }
+            )
+
+            left_token_count = model_max_input_limit - left_generator.get_token_count()
+            if left_token_count < 50:
+                # 너무 작은 토큰 수가 남은 경우 실패로 처리
+                state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
+                return state
+
+            # ES 요약 생성 서브그래프 호출 준비
+            # 요약 생성 모델 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
+                is_processing=False,
+                is_complete=False,
+                context=_build_request_context(current_gen),
+                es_value=state.outputs.esValue.model_dump(),
+                keys_to_filter=[],  # GWT 생성에 필요한 필터 설정
+                max_tokens=left_token_count,
+                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
+                token_calc_model_name=state.inputs.llmModel.model_name
+            )
+            
+            # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
+            current_gen.is_token_over_limit = True
+            print(f"[*] 토큰 제한이 초과되어서 이벤트 스토밍 정보를 제한 수치까지 요약해서 전달함")
+            print(f"[*] 요약 이전 Summary 크기: {len(str(current_gen.summarized_es_value))}")
+            return state
         
         # Generator 실행 결과
         result = generator.generate()
@@ -296,6 +357,13 @@ def decide_next_step(state: State) -> str:
     if current_gen.generation_complete:
         return "validate"
     
+    # 토큰 초과 시 요약 서브그래프 실행
+    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+            return "generate"
+        else:
+            return "es_value_summary_generator"
+    
     # 전처리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
     if not current_gen.summarized_es_value:
         return "preprocess"
@@ -306,6 +374,34 @@ def decide_next_step(state: State) -> str:
     
     # 생성된 GWT가 있으면 후처리 단계로 이동
     return "postprocess"
+
+# 요약 요청 컨텍스트 빌드 함수
+def _build_request_context(current_gen: GWTGenerationState) -> str:
+    """
+    요약 요청 컨텍스트 빌드
+    """
+    target_bounded_context_name = current_gen.target_bounded_context.get("name", "")
+    target_aggregate_names = current_gen.target_aggregate_names
+    target_command_aliases = current_gen.target_command_aliases
+    description = current_gen.description
+    
+    return f"""Focus on generating Given-When-Then (GWT) test scenarios for commands in the following context:
+
+Bounded Context: {target_bounded_context_name}
+Target Commands: {', '.join(target_command_aliases)}
+Target Aggregates: {', '.join(target_aggregate_names)}
+
+Business Requirements:
+{description}
+
+Please prioritize elements that are:
+1. Directly related to the target commands and their associated events
+2. Part of the same aggregate as the target commands
+3. Referenced by the target commands or their events
+4. Related to the business requirements provided
+5. Part of the specified bounded context
+
+This context is specifically for generating comprehensive GWT scenarios that validate the behavior and business rules of the target commands."""
 
 # 서브그래프 생성 함수
 def create_gwt_generator_by_function_subgraph() -> Callable:
@@ -323,6 +419,7 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
     subgraph.add_node("postprocess", postprocess_gwt_generation)
     subgraph.add_node("validate", validate_gwt_generation)
     subgraph.add_node("complete", complete_processing)
+    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
     subgraph.add_conditional_edges(
@@ -356,7 +453,17 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         "generate",
         decide_next_step,
         {
-            "postprocess": "postprocess"
+            "postprocess": "postprocess",
+            "generate": "generate",
+            "es_value_summary_generator": "es_value_summary_generator"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "es_value_summary_generator",
+        decide_next_step,
+        {
+            "generate": "generate"
         }
     )
     

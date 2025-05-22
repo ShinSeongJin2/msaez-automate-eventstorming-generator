@@ -15,6 +15,7 @@ class GWTGenerationState(BaseModelWithItem):
     retry_count: int = 0
     commands_to_replace: List[Dict[str, Any]] = []
     generation_complete: bool = False
+    is_token_over_limit: bool = False
 
 class CreateGwtGeneratorByFunctionModel(BaseModelWithItem):
     """GWT 생성 관련 상태 관리 모델"""
