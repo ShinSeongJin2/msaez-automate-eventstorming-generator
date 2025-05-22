@@ -14,6 +14,7 @@ class AggregateGenerationState(BaseModelWithItem):
     retry_count: int = 0
     created_actions: List[ActionModel] = []
     generation_complete: bool = False
+    is_token_over_limit: bool = False
 
 class CreateAggregateByFunctionsModel(BaseModelWithItem):
     """Aggregate 생성 관련 상태 관리 모델"""

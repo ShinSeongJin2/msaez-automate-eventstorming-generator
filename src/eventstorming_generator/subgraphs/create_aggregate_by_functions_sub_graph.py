@@ -6,7 +6,8 @@ import os
 from ..models import AggregateGenerationState, State, ActionModel, EsValueModel
 from ..generators import CreateAggregateActionsByFunction
 from ..utils import EsActionsUtil, ESFakeActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JsonUtil
-
+from ..models.subgraphs import ESValueSummaryGeneratorModel 
+from ..subgraphs.es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 
 # 노드 정의: 초안으로부터 Aggregate 생성 준비
 def prepare_aggregate_generation(state: State) -> State:
@@ -135,11 +136,26 @@ def generate_aggregate(state: State) -> State:
     
     current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
     
-    try :
+    try:
+        # 요약 서브그래프에서 처리 결과를 받아온 경우
+        if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
+            state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
+            state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
+            
+            # 요약된 결과로 상태 업데이트
+            current_gen.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
+            
+            # 요약 상태 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
 
+            current_gen.is_token_over_limit = False
+
+        # 모델명 가져오기
+        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        
         # Generator 생성
         generator = CreateAggregateActionsByFunction(
-            model_name=os.getenv("AI_MODEL"),
+            model_name=model_name,
             client={
                 "inputs": {
                     "summarizedESValue": current_gen.summarized_es_value,
@@ -151,6 +167,47 @@ def generate_aggregate(state: State) -> State:
                 "preferredLanguage": state.inputs.preferedLanguage
             }
         )
+        
+        # 토큰 초과 체크
+        token_count = generator.get_token_count()
+        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        
+        if token_count > model_max_input_limit:  # 80% 이상 사용시 요약 처리 
+            left_generator = CreateAggregateActionsByFunction(
+                model_name=model_name,
+                client={
+                    "inputs": {
+                        "summarizedESValue": {},
+                        "targetBoundedContext": current_gen.target_bounded_context,
+                        "description": current_gen.description,
+                        "draftOption": current_gen.draft_option,
+                        "targetAggregate": current_gen.target_aggregate
+                    },
+                    "preferredLanguage": state.inputs.preferedLanguage
+                }
+            )
+
+            left_token_count = model_max_input_limit - left_generator.get_token_count()
+            if left_token_count < 50:
+                state.subgraphs.createAggregateByFunctionsModel.is_failed = True
+                return state
+
+            # ES 요약 생성 서브그래프 호출 준비
+            # 요약 생성 모델 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
+                is_processing=False,
+                is_complete=False,
+                context=_build_request_context(current_gen),
+                es_value=state.outputs.esValue.model_dump(),
+                keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
+                max_tokens=left_token_count,
+                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
+                token_calc_model_name=state.inputs.llmModel.model_name
+            )
+            
+            # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
+            current_gen.is_token_over_limit = True
+            return state
         
         # Generator 실행 결과
         result = generator.generate()
@@ -165,7 +222,6 @@ def generate_aggregate(state: State) -> State:
             
             actions = aggregate_actions + value_object_actions + enumeration_actions
         
-        
         actionModels = [ActionModel(**action) for action in actions]
         for action in actionModels:
             action.type = "create"
@@ -174,7 +230,7 @@ def generate_aggregate(state: State) -> State:
         current_gen.created_actions = actionModels
     
     except Exception as e:
-        print(e)
+        print(f"Aggregate 생성 오류: {e}")
         current_gen.retry_count += 1
     
     return state
@@ -199,7 +255,7 @@ def postprocess_aggregate_generation(state: State) -> State:
         current_gen.retry_count += 1
         return state
     
-    try :
+    try:
         # ES 값의 복사본 생성
         es_value = EsValueModel(**deepcopy(state.outputs.esValue.model_dump()))
         es_alias_trans_manager = EsAliasTransManager(es_value)
@@ -245,7 +301,7 @@ def postprocess_aggregate_generation(state: State) -> State:
         state.outputs.esValue = updated_es_value
         current_gen.generation_complete = True
     except Exception as e:
-        print(e)
+        print(f"Aggregate 생성 후처리 오류: {e}")
         current_gen.retry_count += 1
         current_gen.created_actions = []
     
@@ -305,6 +361,12 @@ def decide_next_step(state: State) -> str:
     if current_gen.generation_complete:
         return "validate"
     
+    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+            return "generate"
+        else:
+            return "es_value_summary_generator"
+    
     # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
     if not current_gen.summarized_es_value:
         return "preprocess"
@@ -333,6 +395,7 @@ def create_aggregate_by_functions_subgraph() -> Callable:
     subgraph.add_node("postprocess", postprocess_aggregate_generation)
     subgraph.add_node("validate", validate_aggregate_generation)
     subgraph.add_node("complete", complete_processing)
+    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
     subgraph.add_conditional_edges(
@@ -366,7 +429,17 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         "generate",
         decide_next_step,
         {
-            "postprocess": "postprocess"
+            "postprocess": "postprocess",
+            "generate": "generate",
+            "es_value_summary_generator": "es_value_summary_generator"
+        }
+    )
+
+    subgraph.add_conditional_edges(
+        "es_value_summary_generator",
+        decide_next_step,
+        {
+            "generate": "generate"
         }
     )
     
@@ -609,3 +682,43 @@ def _get_only_bounded_context_related_summarized_es_value(es_value: Dict[str, An
                 bc_related_es_value["relations"][relation_id] = relation
     
     return bc_related_es_value
+
+# 요약 요청 컨텍스트 빌드 함수
+def _build_request_context(current_gen) -> str:
+    """
+    요약 요청 컨텍스트 빌드
+    """
+    target_aggregate = current_gen.target_aggregate
+    aggregate_name = target_aggregate.get("name", "")
+    aggregate_alias = target_aggregate.get("alias", "")
+    bounded_context_name = current_gen.target_bounded_context.get("name", "")
+    description = current_gen.description
+    
+    aggregate_structure = current_gen.draft_option[0] if current_gen.draft_option else {}
+    
+    has_value_objects = (
+        "valueObjects" in aggregate_structure and 
+        isinstance(aggregate_structure["valueObjects"], list) and 
+        len(aggregate_structure["valueObjects"]) > 0
+    )
+    
+    has_enumerations = (
+        "enumerations" in aggregate_structure and 
+        isinstance(aggregate_structure["enumerations"], list) and 
+        len(aggregate_structure["enumerations"]) > 0
+    )
+    
+    return f"""Task: Creating {aggregate_name} Aggregate in {bounded_context_name} Bounded Context
+    
+Business Context:
+{description}
+
+Aggregate Structure:
+- Creating new aggregate '{aggregate_name}'{ f" ({aggregate_alias})" if aggregate_alias else "" }
+- Will contain {("value objects" if has_value_objects else "")}{"and " if has_value_objects and has_enumerations else ""}{"enumerations" if has_enumerations else ""}
+- Part of {bounded_context_name} domain
+
+Focus:
+- Elements directly related to {aggregate_name} aggregate
+- Supporting elements within {bounded_context_name} bounded context
+- Essential domain relationships and dependencies"""
