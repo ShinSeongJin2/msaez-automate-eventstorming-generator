@@ -3,9 +3,10 @@ from copy import deepcopy
 from langgraph.graph import StateGraph
 import os
 
-from ..models import ClassIdGenerationState, State, ActionModel, EsValueModel
+from ..models import ClassIdGenerationState, State, ActionModel, EsValueModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateClassIdByDrafts
 from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, JsonUtil, EsUtils, CaseConvertUtil
+from ..subgraphs.es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 
 
 # 노드 정의: 클래스 ID 생성 준비
@@ -133,6 +134,7 @@ def generate_class_id(state: State) -> State:
     """
     클래스 ID 생성 실행
     - Generator를 통한 클래스 ID 액션 생성
+    - 토큰 초과 확인 및 요약 처리
     """
     # 현재 처리 중인 작업이 없으면 상태 유지
     if not state.subgraphs.createAggregateClassIdByDraftsModel.current_generation:
@@ -141,9 +143,25 @@ def generate_class_id(state: State) -> State:
     current_gen = state.subgraphs.createAggregateClassIdByDraftsModel.current_generation
     
     try:
+        # 요약 서브그래프에서 처리 결과를 받아온 경우
+        if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
+            state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
+            state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
+            
+            # 요약된 결과로 상태 업데이트
+            current_gen.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
+            
+            # 요약 상태 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
+
+            current_gen.is_token_over_limit = False
+        
+        # 모델명 가져오기
+        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        
         # Generator 생성
         generator = CreateAggregateClassIdByDrafts(
-            model_name=os.getenv("AI_MODEL"),
+            model_name=model_name,
             client={
                 "inputs": {
                     "summarizedESValue": current_gen.summarized_es_value,
@@ -156,6 +174,48 @@ def generate_class_id(state: State) -> State:
                 "preferredLanguage": state.inputs.preferedLanguage
             }
         )
+        
+        # 토큰 초과 체크
+        token_count = generator.get_token_count()
+        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        
+        if token_count > model_max_input_limit:  # 토큰 제한 초과 시 요약 처리
+            left_generator = CreateAggregateClassIdByDrafts(
+                model_name=model_name,
+                client={
+                    "inputs": {
+                        "summarizedESValue": {},
+                        "draftOption": current_gen.draft_option,
+                        "targetReferences": current_gen.target_references,
+                        "esValue": current_gen.es_value,
+                        "userInfo": state.inputs.userInfo,
+                        "information": state.inputs.information
+                    },
+                    "preferredLanguage": state.inputs.preferedLanguage
+                }
+            )
+
+            left_token_count = model_max_input_limit - left_generator.get_token_count()
+            if left_token_count < 50:
+                state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+                return state
+
+            # ES 요약 생성 서브그래프 호출 준비
+            # 요약 생성 모델 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
+                is_processing=False,
+                is_complete=False,
+                context=_build_request_context(current_gen),
+                es_value=current_gen.es_value,
+                keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
+                max_tokens=left_token_count,
+                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
+                token_calc_model_name=state.inputs.llmModel.model_name
+            )
+            
+            # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
+            current_gen.is_token_over_limit = True
+            return state
         
         # Generator 실행 결과
         result = generator.generate()
@@ -289,6 +349,13 @@ def decide_next_step(state: State) -> str:
     if current_gen.generation_complete:
         return "validate"
     
+    # 토큰 초과로 인한 요약이 필요한 경우 요약 서브그래프로 이동
+    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+            return "generate"
+        else:
+            return "es_value_summary_generator"
+    
     # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
     if not current_gen.summarized_es_value:
         return "preprocess"
@@ -317,6 +384,7 @@ def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
     subgraph.add_node("postprocess", postprocess_class_id_generation)
     subgraph.add_node("validate", validate_class_id_generation)
     subgraph.add_node("complete", complete_processing)
+    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
     subgraph.add_conditional_edges(
@@ -351,7 +419,16 @@ def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
         decide_next_step,
         {
             "postprocess": "postprocess",
-            "validate": "validate"
+            "validate": "validate",
+            "es_value_summary_generator": "es_value_summary_generator"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "es_value_summary_generator",
+        decide_next_step,
+        {
+            "generate": "generate"
         }
     )
     
@@ -389,6 +466,43 @@ def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
         return result
     
     return run_subgraph
+
+
+# 요약 요청 컨텍스트 빌드 함수
+def _build_request_context(current_gen) -> str:
+    """
+    요약 요청 컨텍스트 빌드
+    """
+    # 관계 정보 추출
+    relationships = []
+    for bounded_context_id, bounded_context_data in current_gen.draft_option.items():
+        for structure in bounded_context_data:
+            if structure.get("valueObjects"):
+                for vo in structure.get("valueObjects", []):
+                    if vo.get("referencedAggregate"):
+                        relationships.append({
+                            "from": structure["aggregate"]["name"],
+                            "to": vo["referencedAggregate"]["name"],
+                            "reference": vo["name"]
+                        })
+    
+    # 타겟 참조와 관련된 관계만 필터링
+    relationship_descriptions = [
+        f"{rel['from']} -> {rel['to']} (via {rel['reference']})"
+        for rel in relationships
+        if rel["reference"] in current_gen.target_references
+    ]
+    
+    return f"""Analyzing aggregate relationships for creating ID Classes:
+{chr(10).join(relationship_descriptions)}
+
+Focus on elements related to these aggregates and their relationships, particularly for implementing the following references: {', '.join(current_gen.target_references)}.
+
+Key considerations:
+1. Aggregate relationships and their boundaries
+2. Value objects that implement these relationships
+3. Properties and identifiers needed for references
+4. Related commands and events that might use these references"""
 
 
 # 유틸리티 함수

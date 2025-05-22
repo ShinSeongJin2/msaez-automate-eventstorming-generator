@@ -13,6 +13,7 @@ class ClassIdGenerationState(BaseModelWithItem):
     created_actions: List[ActionModel] = []
     retry_count: int = 0
     generation_complete: bool = False
+    is_token_over_limit: bool = False
 
 class CreateAggregateClassIdByDraftsModel(BaseModelWithItem):
     """Aggregate 클래스 ID 생성 관련 상태 관리 모델"""
