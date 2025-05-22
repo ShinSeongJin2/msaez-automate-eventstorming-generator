@@ -6,7 +6,7 @@ import os
 from ..models import ClassIdGenerationState, State, ActionModel, EsValueModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateClassIdByDrafts
 from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, JsonUtil, EsUtils, CaseConvertUtil
-from ..subgraphs.es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 
 
 # 노드 정의: 클래스 ID 생성 준비

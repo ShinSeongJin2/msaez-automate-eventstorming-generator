@@ -221,7 +221,7 @@ create_aggregate_actions_by_function_subgraph_inputs = State(
         llmModel=LLMModel(
             model_vendor="openai",
             model_name="gpt-4.1-2025-04-14",
-            model_max_input_limit=7800
+#            model_max_input_limit=7800
         )
     ),
     subgraphs=SubgraphsModel(

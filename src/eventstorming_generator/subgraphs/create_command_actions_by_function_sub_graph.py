@@ -2,11 +2,10 @@ import os
 from typing import Callable, Dict, Any, List
 from langgraph.graph import StateGraph
 
-from ..utils import ESFakeActionsUtil, JsonUtil, ESValueSummarizeWithFilter
-from ..models import ActionModel, CommandActionGenerationState, State
-from ..utils.es_alias_trans_manager import EsAliasTransManager
-from ..utils.es_actions_util import EsActionsUtil
-from ..generators.create_command_actions_by_function import CreateCommandActionsByFunction
+from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
+from ..generators import CreateCommandActionsByFunction
+from ..utils import ESFakeActionsUtil, JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil
+from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 
 def prepare_command_actions_generation(state: State) -> State:
     """
@@ -93,44 +92,110 @@ def generate_command_actions(state: State) -> State:
     model = state.subgraphs.createCommandActionsByFunctionModel
     current = model.current_generation
     
-    # Generator 초기화 및 실행
-    generator = CreateCommandActionsByFunction(
-        model_name=os.getenv("AI_MODEL"),
-        client={
-            "inputs": {
-                "summarizedESValue": current.summarized_es_value,
-                "description": current.description,
-                "targetAggregate": current.target_aggregate
-            },
-            "preferredLanguage": state.inputs.preferedLanguage
-        }
-    )
+    try:
+        # 요약 서브그래프에서 처리 결과를 받아온 경우
+        if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
+            state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
+            state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
+            
+            # 요약된 결과로 상태 업데이트
+            current.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
+            
+            # 요약 상태 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
+            
+            current.is_token_over_limit = False
     
-    # Generator 실행
-    result = generator.generate()
-    result = JsonUtil.convert_to_dict(result)
-    
-    # 생성 결과가 있는지 확인
-    if not result or not result.get("result"):
-        # 실패 시 재시도 카운트 증가
+        # 모델명 가져오기
+        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        
+        # Generator 초기화 및 실행
+        generator = CreateCommandActionsByFunction(
+            model_name=model_name,
+            client={
+                "inputs": {
+                    "summarizedESValue": current.summarized_es_value,
+                    "targetBoundedContext": current.target_bounded_context,
+                    "targetAggregate": current.target_aggregate,
+                    "description": current.description,
+                    "esAliasTransManager": current.es_alias_trans_manager
+                },
+                "preferredLanguage": state.inputs.preferedLanguage
+            }
+        )
+        
+        # 토큰 수 계산 및 제한 확인
+        token_count = generator.get_token_count()
+        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        
+        if token_count > model_max_input_limit:  # 토큰 제한 초과시 요약 처리
+            # 축소된 요약 없이 필수 부분만으로 토큰 계산
+            left_generator = CreateCommandActionsByFunction(
+                model_name=model_name,
+                client={
+                    "inputs": {
+                        "summarizedESValue": {},
+                        "targetBoundedContext": current.target_bounded_context,
+                        "targetAggregate": current.target_aggregate,
+                        "description": current.description,
+                        "esAliasTransManager": current.es_alias_trans_manager
+                    },
+                    "preferredLanguage": state.inputs.preferedLanguage
+                }
+            )
+            
+            # 남은 토큰 계산
+            left_token_count = model_max_input_limit - left_generator.get_token_count()
+            if left_token_count < 50:
+                state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
+                return state
+            
+            # ES 요약 생성 서브그래프 호출 준비
+            # 요약 생성 모델 초기화
+            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
+                is_processing=False,
+                is_complete=False,
+                context=_build_request_context(current),
+                es_value=state.outputs.esValue.model_dump(),
+                keys_to_filter=[],
+                max_tokens=left_token_count,
+                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
+                token_calc_model_name=state.inputs.llmModel.model_name
+            )
+            
+            # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
+            current.is_token_over_limit = True
+            return state
+        
+        # Generator 실행
+        result = generator.generate()
+        result = JsonUtil.convert_to_dict(result)
+        
+        # 생성 결과가 있는지 확인
+        if not result or not result.get("result"):
+            # 실패 시 재시도 카운트 증가
+            current.retry_count += 1
+            return state
+        
+        # 생성된 액션 추출
+        actions = []
+        if "commandActions" in result["result"]:
+            actions.extend(result["result"]["commandActions"])
+        if "eventActions" in result["result"]:
+            actions.extend(result["result"]["eventActions"])
+        if "readModelActions" in result["result"]:
+            actions.extend(result["result"]["readModelActions"])
+        
+        # 액션 객체 변환
+        actionModels = [ActionModel(**action) for action in actions]
+        for action in actionModels:
+            action.type = "create"
+        
+        current.created_actions = actionModels
+    except Exception as e:
+        print(f"Command 액션 생성 오류: {e}")
         current.retry_count += 1
-        return state
     
-    # 생성된 액션 추출
-    actions = []
-    if "commandActions" in result["result"]:
-        actions.extend(result["result"]["commandActions"])
-    if "eventActions" in result["result"]:
-        actions.extend(result["result"]["eventActions"])
-    if "readModelActions" in result["result"]:
-        actions.extend(result["result"]["readModelActions"])
-    
-    # 액션 객체 변환
-    actionModels  = [ActionModel(**action) for action in actions]
-    for action in actionModels:
-        action.type = "create"
-    
-    current.created_actions = actionModels
     return state
 
 def postprocess_command_actions_generation(state: State) -> State:
@@ -239,6 +304,13 @@ def decide_next_step(state: State) -> str:
     if current_gen.retry_count > state.subgraphs.createCommandActionsByFunctionModel.max_retry_count:
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
         return "complete"
+    
+    # 토큰 초과시 요약 서브그래프로 이동
+    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+            return "generate"
+        else:
+            return "es_value_summary_generator"
 
     # 현재 작업이 완료되었으면 검증 단계로 이동
     if current_gen.generation_complete:
@@ -385,6 +457,33 @@ def add_default_properties(actions: List[ActionModel]) -> List[ActionModel]:
     # 여기서는 간단히 구현하고 필요시 확장
     return actions
 
+def _build_request_context(current_gen) -> str:
+    """
+    요약 요청 컨텍스트 빌드
+    """
+    aggregate_name = current_gen.target_aggregate.get("name", "")
+    aggregate_display_name = current_gen.target_aggregate.get("displayName", aggregate_name)
+    bounded_context_name = current_gen.target_bounded_context.get("name", "")
+    description = current_gen.description
+    
+    return f"""Creating commands, events, and read models for the following context:
+- Target Bounded Context: {bounded_context_name}
+- Target Aggregate: {aggregate_name}{ f" ({aggregate_display_name})" if aggregate_display_name and aggregate_display_name != aggregate_name else "" }
+- Business Requirements
+{description}
+
+Focus on elements that are:
+1. Directly related to the {aggregate_name} aggregate
+2. Referenced by or dependent on the target aggregate
+3. Essential for implementing the specified business requirements
+
+This context is specifically for generating:
+- Commands to handle business operations
+- Events to record state changes
+- Read models for query operations
+
+All within the scope of {bounded_context_name} bounded context and {aggregate_name} aggregate."""
+
 # 서브그래프 생성 함수
 def create_command_actions_by_function_subgraph() -> Callable:
     """
@@ -401,6 +500,7 @@ def create_command_actions_by_function_subgraph() -> Callable:
     subgraph.add_node("postprocess", postprocess_command_actions_generation)
     subgraph.add_node("validate", validate_command_actions_generation)
     subgraph.add_node("complete", complete_processing)
+    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
     subgraph.add_conditional_edges(
@@ -434,7 +534,17 @@ def create_command_actions_by_function_subgraph() -> Callable:
         "generate",
         decide_next_step,
         {
-            "postprocess": "postprocess"
+            "postprocess": "postprocess",
+            "generate": "generate",
+            "es_value_summary_generator": "es_value_summary_generator"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "es_value_summary_generator",
+        decide_next_step,
+        {
+            "generate": "generate"
         }
     )
     
