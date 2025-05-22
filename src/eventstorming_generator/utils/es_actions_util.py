@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
 from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, EventProcessor, ReadModelProcessor
+from .es_restore_actions_util import EsRestoreActionsUtil
 
 class EsActionsUtil:
     @staticmethod
@@ -22,7 +23,9 @@ class EsActionsUtil:
         """
             
         es_dict = es_value.model_dump()
-            
+        
+        EsRestoreActionsUtil.restoreActions(actions, es_dict)
+
         sorted_actions = EsActionsUtil._get_sorted_actions(actions)
         EsActionsUtil._ids_to_uuids(sorted_actions, es_dict)
         
