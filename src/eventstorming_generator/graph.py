@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, START, END
+from typing import Dict, Any
 
 from eventstorming_generator.models import ActionModel, State
 from eventstorming_generator.utils import EsActionsUtil, JobUtil, LogUtil
@@ -13,6 +14,8 @@ def validate_input(state: State):
 
 def create_bounded_contexts(state: State):
     LogUtil.add_info_log(state, "Creating bounded contexts...")
+    state.outputs.totalProgressCount = get_total_global_progress_count(state.inputs.selectedDraftOptions)
+    state.outputs.currentProgressCount = 0
     JobUtil.new_job_to_firebase(state)
 
     try :
@@ -65,6 +68,7 @@ def create_bounded_contexts(state: State):
         return "complete"
 
     LogUtil.add_info_log(state, "Creating bounded contexts completed")
+    state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
     JobUtil.update_job_to_firebase(state)
     return state
 
@@ -104,6 +108,47 @@ def complete(state: State):
 
     return state
 
+def get_total_global_progress_count(draftOptions: Dict[str, Any]):
+    boundedContextCount = len(draftOptions)
+
+    aggregateCount = 0
+    for context in draftOptions.values():
+        aggregateCount += len(context.get("structure", []))
+
+    aggregateClassIDCount = _get_total_class_id_progress_count(draftOptions)
+
+    return boundedContextCount + aggregateCount*3 + aggregateClassIDCount + 1
+
+def _get_total_class_id_progress_count(draft_options: Dict[str, Any]):
+    total_progress_count = 0
+
+    draft_options = {k: v.get("structure", []) for k, v in draft_options.items()}
+ 
+    # 참조 관계 추출
+    references = []
+    for bounded_context_id, bounded_context_data in draft_options.items():
+        for structure in bounded_context_data:
+            for vo in structure.get("valueObjects", []):
+                if "referencedAggregate" in vo:
+                    references.append({
+                        "fromAggregate": structure["aggregate"]["name"],
+                        "toAggregate": vo["referencedAggregate"]["name"],
+                        "referenceName": vo["name"]
+                    })
+    
+    # 처리할 참조 목록 초기화
+    if references:
+        processed_pairs = set()
+        
+        for ref in references:
+            # 양방향 참조를 한 쌍으로 처리하기 위해 정렬된 키 생성
+            pair_key = "-".join(sorted([ref["fromAggregate"], ref["toAggregate"]]))
+            
+            if pair_key not in processed_pairs:
+                processed_pairs.add(pair_key)
+                total_progress_count += 1
+    
+    return total_progress_count
 
 graph_builder = StateGraph(State)
 
