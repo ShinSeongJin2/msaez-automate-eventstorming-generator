@@ -4,5 +4,6 @@
 .local
 .temp
 .cache
+.auth
 **/__pycache__/**
 **/*.egg-info
