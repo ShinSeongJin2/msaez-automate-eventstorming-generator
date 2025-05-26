@@ -1,16 +1,32 @@
 import firebase_admin
 from firebase_admin import credentials, db
 from typing import Dict, Any, Optional
+import os
 
-class FireBaseSystem:
-    def __init__(self, service_account_path: str, database_url: str):
+class FirebaseSystem:
+    _instance: Optional['FirebaseSystem'] = None
+    _initialized: bool = False
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def __init__(self, service_account_path: str = None, database_url: str = None):
         """
-        Firebase 시스템 초기화
+        Firebase 시스템 초기화 (싱글톤)
         
         Args:
             service_account_path (str): Firebase 서비스 계정 JSON 키 파일 경로
             database_url (str): Firebase Realtime Database URL
         """
+        # 이미 초기화된 경우 중복 초기화 방지
+        if self._initialized:
+            return
+            
+        if service_account_path is None or database_url is None:
+            raise ValueError("service_account_path와 database_url은 필수 매개변수입니다.")
+            
         try:
             # Firebase 앱이 이미 초기화되었는지 확인
             firebase_admin.get_app()
@@ -22,6 +38,38 @@ class FireBaseSystem:
             })
         
         self.database = db
+        self._initialized = True
+    
+    @classmethod
+    def initialize(cls, service_account_path: str, database_url: str) -> 'FirebaseSystem':
+        """
+        싱글톤 인스턴스 초기화
+        
+        Args:
+            service_account_path (str): Firebase 서비스 계정 JSON 키 파일 경로
+            database_url (str): Firebase Realtime Database URL
+            
+        Returns:
+            FirebaseSystem: 초기화된 싱글톤 인스턴스
+        """
+        if cls._instance is None or not cls._instance._initialized:
+            cls._instance = cls(service_account_path, database_url)
+        return cls._instance
+    
+    @classmethod
+    def instance(cls) -> 'FirebaseSystem':
+        """
+        싱글톤 인스턴스 반환
+        
+        Returns:
+            FirebaseSystem: 초기화된 싱글톤 인스턴스
+            
+        Raises:
+            RuntimeError: 인스턴스가 초기화되지 않은 경우
+        """
+        if cls._instance is None or not cls._instance._initialized:
+            raise RuntimeError("FirebaseSystem 초기화되지 않았습니다. 먼저 FirebaseSystem.initialize()를 호출하세요.")
+        return cls._instance
     
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
         """
@@ -35,6 +83,8 @@ class FireBaseSystem:
             bool: 성공 여부
         """
         try:
+            print(f"데이터 업로드: {path} {data}")
+            print(f"데이터 업로드: {self.database}")
             ref = self.database.reference(path)
             ref.set(data)
             return True
@@ -57,7 +107,6 @@ class FireBaseSystem:
             data = ref.get()
             
             if data is None:
-                print(f"경로 '{path}'에 데이터가 없습니다.")
                 return None
             
             return data
@@ -79,26 +128,12 @@ class FireBaseSystem:
         try:
             ref = self.database.reference(path)
             ref.update(data)
-            print(f"데이터가 성공적으로 업데이트되었습니다. 경로: {path}")
             return True
         except Exception as e:
             print(f"데이터 업데이트 실패: {str(e)}")
             return False
 
-# Firebase 시스템 초기화
-# firebase_system = FireBaseSystem(
-#    service_account_path=os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"),
-#    database_url=os.getenv("FIREBASE_DATABASE_URL")
-#)
-
-# firebase_system.set_data(
-#    "jobs/eventstorming_generator/1", 
-#    {"state": {"isCompleted": False}}
-#)
-
-# print(firebase_system.get_data("jobs/eventstorming_generator/1"))
-
-# firebase_system.update_data(
-#    "jobs/eventstorming_generator/1",
-#    {"state": {"isCompleted": True}}
-#)
+FirebaseSystem.initialize(
+    service_account_path=os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"),
+    database_url=os.getenv("FIREBASE_DATABASE_URL")
+)

@@ -6,6 +6,8 @@ from .es_value_summarize_with_filter import ESValueSummarizeWithFilter
 from .json_util import JsonUtil
 from .token_counter import TokenCounter
 from .convert_case_util import CaseConvertUtil
+from .job_util import JobUtil
+from .log_util import LogUtil
 
 __all__ = [
     "EsUtils",
@@ -15,5 +17,7 @@ __all__ = [
     "ESValueSummarizeWithFilter",
     "JsonUtil",
     "TokenCounter",
-    "CaseConvertUtil"
+    "CaseConvertUtil",
+    "JobUtil",
+    "LogUtil"
 ]

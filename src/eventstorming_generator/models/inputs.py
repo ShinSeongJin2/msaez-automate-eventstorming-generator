@@ -24,3 +24,4 @@ class InputsModel(BaseModelWithItem):
     information: InformationModel = None
     llmModel: LLMModel = LLMModel()
     preferedLanguage: str = "Korean"
+    jobId: str = ""

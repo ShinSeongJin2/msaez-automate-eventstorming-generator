@@ -1,5 +1,5 @@
-from .fire_base_system import FireBaseSystem
+from .firebase_system import FirebaseSystem
 
 __all__ = [
-    "FireBaseSystem"
+    "FirebaseSystem"
 ]

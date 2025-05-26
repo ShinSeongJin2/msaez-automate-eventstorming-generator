@@ -1,5 +1,5 @@
 from ...graph import State
-from ...models import InputsModel, OutputsModel, UserInfoModel, InformationModel, EsValueModel, SubgraphsModel, CreateAggregateByFunctionsModel
+from ...models import InputsModel, UserInfoModel, InformationModel
 
 input_state = State(
     inputs=InputsModel(
@@ -218,16 +218,9 @@ input_state = State(
         ),
         information=InformationModel(
             projectId="My-Project-ID",
-        )
-    ),
-    subgraphs=SubgraphsModel(
-        createAggregateByFunctionsModel=CreateAggregateByFunctionsModel()
-    ),
-    outputs=OutputsModel(
-        esValue=EsValueModel(
-            elements={},
-            relations={}
-        )
+        ),
+        preferedLanguage="Korean",
+        jobId="ce37f9ce-8f9d-4c6f-33a6-71b9dbe7c6bb"
     )
 )
 
