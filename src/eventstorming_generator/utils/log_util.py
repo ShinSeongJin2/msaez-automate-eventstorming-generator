@@ -1,8 +1,6 @@
-from typing import List
 import traceback
 
-from eventstorming_generator.models.outputs import LogModel
-from eventstorming_generator.models import State
+from eventstorming_generator.models import State, LogModel
 
 class LogUtil:
     @staticmethod

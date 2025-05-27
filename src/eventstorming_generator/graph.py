@@ -16,7 +16,7 @@ def create_bounded_contexts(state: State):
     LogUtil.add_info_log(state, "Creating bounded contexts...")
     state.outputs.totalProgressCount = get_total_global_progress_count(state.inputs.selectedDraftOptions)
     state.outputs.currentProgressCount = 0
-    JobUtil.new_job_to_firebase(state)
+    JobUtil.new_job_to_firebase_fire_and_forget(state)
 
     try :
         # 모든 BoundedContext들에 대해 반복
@@ -69,7 +69,7 @@ def create_bounded_contexts(state: State):
 
     LogUtil.add_info_log(state, "Creating bounded contexts completed")
     state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
-    JobUtil.update_job_to_firebase(state)
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def route_after_create_aggregates(state: State):
@@ -104,7 +104,7 @@ def route_after_create_gwt(state: State):
 
 def complete(state: State):
     state.outputs.isCompleted = True
-    JobUtil.update_job_to_firebase(state)
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
 
     return state
 
