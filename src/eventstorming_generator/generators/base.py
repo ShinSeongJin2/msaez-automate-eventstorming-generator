@@ -5,6 +5,7 @@ from langchain.schema import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langchain_community.cache import SQLiteCache
 from langchain_core.globals import set_llm_cache
 import os
+import uuid
 
 from ..utils import JsonUtil
 
@@ -131,7 +132,7 @@ The returned format should be as follows.
 {after_json_format.strip()}
 """
     
-    def generate(self) -> Any:
+    def generate(self, bypass_cache: bool = False) -> Any:
         """
         LLM을 사용하여 생성 실행
         
@@ -144,20 +145,23 @@ The returned format should be as follows.
         if not self.model:
             raise ValueError("모델이 설정되지 않았습니다. 생성기를 초기화할 때 model 파라미터를 전달하거나 set_model()을 호출하세요.")
         
-        messages = self._get_messages()
+        messages = self._get_messages(bypass_cache)
         ai_message = self.model.invoke(messages)
         if ai_message.response_metadata["finish_reason"] == "stop":
             return ai_message.content
         else:
             raise ValueError("예측하지 못한 Base Generator 종료 이유: " + ai_message.response_metadata["finish_reason"])
 
-    def _get_messages(self) -> List[BaseMessage]:
+    def _get_messages(self, bypass_cache: bool = False) -> List[BaseMessage]:
         promptsToBuild = self._get_prompts_to_build()
 
         messages = []
         
         if promptsToBuild["system"]:
-            messages.append(SystemMessage(content=promptsToBuild["system"]))
+            system_content = promptsToBuild["system"]
+            if bypass_cache:
+                system_content += f"\n<!-- Cache bypass: {uuid.uuid4().hex[:8]} -->"
+            messages.append(SystemMessage(content=system_content))
 
         for i in range(len(promptsToBuild["user"])):
             messages.append(HumanMessage(content=promptsToBuild["user"][i]))
