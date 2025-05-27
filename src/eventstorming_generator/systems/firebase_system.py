@@ -83,8 +83,6 @@ class FirebaseSystem:
             bool: 성공 여부
         """
         try:
-            print(f"데이터 업로드: {path} {data}")
-            print(f"데이터 업로드: {self.database}")
             ref = self.database.reference(path)
             ref.set(data)
             return True
