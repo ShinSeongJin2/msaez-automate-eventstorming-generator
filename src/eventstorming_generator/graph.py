@@ -161,7 +161,8 @@ graph_builder.add_node("create_policy_actions", create_policy_actions_by_functio
 graph_builder.add_node("create_gwt", create_gwt_generator_by_function_subgraph())
 graph_builder.add_node("complete", complete)
 
-graph_builder.add_edge(START, "create_bounded_contexts")
+graph_builder.add_edge(START, "validate_input")
+graph_builder.add_edge("validate_input", "create_bounded_contexts")
 graph_builder.add_edge("create_bounded_contexts", "create_aggregates")
 graph_builder.add_conditional_edges("create_aggregates", route_after_create_aggregates, {
     "create_class_id": "create_class_id",

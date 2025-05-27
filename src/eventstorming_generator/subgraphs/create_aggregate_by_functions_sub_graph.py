@@ -24,8 +24,6 @@ def prepare_aggregate_generation(state: State) -> State:
             return state
         
         # 초안 데이터 설정
-        draft_options = state.inputs.selectedDraftOptions
-        state.subgraphs.createAggregateByFunctionsModel.draft_options = draft_options
         state.subgraphs.createAggregateByFunctionsModel.is_processing = True
         state.subgraphs.createAggregateByFunctionsModel.all_complete = False
         
@@ -33,7 +31,7 @@ def prepare_aggregate_generation(state: State) -> State:
         pending_generations = []
         
         # 각 Bounded Context별로 처리할 Aggregate 추출
-        for bounded_context_name, bounded_context_data in draft_options.items():
+        for bounded_context_name, bounded_context_data in state.inputs.selectedDraftOptions.items():
             target_bounded_context = {"name": bounded_context_name}
             if "boundedContext" in bounded_context_data:
                 target_bounded_context.update(bounded_context_data["boundedContext"])
@@ -218,7 +216,7 @@ def generate_aggregate(state: State) -> State:
         token_count = generator.get_token_count()
         model_max_input_limit = state.inputs.llmModel.model_max_input_limit
         
-        if token_count > model_max_input_limit:  # 80% 이상 사용시 요약 처리 
+        if token_count > model_max_input_limit:
             LogUtil.add_info_log(state, f"Token count ({token_count}) exceeds limit ({model_max_input_limit}), requesting ES value summary")
             
             left_generator = CreateAggregateActionsByFunction(
@@ -248,7 +246,6 @@ def generate_aggregate(state: State) -> State:
                 is_processing=False,
                 is_complete=False,
                 context=_build_request_context(current_gen),
-                es_value=state.outputs.esValue.model_dump(),
                 keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
                 max_tokens=left_token_count,
                 token_calc_model_vendor=state.inputs.llmModel.model_vendor,
@@ -401,6 +398,14 @@ def validate_aggregate_generation(state: State) -> State:
         
         # 생성 완료 확인
         if current_gen.generation_complete:
+            # 변수 정리
+            current_gen.target_bounded_context = {}
+            current_gen.target_aggregate = {}
+            current_gen.description = ""
+            current_gen.draft_option = []
+            current_gen.summarized_es_value = {}
+            current_gen.created_actions = []
+
             # 완료된 작업을 완료 목록에 추가
             state.subgraphs.createAggregateByFunctionsModel.completed_generations.append(current_gen)
             # 현재 작업 초기화
@@ -434,7 +439,7 @@ def complete_processing(state: State) -> State:
             LogUtil.add_error_log(state, f"Aggregate generation process completed with failures. {completed_count} aggregates processed.")
         else:
             LogUtil.add_info_log(state, f"Aggregate generation process completed successfully. {completed_count} aggregates processed.")
-        
+
         JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
@@ -560,6 +565,7 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         decide_next_step,
         {
             "validate": "validate",
+            "generate": "generate",
             "complete": "complete"
         }
     )

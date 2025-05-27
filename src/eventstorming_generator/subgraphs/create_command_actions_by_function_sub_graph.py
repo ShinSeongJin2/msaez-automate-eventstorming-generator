@@ -90,7 +90,7 @@ def generate_command_actions(state: State) -> State:
     지정된 Aggregate에 대한 Command 액션 생성 실행
     """
     model = state.subgraphs.createCommandActionsByFunctionModel
-    current = model.current_generation
+    current_gen = model.current_generation
     
     try:
         # 요약 서브그래프에서 처리 결과를 받아온 경우
@@ -99,12 +99,12 @@ def generate_command_actions(state: State) -> State:
             state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
             
             # 요약된 결과로 상태 업데이트
-            current.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
+            current_gen.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
             
             # 요약 상태 초기화
             state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
             
-            current.is_token_over_limit = False
+            current_gen.is_token_over_limit = False
     
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
@@ -114,11 +114,11 @@ def generate_command_actions(state: State) -> State:
             model_name=model_name,
             client={
                 "inputs": {
-                    "summarizedESValue": current.summarized_es_value,
-                    "targetBoundedContext": current.target_bounded_context,
-                    "targetAggregate": current.target_aggregate,
-                    "description": current.description,
-                    "esAliasTransManager": current.es_alias_trans_manager
+                    "summarizedESValue": current_gen.summarized_es_value,
+                    "targetBoundedContext": current_gen.target_bounded_context,
+                    "targetAggregate": current_gen.target_aggregate,
+                    "description": current_gen.description,
+                    "esAliasTransManager": current_gen.es_alias_trans_manager
                 },
                 "preferredLanguage": state.inputs.preferedLanguage
             }
@@ -135,10 +135,10 @@ def generate_command_actions(state: State) -> State:
                 client={
                     "inputs": {
                         "summarizedESValue": {},
-                        "targetBoundedContext": current.target_bounded_context,
-                        "targetAggregate": current.target_aggregate,
-                        "description": current.description,
-                        "esAliasTransManager": current.es_alias_trans_manager
+                        "targetBoundedContext": current_gen.target_bounded_context,
+                        "targetAggregate": current_gen.target_aggregate,
+                        "description": current_gen.description,
+                        "esAliasTransManager": current_gen.es_alias_trans_manager
                     },
                     "preferredLanguage": state.inputs.preferedLanguage
                 }
@@ -155,8 +155,7 @@ def generate_command_actions(state: State) -> State:
             state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
                 is_processing=False,
                 is_complete=False,
-                context=_build_request_context(current),
-                es_value=state.outputs.esValue.model_dump(),
+                context=_build_request_context(current_gen),
                 keys_to_filter=[],
                 max_tokens=left_token_count,
                 token_calc_model_vendor=state.inputs.llmModel.model_vendor,
@@ -164,17 +163,17 @@ def generate_command_actions(state: State) -> State:
             )
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
-            current.is_token_over_limit = True
+            current_gen.is_token_over_limit = True
             return state
         
         # Generator 실행
-        result = generator.generate()
+        result = generator.generate(current_gen.retry_count > 0)
         result = JsonUtil.convert_to_dict(result)
         
         # 생성 결과가 있는지 확인
         if not result or not result.get("result"):
             # 실패 시 재시도 카운트 증가
-            current.retry_count += 1
+            current_gen.retry_count += 1
             return state
         
         # 생성된 액션 추출
@@ -191,10 +190,10 @@ def generate_command_actions(state: State) -> State:
         for action in actionModels:
             action.type = "create"
         
-        current.created_actions = actionModels
+        current_gen.created_actions = actionModels
     except Exception as e:
         print(f"Command 액션 생성 오류: {e}")
-        current.retry_count += 1
+        current_gen.retry_count += 1
     
     return state
 
@@ -275,6 +274,7 @@ def validate_command_actions_generation(state: State) -> State:
         state.subgraphs.createCommandActionsByFunctionModel.completed_generations.append(current_gen)
         # 현재 작업 초기화
         state.subgraphs.createCommandActionsByFunctionModel.current_generation = None
+        state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
 
     return state
 
@@ -292,6 +292,9 @@ def decide_next_step(state: State) -> str:
     """
     다음 단계 결정을 위한 라우팅 함수
     """
+    if state.subgraphs.createCommandActionsByFunctionModel.is_failed:
+        return "complete"
+
     # 모든 작업이 완료되었으면 완료 상태로 이동
     if state.subgraphs.createCommandActionsByFunctionModel.all_complete:
         return "complete"
@@ -326,6 +329,110 @@ def decide_next_step(state: State) -> str:
     
     # 생성된 액션이 있으면 후처리 단계로 이동
     return "postprocess"
+
+# 서브그래프 생성 함수
+def create_command_actions_by_function_subgraph() -> Callable:
+    """
+    Command 액션 생성 서브그래프 생성
+    """
+    # 서브그래프 정의
+    subgraph = StateGraph(State)
+    
+    # 노드 추가
+    subgraph.add_node("prepare", prepare_command_actions_generation)
+    subgraph.add_node("select_next", select_next_command_actions)
+    subgraph.add_node("preprocess", preprocess_command_actions_generation)
+    subgraph.add_node("generate", generate_command_actions)
+    subgraph.add_node("postprocess", postprocess_command_actions_generation)
+    subgraph.add_node("validate", validate_command_actions_generation)
+    subgraph.add_node("complete", complete_processing)
+    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
+    
+    # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(
+        "prepare",
+        decide_next_step,
+        {
+            "select_next": "select_next",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "select_next",
+        decide_next_step,
+        {
+            "select_next": "select_next",
+            "preprocess": "preprocess",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "preprocess",
+        decide_next_step,
+        {
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "generate",
+        decide_next_step,
+        {
+            "postprocess": "postprocess",
+            "generate": "generate",
+            "es_value_summary_generator": "es_value_summary_generator",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "es_value_summary_generator",
+        decide_next_step,
+        {
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "postprocess",
+        decide_next_step,
+        {
+            "validate": "validate",
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "validate",
+        decide_next_step,
+        {
+            "select_next": "select_next",
+            "preprocess": "preprocess",
+            "complete": "complete"
+        }
+    )
+    
+    # 시작 및 종료 설정
+    subgraph.set_entry_point("prepare")
+    
+    # 컴파일된 그래프 반환
+    compiled_subgraph = subgraph.compile()
+    
+    # 서브그래프 실행 함수
+    def run_subgraph(state: State) -> State:
+        """
+        서브그래프 실행 함수
+        """
+        # 서브그래프 실행
+        result = State(**compiled_subgraph.invoke(state))
+        return result
+    
+    return run_subgraph
 
 # 유틸리티 함수들
 def filter_valid_actions(actions: List[ActionModel]) -> List[ActionModel]:
@@ -483,102 +590,3 @@ This context is specifically for generating:
 - Read models for query operations
 
 All within the scope of {bounded_context_name} bounded context and {aggregate_name} aggregate."""
-
-# 서브그래프 생성 함수
-def create_command_actions_by_function_subgraph() -> Callable:
-    """
-    Command 액션 생성 서브그래프 생성
-    """
-    # 서브그래프 정의
-    subgraph = StateGraph(State)
-    
-    # 노드 추가
-    subgraph.add_node("prepare", prepare_command_actions_generation)
-    subgraph.add_node("select_next", select_next_command_actions)
-    subgraph.add_node("preprocess", preprocess_command_actions_generation)
-    subgraph.add_node("generate", generate_command_actions)
-    subgraph.add_node("postprocess", postprocess_command_actions_generation)
-    subgraph.add_node("validate", validate_command_actions_generation)
-    subgraph.add_node("complete", complete_processing)
-    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
-    
-    # 엣지 추가 (라우팅)
-    subgraph.add_conditional_edges(
-        "prepare",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "select_next",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "preprocess",
-        decide_next_step,
-        {
-            "generate": "generate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "generate",
-        decide_next_step,
-        {
-            "postprocess": "postprocess",
-            "generate": "generate",
-            "es_value_summary_generator": "es_value_summary_generator"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "es_value_summary_generator",
-        decide_next_step,
-        {
-            "generate": "generate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "postprocess",
-        decide_next_step,
-        {
-            "validate": "validate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "validate",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
-            "complete": "complete"
-        }
-    )
-    
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
-    
-    # 컴파일된 그래프 반환
-    compiled_subgraph = subgraph.compile()
-    
-    # 서브그래프 실행 함수
-    def run_subgraph(state: State) -> State:
-        """
-        서브그래프 실행 함수
-        """
-        # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
-        return result
-    
-    return run_subgraph

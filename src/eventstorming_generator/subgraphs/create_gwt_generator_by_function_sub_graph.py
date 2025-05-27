@@ -213,7 +213,6 @@ def generate_gwt_generation(state: State) -> State:
                 is_processing=False,
                 is_complete=False,
                 context=_build_request_context(current_gen),
-                es_value=state.outputs.esValue.model_dump(),
                 keys_to_filter=[],  # GWT 생성에 필요한 필터 설정
                 max_tokens=left_token_count,
                 token_calc_model_vendor=state.inputs.llmModel.model_vendor,
@@ -227,7 +226,7 @@ def generate_gwt_generation(state: State) -> State:
             return state
         
         # Generator 실행 결과
-        result = generator.generate()
+        result = generator.generate(current_gen.retry_count > 0)
         result = JsonUtil.convert_to_dict(result)
         
         # 결과에서 GWT 추출 및 적용
@@ -319,6 +318,8 @@ def validate_gwt_generation(state: State) -> State:
         state.subgraphs.createGwtGeneratorByFunctionModel.completed_generations.append(current_gen)
         # 현재 작업 초기화
         state.subgraphs.createGwtGeneratorByFunctionModel.current_generation = None
+        state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
+
     elif current_gen.retry_count > state.subgraphs.createGwtGeneratorByFunctionModel.max_retry_count:
         # 최대 재시도 횟수 초과 시 실패로 처리하고 다음 작업으로 이동
         state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
@@ -338,6 +339,9 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
+    if state.subgraphs.createGwtGeneratorByFunctionModel.is_failed:
+        return "complete"
+
     # 모든 작업이 완료되었으면 완료 상태로 이동
     if state.subgraphs.createGwtGeneratorByFunctionModel.all_complete:
         return "complete"
@@ -445,7 +449,8 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         "preprocess",
         decide_next_step,
         {
-            "generate": "generate"
+            "generate": "generate",
+            "complete": "complete"
         }
     )
     
@@ -455,7 +460,8 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         {
             "postprocess": "postprocess",
             "generate": "generate",
-            "es_value_summary_generator": "es_value_summary_generator"
+            "es_value_summary_generator": "es_value_summary_generator",
+            "complete": "complete"
         }
     )
     
@@ -463,7 +469,8 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         "es_value_summary_generator",
         decide_next_step,
         {
-            "generate": "generate"
+            "generate": "generate",
+            "complete": "complete"
         }
     )
     
@@ -471,7 +478,9 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         "postprocess",
         decide_next_step,
         {
-            "validate": "validate"
+            "validate": "validate",
+            "generate": "generate",
+            "complete": "complete"
         }
     )
     

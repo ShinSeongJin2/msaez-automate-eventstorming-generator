@@ -175,7 +175,6 @@ def generate_policy_actions(state: State) -> State:
                 is_processing=False,
                 is_complete=False,
                 context=_build_request_context(current_gen),
-                es_value=state.outputs.esValue.model_dump(),
                 keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateInnerStickers"] + 
                                ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["detailedProperties"],
                 max_tokens=left_token_count,
@@ -188,7 +187,7 @@ def generate_policy_actions(state: State) -> State:
             return state
 
         # Generator 실행 결과
-        result = generator.generate()
+        result = generator.generate(current_gen.retry_count > 0)
         result = JsonUtil.convert_to_dict(result)
         
         # 결과에서 Policy 추출
@@ -279,6 +278,8 @@ def validate_policy_actions_generation(state: State) -> State:
         state.subgraphs.createPolicyActionsByFunctionModel.completed_generations.append(current_gen)
         # 현재 작업 초기화
         state.subgraphs.createPolicyActionsByFunctionModel.current_generation = None
+        state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
+
     elif current_gen.retry_count >= state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count:
         # 최대 재시도 횟수 초과 시 실패로 처리하고 다음 작업으로 이동
         state.subgraphs.createPolicyActionsByFunctionModel.completed_generations.append(current_gen)
@@ -300,6 +301,9 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
+    if state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
+        return "complete"
+
     # 모든 작업이 완료되었으면 완료 상태로 이동
     if state.subgraphs.createPolicyActionsByFunctionModel.all_complete:
         return "complete"
@@ -335,6 +339,111 @@ def decide_next_step(state: State) -> str:
     
     # 생성된 액션이 있으면 후처리 단계로 이동
     return "postprocess"
+
+
+# 서브그래프 생성 함수
+def create_policy_actions_by_function_subgraph() -> Callable:
+    """
+    Policy 액션 생성 서브그래프 생성
+    """
+    # 서브그래프 정의
+    subgraph = StateGraph(State)
+    
+    # 노드 추가
+    subgraph.add_node("prepare", prepare_policy_actions_generation)
+    subgraph.add_node("select_next", select_next_policy_actions)
+    subgraph.add_node("preprocess", preprocess_policy_actions_generation)
+    subgraph.add_node("generate", generate_policy_actions)
+    subgraph.add_node("postprocess", postprocess_policy_actions_generation)
+    subgraph.add_node("validate", validate_policy_actions_generation)
+    subgraph.add_node("complete", complete_processing)
+    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
+    
+    # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(
+        "prepare",
+        decide_next_step,
+        {
+            "select_next": "select_next",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "select_next",
+        decide_next_step,
+        {
+            "select_next": "select_next",
+            "preprocess": "preprocess",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "preprocess",
+        decide_next_step,
+        {
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "generate",
+        decide_next_step,
+        {
+            "postprocess": "postprocess",
+            "validate": "validate",
+            "es_value_summary_generator": "es_value_summary_generator",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "es_value_summary_generator",
+        decide_next_step,
+        {
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "postprocess",
+        decide_next_step,
+        {
+            "validate": "validate",
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "validate",
+        decide_next_step,
+        {
+            "select_next": "select_next",
+            "preprocess": "preprocess",
+            "complete": "complete"
+        }
+    )
+    
+    # 시작 및 종료 설정
+    subgraph.set_entry_point("prepare")
+    
+    # 컴파일된 그래프 반환
+    compiled_subgraph = subgraph.compile()
+    
+    # 서브그래프 실행 함수
+    def run_subgraph(state: State) -> State:
+        """
+        서브그래프 실행 함수
+        """
+        # 서브그래프 실행
+        result = State(**compiled_subgraph.invoke(state))
+        return result
+    
+    return run_subgraph
 
 
 # 유틸리티 함수: 이벤트 업데이트 액션으로 변환
@@ -443,103 +552,3 @@ Focus:
 - Business rules that require automatic reactions to system events
 - Integration points between different parts of the domain
 - Process flows that need automation through policies"""
-
-
-# 서브그래프 생성 함수
-def create_policy_actions_by_function_subgraph() -> Callable:
-    """
-    Policy 액션 생성 서브그래프 생성
-    """
-    # 서브그래프 정의
-    subgraph = StateGraph(State)
-    
-    # 노드 추가
-    subgraph.add_node("prepare", prepare_policy_actions_generation)
-    subgraph.add_node("select_next", select_next_policy_actions)
-    subgraph.add_node("preprocess", preprocess_policy_actions_generation)
-    subgraph.add_node("generate", generate_policy_actions)
-    subgraph.add_node("postprocess", postprocess_policy_actions_generation)
-    subgraph.add_node("validate", validate_policy_actions_generation)
-    subgraph.add_node("complete", complete_processing)
-    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
-    
-    # 엣지 추가 (라우팅)
-    subgraph.add_conditional_edges(
-        "prepare",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "select_next",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "preprocess",
-        decide_next_step,
-        {
-            "generate": "generate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "generate",
-        decide_next_step,
-        {
-            "postprocess": "postprocess",
-            "validate": "validate",
-            "es_value_summary_generator": "es_value_summary_generator"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "es_value_summary_generator",
-        decide_next_step,
-        {
-            "generate": "generate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "postprocess",
-        decide_next_step,
-        {
-            "validate": "validate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "validate",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
-            "complete": "complete"
-        }
-    )
-    
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
-    
-    # 컴파일된 그래프 반환
-    compiled_subgraph = subgraph.compile()
-    
-    # 서브그래프 실행 함수
-    def run_subgraph(state: State) -> State:
-        """
-        서브그래프 실행 함수
-        """
-        # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
-        return result
-    
-    return run_subgraph

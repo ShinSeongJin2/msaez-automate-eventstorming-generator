@@ -18,9 +18,6 @@ class AggregateGenerationState(BaseModelWithItem):
 
 class CreateAggregateByFunctionsModel(BaseModelWithItem):
     """Aggregate 생성 관련 상태 관리 모델"""
-    # 처리할 초안 목록
-    draft_options: Dict[str, Any] = {}
-    
     # 현재 처리 중인 Aggregate 상태
     current_generation: Optional[AggregateGenerationState] = None
     

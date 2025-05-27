@@ -18,12 +18,6 @@ def prepare_es_value_summary_generation(state: State) -> State:
     if state.subgraphs.esValueSummaryGeneratorModel.is_processing:
         return state
     
-    # 입력 데이터가 없는 경우 완료 처리
-    if not (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'es_value') and
-            state.subgraphs.esValueSummaryGeneratorModel.es_value):
-        state.subgraphs.esValueSummaryGeneratorModel.is_complete = True
-        return state
-    
     # 처리 상태 초기화
     state.subgraphs.esValueSummaryGeneratorModel.is_processing = True
     state.subgraphs.esValueSummaryGeneratorModel.is_complete = False
@@ -40,7 +34,7 @@ def preprocess_es_value_summary_generation(state: State) -> State:
     - ES 별칭 변환 관리자 초기화
     """
     try:
-        es_value = state.subgraphs.esValueSummaryGeneratorModel.es_value
+        es_value = state.outputs.esValue.model_dump()
         
         # ES 별칭 변환 관리자 초기화
         es_alias_trans_manager = EsAliasTransManager(es_value)
@@ -93,33 +87,34 @@ def generate_es_value_summary(state: State) -> State:
     try:
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        current_gen = state.subgraphs.esValueSummaryGeneratorModel
         
         # 요약 생성 Generator 생성
         generator = ESValueSummaryGenerator(
             model_name=model_name,
             client={
                 "inputs": {
-                    "context": state.subgraphs.esValueSummaryGeneratorModel.context,
-                    "elementIds": state.subgraphs.esValueSummaryGeneratorModel.element_ids
+                    "context": current_gen.context,
+                    "elementIds": current_gen.element_ids
                 },
                 "preferredLanguage": state.inputs.preferedLanguage
             }
         )
         
         # Generator 실행 결과
-        result = generator.generate()
+        result = generator.generate(current_gen.retry_count > 0)
         result_dict = JsonUtil.convert_to_dict(result)
         
         # 결과에서 정렬된 요소 ID 추출
         if result_dict and "result" in result_dict and "sortedElementIds" in result_dict["result"]:
             sorted_element_ids = result_dict["result"]["sortedElementIds"]
-            state.subgraphs.esValueSummaryGeneratorModel.sorted_element_ids = sorted_element_ids
+            current_gen.sorted_element_ids = sorted_element_ids
         else:
             raise ValueError("정렬된 요소 ID를 찾을 수 없습니다.")
     
     except Exception as e:
         print(f"ES 값 요약 생성 오류: {e}")
-        state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
+        current_gen.retry_count += 1
     
     return state
 
@@ -183,6 +178,9 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
+    if state.subgraphs.esValueSummaryGeneratorModel.is_failed:
+        return "complete"
+
     # 완료된 경우 완료 상태로 이동
     if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
         return "complete"
@@ -207,6 +205,87 @@ def decide_next_step(state: State) -> str:
     
     # 검증 단계로 이동
     return "validate"
+
+# 서브그래프 생성 함수
+def create_es_value_summary_generator_subgraph() -> Callable:
+    """
+    ES 값 요약 생성 서브그래프 생성
+    """
+    # 서브그래프 정의
+    subgraph = StateGraph(State)
+    
+    # 노드 추가
+    subgraph.add_node("prepare", prepare_es_value_summary_generation)
+    subgraph.add_node("preprocess", preprocess_es_value_summary_generation)
+    subgraph.add_node("generate", generate_es_value_summary)
+    subgraph.add_node("postprocess", postprocess_es_value_summary_generation)
+    subgraph.add_node("validate", validate_es_value_summary_generation)
+    subgraph.add_node("complete", complete_processing)
+    
+    # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(
+        "prepare",
+        decide_next_step,
+        {
+            "preprocess": "preprocess",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "preprocess",
+        decide_next_step,
+        {
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "generate",
+        decide_next_step,
+        {
+            "postprocess": "postprocess",
+            "validate": "validate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "postprocess",
+        decide_next_step,
+        {
+            "validate": "validate",
+            "generate": "generate",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "validate",
+        decide_next_step,
+        {
+            "preprocess": "preprocess",
+            "complete": "complete"
+        }
+    )
+    
+    # 시작 및 종료 설정
+    subgraph.set_entry_point("prepare")
+    
+    # 컴파일된 그래프 반환
+    compiled_subgraph = subgraph.compile()
+    
+    # 서브그래프 실행 함수
+    def run_subgraph(state: State) -> State:
+        """
+        서브그래프 실행 함수
+        """
+        # 서브그래프 실행
+        result = State(**compiled_subgraph.invoke(state))
+        return result
+    
+    return run_subgraph
 
 # 유틸리티 함수: 우선순위 기반 요소 ID 재정렬
 def _resort_with_priority(summarized_es_value: Dict[str, Any], sorted_element_ids: List[str]) -> List[str]:
@@ -330,80 +409,3 @@ def _get_summary_within_token_limit(summarized_es_value: Dict[str, Any], sorted_
         raise ValueError("토큰 제한을 초과하여 요약할 수 없습니다.")
     
     return result
-
-# 서브그래프 생성 함수
-def create_es_value_summary_generator_subgraph() -> Callable:
-    """
-    ES 값 요약 생성 서브그래프 생성
-    """
-    # 서브그래프 정의
-    subgraph = StateGraph(State)
-    
-    # 노드 추가
-    subgraph.add_node("prepare", prepare_es_value_summary_generation)
-    subgraph.add_node("preprocess", preprocess_es_value_summary_generation)
-    subgraph.add_node("generate", generate_es_value_summary)
-    subgraph.add_node("postprocess", postprocess_es_value_summary_generation)
-    subgraph.add_node("validate", validate_es_value_summary_generation)
-    subgraph.add_node("complete", complete_processing)
-    
-    # 엣지 추가 (라우팅)
-    subgraph.add_conditional_edges(
-        "prepare",
-        decide_next_step,
-        {
-            "preprocess": "preprocess",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "preprocess",
-        decide_next_step,
-        {
-            "generate": "generate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "generate",
-        decide_next_step,
-        {
-            "postprocess": "postprocess",
-            "validate": "validate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "postprocess",
-        decide_next_step,
-        {
-            "validate": "validate"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "validate",
-        decide_next_step,
-        {
-            "preprocess": "preprocess",
-            "complete": "complete"
-        }
-    )
-    
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
-    
-    # 컴파일된 그래프 반환
-    compiled_subgraph = subgraph.compile()
-    
-    # 서브그래프 실행 함수
-    def run_subgraph(state: State) -> State:
-        """
-        서브그래프 실행 함수
-        """
-        # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
-        return result
-    
-    return run_subgraph

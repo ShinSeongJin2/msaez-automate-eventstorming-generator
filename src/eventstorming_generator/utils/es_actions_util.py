@@ -6,7 +6,7 @@ from .es_restore_actions_util import EsRestoreActionsUtil
 
 class EsActionsUtil:
     @staticmethod
-    def apply_actions(es_value: EsValueModel, actions: List[ActionModel], 
+    def apply_actions(es_value: EsValueModel | Dict[str, Any], actions: List[ActionModel], 
                       user_info: Dict[str, Any], 
                       information: Dict[str, Any]) -> EsValueModel:
         """
@@ -21,8 +21,11 @@ class EsActionsUtil:
         Returns:
             업데이트된 이벤트 스토밍 모델
         """
-            
-        es_dict = es_value.model_dump()
+        
+        if hasattr(es_value, "model_dump"):
+            es_dict = es_value.model_dump()
+        else:
+            es_dict = es_value
         
         EsRestoreActionsUtil.restoreActions(actions, es_dict)
 

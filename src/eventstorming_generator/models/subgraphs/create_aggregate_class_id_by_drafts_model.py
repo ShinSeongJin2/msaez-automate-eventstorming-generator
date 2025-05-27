@@ -7,9 +7,7 @@ class ClassIdGenerationState(BaseModelWithItem):
     """단일 Aggregate 클래스 ID 생성 처리 상태"""
     target_references: List[str] = []
     draft_option: Dict[str, Any] = {}
-    es_value: Dict[str, Any] = {}
     summarized_es_value: Dict[str, Any] = {}
-    es_alias_trans_manager: Any = None
     created_actions: List[ActionModel] = []
     retry_count: int = 0
     generation_complete: bool = False
@@ -38,6 +36,3 @@ class CreateAggregateClassIdByDraftsModel(BaseModelWithItem):
     
     # 최종적으로 실행 실패 여부
     is_failed: bool = False
-    
-    # 생성 결과
-    created_es_value: Optional[Dict[str, Any]] = None

@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from pydantic import BaseModel
 
 class ESValueSummaryGeneratorModel(BaseModel):
@@ -11,7 +11,6 @@ class ESValueSummaryGeneratorModel(BaseModel):
     
     # 요약 입력 데이터
     context: str = ""
-    es_value: Dict[str, Any] = {}
     keys_to_filter: List[str] = []
     max_tokens: int = 0
     token_calc_model_vendor: str = ""
