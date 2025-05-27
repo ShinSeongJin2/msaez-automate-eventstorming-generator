@@ -2,6 +2,9 @@ import firebase_admin
 from firebase_admin import credentials, db
 from typing import Dict, Any, Optional
 import os
+import asyncio
+import concurrent.futures
+from functools import partial
 
 class FirebaseSystem:
     _instance: Optional['FirebaseSystem'] = None
@@ -38,8 +41,10 @@ class FirebaseSystem:
             })
         
         self.database = db
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         self._initialized = True
     
+
     @classmethod
     def initialize(cls, service_account_path: str, database_url: str) -> 'FirebaseSystem':
         """
@@ -71,6 +76,7 @@ class FirebaseSystem:
             raise RuntimeError("FirebaseSystem 초기화되지 않았습니다. 먼저 FirebaseSystem.initialize()를 호출하세요.")
         return cls._instance
     
+
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
         """
         특정 경로에 딕셔너리 데이터를 업로드
@@ -90,6 +96,135 @@ class FirebaseSystem:
             print(f"데이터 업로드 실패: {str(e)}")
             return False
     
+    async def set_data_async(self, path: str, data: Dict[str, Any]) -> bool:
+        """
+        특정 경로에 딕셔너리 데이터를 비동기로 업로드
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로 (예: 'users/user1')
+            data (Dict[str, Any]): 업로드할 딕셔너리 데이터
+            
+        Returns:
+            bool: 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(self._sync_set_data, path, data)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 데이터 업로드 실패: {str(e)}")
+            return False
+    
+    def _sync_set_data(self, path: str, data: Dict[str, Any]) -> bool:
+        """동기 set_data의 내부 구현"""
+        try:
+            ref = self.database.reference(path)
+            ref.set(data)
+            return True
+        except Exception as e:
+            print(f"데이터 업로드 실패: {str(e)}")
+            return False
+    
+    def set_data_fire_and_forget(self, path: str, data: Dict[str, Any]) -> None:
+        """
+        Firebase에 데이터를 업로드하되 결과를 기다리지 않음 (Fire and Forget)
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            data (Dict[str, Any]): 업로드할 딕셔너리 데이터
+        """
+        try:
+            # 새로운 이벤트 루프가 없는 경우를 대비한 처리
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # 이미 실행 중인 루프가 있으면 태스크로 추가
+                    asyncio.create_task(self.set_data_async(path, data))
+                else:
+                    # 루프가 실행 중이 아니면 직접 실행
+                    loop.run_until_complete(self.set_data_async(path, data))
+            except RuntimeError:
+                # 이벤트 루프가 없는 경우 새로 생성
+                asyncio.run(self.set_data_async(path, data))
+        except Exception as e:
+            print(f"Fire and Forget 업로드 실패: {str(e)}")
+    
+    
+    def update_data(self, path: str, data: Dict[str, Any]) -> bool:
+        """
+        특정 경로의 데이터를 부분 업데이트
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            data (Dict[str, Any]): 업데이트할 딕셔너리 데이터
+            
+        Returns:
+            bool: 성공 여부
+        """
+        try:
+            ref = self.database.reference(path)
+            ref.update(data)
+            return True
+        except Exception as e:
+            print(f"데이터 업데이트 실패: {str(e)}")
+            return False
+    
+    async def update_data_async(self, path: str, data: Dict[str, Any]) -> bool:
+        """
+        특정 경로의 데이터를 비동기로 부분 업데이트
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            data (Dict[str, Any]): 업데이트할 딕셔너리 데이터
+            
+        Returns:
+            bool: 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(self._sync_update_data, path, data)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 데이터 업데이트 실패: {str(e)}")
+            return False
+    
+    def _sync_update_data(self, path: str, data: Dict[str, Any]) -> bool:
+        """동기 update_data의 내부 구현"""
+        try:
+            ref = self.database.reference(path)
+            ref.update(data)
+            return True
+        except Exception as e:
+            print(f"데이터 업데이트 실패: {str(e)}")
+            return False
+    
+    def update_data_fire_and_forget(self, path: str, data: Dict[str, Any]) -> None:
+        """
+        Firebase 데이터를 업데이트하되 결과를 기다리지 않음 (Fire and Forget)
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            data (Dict[str, Any]): 업데이트할 딕셔너리 데이터
+        """
+        try:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.update_data_async(path, data))
+                else:
+                    loop.run_until_complete(self.update_data_async(path, data))
+            except RuntimeError:
+                asyncio.run(self.update_data_async(path, data))
+        except Exception as e:
+            print(f"Fire and Forget 업데이트 실패: {str(e)}")
+
+
     def get_data(self, path: str) -> Optional[Dict[str, Any]]:
         """
         특정 경로에서 데이터를 딕셔너리 형태로 조회
@@ -111,25 +246,7 @@ class FirebaseSystem:
         except Exception as e:
             print(f"데이터 조회 실패: {str(e)}")
             return None
-    
-    def update_data(self, path: str, data: Dict[str, Any]) -> bool:
-        """
-        특정 경로의 데이터를 부분 업데이트
-        
-        Args:
-            path (str): Firebase 데이터베이스 경로
-            data (Dict[str, Any]): 업데이트할 딕셔너리 데이터
-            
-        Returns:
-            bool: 성공 여부
-        """
-        try:
-            ref = self.database.reference(path)
-            ref.update(data)
-            return True
-        except Exception as e:
-            print(f"데이터 업데이트 실패: {str(e)}")
-            return False
+  
 
 FirebaseSystem.initialize(
     service_account_path=os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"),

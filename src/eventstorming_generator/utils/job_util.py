@@ -1,4 +1,5 @@
 import re
+import threading
 
 from ..systems.firebase_system import FirebaseSystem
 from ..models import State
@@ -62,20 +63,106 @@ class JobUtil:
         
         return True
 
+
     @staticmethod
     def new_job_to_firebase(state: State):
         FirebaseSystem.instance().set_data(
             f"jobs/eventstorming_generator/{state.inputs.jobId}",
             {
-                "state": JsonUtil.convert_to_dict(JsonUtil.convert_to_json(state))
+                "state": JsonUtil.convert_to_json(state)
             }
         )
+
+    @staticmethod
+    async def new_job_to_firebase_async(state: State) -> bool:
+        """
+        새로운 작업을 Firebase에 비동기로 업로드
+        
+        Args:
+            state (State): 업로드할 상태 객체
+            
+        Returns:
+            bool: 성공 여부
+        """
+        return await FirebaseSystem.instance().set_data_async(
+            f"jobs/eventstorming_generator/{state.inputs.jobId}",
+            {
+                "state": JsonUtil.convert_to_json(state)
+            }
+        )
+    
+    @staticmethod
+    def new_job_to_firebase_fire_and_forget(state: State):
+        """
+        새로운 작업을 Firebase에 업로드하되 결과를 기다리지 않음
+        백그라운드에서 실행되어 메인 코드 실행을 차단하지 않음
+        
+        Args:
+            state (State): 업로드할 상태 객체
+        """
+        def _async_wrapper():
+            try:
+                FirebaseSystem.instance().set_data_fire_and_forget(
+                    f"jobs/eventstorming_generator/{state.inputs.jobId}",
+                    {
+                        "state": JsonUtil.convert_to_json(state)
+                    }
+                )
+            except Exception as e:
+                print(f"백그라운드 Firebase 업로드 실패: {str(e)}")
+        
+        # 별도 스레드에서 실행하여 메인 스레드를 차단하지 않음
+        thread = threading.Thread(target=_async_wrapper, daemon=True)
+        thread.start()
+
 
     @staticmethod
     def update_job_to_firebase(state: State):
         FirebaseSystem.instance().update_data(
             f"jobs/eventstorming_generator/{state.inputs.jobId}",
             {
-                "state": JsonUtil.convert_to_dict(JsonUtil.convert_to_json(state))
+                "state": JsonUtil.convert_to_json(state)
             }
         )
+
+    @staticmethod
+    async def update_job_to_firebase_async(state: State) -> bool:
+        """
+        작업 상태를 Firebase에 비동기로 업데이트
+        
+        Args:
+            state (State): 업데이트할 상태 객체
+            
+        Returns:
+            bool: 성공 여부
+        """
+        return await FirebaseSystem.instance().update_data_async(
+            f"jobs/eventstorming_generator/{state.inputs.jobId}",
+            {
+                "state": JsonUtil.convert_to_json(state)
+            }
+        )
+    
+    @staticmethod
+    def update_job_to_firebase_fire_and_forget(state: State):
+        """
+        작업 상태를 Firebase에 업데이트하되 결과를 기다리지 않음
+        백그라운드에서 실행되어 메인 코드 실행을 차단하지 않음
+        
+        Args:
+            state (State): 업데이트할 상태 객체
+        """
+        def _async_wrapper():
+            try:
+                FirebaseSystem.instance().update_data_fire_and_forget(
+                    f"jobs/eventstorming_generator/{state.inputs.jobId}",
+                    {
+                        "state": JsonUtil.convert_to_json(state)
+                    }
+                )
+            except Exception as e:
+                print(f"백그라운드 Firebase 업데이트 실패: {str(e)}")
+        
+        # 별도 스레드에서 실행하여 메인 스레드를 차단하지 않음
+        thread = threading.Thread(target=_async_wrapper, daemon=True)
+        thread.start()
