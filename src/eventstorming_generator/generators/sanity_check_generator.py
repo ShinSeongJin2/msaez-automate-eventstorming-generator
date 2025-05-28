@@ -1,10 +1,11 @@
 from typing import Any, Dict, Optional
 from .base import BaseGenerator
+from ..models import SanityCheckGeneratorOutput
 
 class SanityCheckGenerator(BaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         self.inputs_types_to_check = ["text"]
-        super().__init__(model_name, model_kwargs, client)
+        super().__init__(model_name, model_kwargs, client, structured_output_class=SanityCheckGeneratorOutput)
         
         self.client["disableLanguageGuide"] = True
 
@@ -12,7 +13,7 @@ class SanityCheckGenerator(BaseGenerator):
         return "You are a very useful assistant."
 
     def _build_task_guidelines_prompt(self) -> str:
-        return "Please return the text entered by the user as-is in a JSON object."
+        return "Please return the text entered by the user as-is in the output field."
 
     def _build_json_response_format(self) -> str:
         return """

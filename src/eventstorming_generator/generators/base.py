@@ -1,4 +1,4 @@
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Type
 from abc import ABC, abstractmethod
 from langchain.chat_models import init_chat_model
 from langchain.schema import HumanMessage, SystemMessage, AIMessage, BaseMessage
@@ -7,6 +7,7 @@ from langchain_core.globals import set_llm_cache
 import os
 import uuid
 
+from ..models import BaseModelWithItem
 from ..utils import JsonUtil
 
 
@@ -28,7 +29,7 @@ class BaseGenerator(ABC):
     일관된 프롬프트 형식을 제공합니다.
     """
     
-    def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
+    def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None, structured_output_class: Optional[Type] = None):
         """
         BaseGenerator 초기화
         
@@ -36,6 +37,7 @@ class BaseGenerator(ABC):
             model_name: 모델 이름
             model_kwargs: 모델 파라미터
             client: 클라이언트
+            structured_output_class: 구조화된 출력을 위한 Pydantic 모델 클래스
         """
         if model_kwargs is None: model_kwargs = {}
         if model_kwargs.get("temperature") is None: model_kwargs["temperature"] = 0.2
@@ -50,6 +52,7 @@ class BaseGenerator(ABC):
                 if client.get("inputs").get(input_type) == None:
                     raise ValueError(f"{input_type} is required")
 
+        self.structured_output_class = structured_output_class
         self.set_model(model_name, model_kwargs)
         self.client = client
 
@@ -137,20 +140,30 @@ The returned format should be as follows.
         LLM을 사용하여 생성 실행
         
         Args:
-            inputs: 생성에 필요한 입력 파라미터 (선택사항)
+            bypass_cache: 캐시 우회 여부
             
         Returns:
-            생성된 결과
+            생성된 결과 (구조화된 출력이 설정된 경우 해당 클래스의 인스턴스)
         """
         if not self.model:
             raise ValueError("모델이 설정되지 않았습니다. 생성기를 초기화할 때 model 파라미터를 전달하거나 set_model()을 호출하세요.")
         
         messages = self._get_messages(bypass_cache)
-        ai_message = self.model.invoke(messages)
-        if ai_message.response_metadata["finish_reason"] == "stop":
-            return ai_message.content
+        
+        # 구조화된 출력이 설정된 경우 with_structured_output 사용
+        if self.structured_output_class:
+            structured_model = self.model.with_structured_output(self.structured_output_class)
+            result = structured_model.invoke(messages)
+            if isinstance(result, BaseModelWithItem):
+                return result.model_dump()
+            else:
+                return result
         else:
-            raise ValueError("예측하지 못한 Base Generator 종료 이유: " + ai_message.response_metadata["finish_reason"])
+            ai_message = self.model.invoke(messages)
+            if ai_message.response_metadata["finish_reason"] == "stop":
+                return ai_message.content
+            else:
+                raise ValueError("예측하지 못한 Base Generator 종료 이유: " + ai_message.response_metadata["finish_reason"])
 
     def _get_messages(self, bypass_cache: bool = False) -> List[BaseMessage]:
         promptsToBuild = self._get_prompts_to_build()
