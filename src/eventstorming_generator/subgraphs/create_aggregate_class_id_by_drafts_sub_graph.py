@@ -404,7 +404,11 @@ def complete_processing(state: State) -> State:
     JobUtil.update_job_to_firebase_fire_and_forget(state)
 
     # 변수 정리
-    state.subgraphs.createAggregateClassIdByDraftsModel.draft_options = {}
+    subgraph_model = state.subgraphs.createAggregateClassIdByDraftsModel
+    subgraph_model.draft_options = {}
+    subgraph_model.current_generation = None
+    subgraph_model.completed_generations = []
+    subgraph_model.pending_generations = []
     return state
 
 

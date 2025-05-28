@@ -440,6 +440,12 @@ def complete_processing(state: State) -> State:
         else:
             LogUtil.add_info_log(state, f"Aggregate generation process completed successfully. {completed_count} aggregates processed.")
 
+        # 변수 정리
+        subgraph_model = state.subgraphs.createAggregateByFunctionsModel
+        subgraph_model.current_generation = None
+        subgraph_model.completed_generations = []
+        subgraph_model.pending_generations = []
+
         JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:

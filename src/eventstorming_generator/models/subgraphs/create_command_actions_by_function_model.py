@@ -9,7 +9,6 @@ class CommandActionGenerationState(BaseModelWithItem):
     target_aggregate: Dict[str, Any] = {}
     description: str = ""
     summarized_es_value: Dict[str, Any] = {}
-    es_alias_trans_manager: Any = None
     retry_count: int = 0
     created_actions: List[ActionModel] = []
     generation_complete: bool = False

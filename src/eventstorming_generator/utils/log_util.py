@@ -1,5 +1,3 @@
-import traceback
-
 from eventstorming_generator.models import State, LogModel
 
 class LogUtil:
@@ -17,7 +15,7 @@ class LogUtil:
     
     @staticmethod
     def add_exception_object_log(state: State, message: str, exception: Exception):
-        LogUtil.add_log(state, f"{message}: {exception} {traceback.format_exc()}", "error")
+        LogUtil.add_log(state, f"{message}: {exception}", "error")
 
     @staticmethod
     def add_warning_log(state: State, message: str):
