@@ -3,13 +3,15 @@ from .create_aggregate_actions_by_function_output import CreateAggregateActionsB
 from .create_aggregate_class_id_by_drafts_output import CreateAggregateClassIdByDraftsOutput
 from .create_command_actions_by_function_output import CreateCommandActionsByFunctionOutput
 from .create_policy_actions_by_function_output import CreatePolicyActionsByFunctionOutput
+from .create_gwt_generator_by_function_output import CreateGWTGeneratorByFunctionOutput
 
 __all__ = [
     "SanityCheckGeneratorOutput",
     "CreateAggregateActionsByFunctionOutput",
     "CreateAggregateClassIdByDraftsOutput",
     "CreateCommandActionsByFunctionOutput",
-    "CreatePolicyActionsByFunctionOutput"
+    "CreatePolicyActionsByFunctionOutput",
+    "CreateGWTGeneratorByFunctionOutput"
 ]
 
 

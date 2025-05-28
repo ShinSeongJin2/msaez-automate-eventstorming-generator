@@ -156,7 +156,10 @@ The returned format should be as follows.
         
         # 구조화된 출력이 설정된 경우 with_structured_output 사용
         if self.structured_output_class:
-            structured_model = self.model.with_structured_output(self.structured_output_class)
+            structured_model = self.model.with_structured_output(
+                self.structured_output_class,
+                method="function_calling"
+            )
             result = structured_model.invoke(messages)
             if isinstance(result, BaseModelWithItem):
                 return result.model_dump()
