@@ -137,9 +137,6 @@ Inference Guidelines:
         return ESValueSummarizeWithFilter.get_guide_prompt()
 
     def _build_json_response_format(self) -> str:
-        if self.structured_output_class:
-            return ""
-
         return """
 {
     "inference": "<inference>",

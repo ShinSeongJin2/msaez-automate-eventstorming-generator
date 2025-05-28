@@ -120,6 +120,10 @@ class BaseGenerator(ABC):
     
     def _build_response_format_prompt(self) -> str:
         """응답 형식 프롬프트 빌드"""
+        if self.structured_output_class:
+            return ""
+
+
         json_format = self._build_json_response_format()
         after_json_format = self._build_after_json_response_format()
         

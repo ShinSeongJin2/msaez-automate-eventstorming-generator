@@ -4,7 +4,7 @@ from .action_model import ActionModel
 from .base import BaseModelWithItem
 from .subgraphs import SubgraphsModel, CreateAggregateByFunctionsModel, AggregateGenerationState, CreateAggregateClassIdByDraftsModel, ClassIdGenerationState, CreateCommandActionsByFunctionModel, CommandActionGenerationState, CreatePolicyActionsByFunctionModel, PolicyActionGenerationState, CreateGwtGeneratorByFunctionModel, GWTGenerationState, ESValueSummaryGeneratorModel
 from .state import State
-from .generators import SanityCheckGeneratorOutput, CreateAggregateActionsByFunctionOutput
+from .generators import SanityCheckGeneratorOutput, CreateAggregateActionsByFunctionOutput, CreateAggregateClassIdByDraftsOutput
 
 __all__ = [
     "InputsModel",
@@ -30,7 +30,8 @@ __all__ = [
     "State",
     "ESValueSummaryGeneratorModel",
     "SanityCheckGeneratorOutput",
-    "CreateAggregateActionsByFunctionOutput"
+    "CreateAggregateActionsByFunctionOutput",
+    "CreateAggregateClassIdByDraftsOutput"
 ]
 
 
