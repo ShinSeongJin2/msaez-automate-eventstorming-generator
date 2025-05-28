@@ -1,11 +1,12 @@
 from typing import Any, Dict, Optional
 from .base import BaseGenerator
 from ..utils import ESValueSummarizeWithFilter
+from ..models import CreateAggregateActionsByFunctionOutput
 
 class CreateAggregateActionsByFunction(BaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         self.inputs_types_to_check = ["summarizedESValue", "targetBoundedContext", "description", "draftOption", "targetAggregate"]
-        super().__init__(model_name, model_kwargs, client)
+        super().__init__(model_name, model_kwargs, client, structured_output_class=CreateAggregateActionsByFunctionOutput)
 
     def _build_agent_role_prompt(self) -> str:
         return """Role: Domain-Driven Design (DDD) Architect and Strategic Modeling Expert
@@ -136,6 +137,9 @@ Inference Guidelines:
         return ESValueSummarizeWithFilter.get_guide_prompt()
 
     def _build_json_response_format(self) -> str:
+        if self.structured_output_class:
+            return ""
+
         return """
 {
     "inference": "<inference>",
