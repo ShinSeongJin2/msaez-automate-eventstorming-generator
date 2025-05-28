@@ -144,7 +144,7 @@ class EsRestoreActionsUtil:
                         "properties": [{
                             "name": p.get("name"),
                             "type": p.get("className"),
-                            "isKey": p.get("isKey", False)
+                            "isKey": p.get("isKey") or False
                         } for p in VODefinitions[vo_type]]
                     }
                 )
@@ -403,7 +403,7 @@ class EsRestoreActionsUtil:
                 {
                     "name": fd.get("name"),
                     "type": fd.get("className"),
-                    "isKey": fd.get("isKey", False)
+                    "isKey": fd.get("isKey") or False
                 }
                 for fd in element["fieldDescriptors"]
             ]

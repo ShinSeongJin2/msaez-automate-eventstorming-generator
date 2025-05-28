@@ -194,9 +194,9 @@ class CommandProcessor:
         if action.args.get("properties"):
             return [
                 {
-                    "className": prop.get("type", "String"),
+                    "className": prop.get("type") or "String",
                     "isCopy": False,
-                    "isKey": prop.get("isKey", False),
+                    "isKey": prop.get("isKey") or False,
                     "name": prop.get("name", ""),
                     "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
                     "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
@@ -218,7 +218,7 @@ class CommandProcessor:
             {
                 "className": prop.get("className", "String"),
                 "isCopy": False,
-                "isKey": prop.get("isKey", False),
+                "isKey": prop.get("isKey") or False,
                 "name": prop.get("name", ""),
                 "nameCamelCase": prop.get("nameCamelCase", ""),
                 "namePascalCase": prop.get("namePascalCase", ""),

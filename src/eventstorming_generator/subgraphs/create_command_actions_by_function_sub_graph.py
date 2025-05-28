@@ -199,7 +199,6 @@ def generate_command_actions(state: State) -> State:
         
         # Generator 실행
         result = generator.generate(current_gen.retry_count > 0)
-        result = JsonUtil.convert_to_dict(result)
         
         # 생성 결과가 있는지 확인
         if not result or not result.get("result"):

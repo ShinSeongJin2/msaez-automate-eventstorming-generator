@@ -268,7 +268,6 @@ def generate_gwt_generation(state: State) -> State:
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"GWT 생성 중... (재시도: {current_gen.retry_count})")
         result = generator.generate(current_gen.retry_count > 0)
-        result = JsonUtil.convert_to_dict(result)
         
         # 결과에서 GWT 추출 및 적용
         commands_to_replace = []

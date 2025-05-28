@@ -286,9 +286,9 @@ class AggregateProcessor:
         """Aggregate 필드 기술자를 생성합니다"""
         return [
             {
-                "className": prop.get("type", "String"),
+                "className": prop.get("type") or "String",
                 "isCopy": False,
-                "isKey": prop.get("isKey", False),
+                "isKey": prop.get("isKey") or False,
                 "name": prop.get("name", ""),
                 "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
                 "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
@@ -305,9 +305,9 @@ class AggregateProcessor:
         """Root Aggregate 필드 기술자를 생성합니다"""
         return [
             {
-                "className": prop.get("type", "String"),
+                "className": prop.get("type") or "String",
                 "isCopy": False,
-                "isKey": prop.get("isKey", False),
+                "isKey": prop.get("isKey") or False,
                 "name": prop.get("name", ""),
                 "displayName": "",
                 "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
@@ -331,7 +331,7 @@ class AggregateProcessor:
             if existing_index >= 0:
                 # 기존 필드 업데이트
                 merged[existing_index].update({
-                    "className": new_prop.get("type", "String"),
+                    "className": new_prop.get("type") or "String",
                     "referenceClass": new_prop.get("referenceClass", None),
                     "isOverrideField": new_prop.get("isOverrideField", False),
                 })

@@ -230,7 +230,6 @@ def generate_policy_actions(state: State) -> State:
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"Executing policy actions generation with {token_count} tokens")
         result = generator.generate(current_gen.retry_count > 0)
-        result = JsonUtil.convert_to_dict(result)
         
         # 결과에서 Policy 추출
         policies = []

@@ -185,9 +185,9 @@ class EventProcessor:
         if action.get("args", {}).get("properties"):
             return [
                 {
-                    "className": prop.get("type", "String"),
+                    "className": prop.get("type") or "String",
                     "isCopy": False,
-                    "isKey": prop.get("isKey", False),
+                    "isKey": prop.get("isKey") or False,
                     "name": prop.get("name", ""),
                     "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
                     "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
@@ -206,14 +206,14 @@ class EventProcessor:
         if EsUtils.is_related_by_delete_command(es_value, event_object):
             target_field_descriptors = [
                 field for field in target_field_descriptors
-                if field.get("isKey", False)
+                if field.get("isKey") or False
             ]
             
         return [
             {
                 "className": prop.get("className", "String"),
                 "isCopy": False,
-                "isKey": prop.get("isKey", False),
+                "isKey": prop.get("isKey") or False,
                 "name": prop.get("name", ""),
                 "nameCamelCase": prop.get("nameCamelCase", ""),
                 "namePascalCase": prop.get("namePascalCase", ""),
