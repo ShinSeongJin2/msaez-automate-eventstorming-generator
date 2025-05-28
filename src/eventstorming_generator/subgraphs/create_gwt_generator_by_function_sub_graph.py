@@ -4,7 +4,7 @@ from copy import deepcopy
 from langgraph.graph import StateGraph
 
 from ..models import GWTGenerationState, State, ESValueSummaryGeneratorModel
-from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager
+from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil, JobUtil
 from ..generators import CreateGWTGeneratorByFunction
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 
@@ -15,62 +15,73 @@ def prepare_gwt_generation(state: State) -> State:
     - 초안 데이터 설정
     - 처리할 Command 목록 초기화
     """
-    # 이미 처리 중이면 상태 유지
-    if state.subgraphs.createGwtGeneratorByFunctionModel.is_processing:
-        return state
+    LogUtil.add_info_log(state, "GWT 생성 준비 시작...")
     
-    # 초안 데이터 설정
-    draft_options = state.inputs.selectedDraftOptions
-    state.subgraphs.createGwtGeneratorByFunctionModel.draft_options = draft_options
-    state.subgraphs.createGwtGeneratorByFunctionModel.is_processing = True
-    state.subgraphs.createGwtGeneratorByFunctionModel.all_complete = False
-    
-    # 처리할 Command GWT 목록 초기화
-    pending_generations = []
-    
-    # 각 Bounded Context별로 처리할 Aggregate 추출
-    for bounded_context_name, bounded_context_data in draft_options.items():
-        target_bounded_context = {"name": bounded_context_name}
-        if "boundedContext" in bounded_context_data:
-            target_bounded_context.update(bounded_context_data["boundedContext"])
+    try:
+        # 이미 처리 중이면 상태 유지
+        if state.subgraphs.createGwtGeneratorByFunctionModel.is_processing:
+            LogUtil.add_info_log(state, "GWT 생성이 이미 진행 중입니다.")
+            return state
         
-        # 해당 Bounded Context의 Aggregate들을 찾기
-        es_value = deepcopy(state.outputs.esValue.model_dump())
+        # 초안 데이터 설정
+        draft_options = state.inputs.selectedDraftOptions
+        state.subgraphs.createGwtGeneratorByFunctionModel.draft_options = draft_options
+        state.subgraphs.createGwtGeneratorByFunctionModel.is_processing = True
+        state.subgraphs.createGwtGeneratorByFunctionModel.all_complete = False
         
-        # Aggregate 각각에 대해 Command GWT 생성 준비
-        target_aggregates = []
-        for element in es_value.get("elements", {}).values():
-            if element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and \
-               element.get("boundedContext", {}).get("id") == target_bounded_context.get("id"):
-                target_aggregates.append(element)
+        # 처리할 Command GWT 목록 초기화
+        pending_generations = []
         
-        for target_aggregate in target_aggregates:
-            # Aggregate에 연결된 Command 목록 찾기
-            target_command_ids = []
-            target_aggregate_name = target_aggregate.get("name", "")
+        # 각 Bounded Context별로 처리할 Aggregate 추출
+        for bounded_context_name, bounded_context_data in draft_options.items():
+            target_bounded_context = {"name": bounded_context_name}
+            if "boundedContext" in bounded_context_data:
+                target_bounded_context.update(bounded_context_data["boundedContext"])
             
+            # 해당 Bounded Context의 Aggregate들을 찾기
+            es_value = deepcopy(state.outputs.esValue.model_dump())
+            
+            # Aggregate 각각에 대해 Command GWT 생성 준비
+            target_aggregates = []
             for element in es_value.get("elements", {}).values():
-                if element and element.get("_type") == "org.uengine.modeling.model.Command" and \
-                   element.get("aggregate", {}).get("id") == target_aggregate.get("id"):
-                    target_command_ids.append(element.get("id"))
+                if element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and \
+                   element.get("boundedContext", {}).get("id") == target_bounded_context.get("id"):
+                    target_aggregates.append(element)
             
-            if not target_command_ids:
-                continue  # Command가 없으면 처리하지 않음
-            
-            # 각 Aggregate의 Command들에 대한 GWT 생성 상태 초기화
-            generation_state = GWTGenerationState(
-                target_bounded_context=target_bounded_context,
-                target_command_ids=target_command_ids,
-                target_aggregate_names=[target_aggregate_name],
-                description=bounded_context_data.get("description", ""),
-                retry_count=0,
-                generation_complete=False
-            )
-            pending_generations.append(generation_state)
+            for target_aggregate in target_aggregates:
+                # Aggregate에 연결된 Command 목록 찾기
+                target_command_ids = []
+                target_aggregate_name = target_aggregate.get("name", "")
+                
+                for element in es_value.get("elements", {}).values():
+                    if element and element.get("_type") == "org.uengine.modeling.model.Command" and \
+                       element.get("aggregate", {}).get("id") == target_aggregate.get("id"):
+                        target_command_ids.append(element.get("id"))
+                
+                if not target_command_ids:
+                    continue  # Command가 없으면 처리하지 않음
+                
+                # 각 Aggregate의 Command들에 대한 GWT 생성 상태 초기화
+                generation_state = GWTGenerationState(
+                    target_bounded_context=target_bounded_context,
+                    target_command_ids=target_command_ids,
+                    target_aggregate_names=[target_aggregate_name],
+                    description=bounded_context_data.get("description", ""),
+                    retry_count=0,
+                    generation_complete=False
+                )
+                pending_generations.append(generation_state)
+        
+        # 처리할 GWT 생성 목록 저장
+        state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations = pending_generations
+        
+        LogUtil.add_info_log(state, f"GWT 생성 준비 완료. 총 {len(pending_generations)}개의 작업이 예정되어 있습니다.")
+        
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "GWT 생성 준비 중 오류 발생", e)
+        state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
     
-    # 처리할 GWT 생성 목록 저장
-    state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations = pending_generations
-    
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 노드 정의: 다음 생성할 GWT 선택
@@ -78,21 +89,33 @@ def select_next_gwt_generation(state: State) -> State:
     """
     다음에 생성할 GWT를 선택하고 현재 처리 상태로 설정
     """
-    # 모든 처리가 완료되었는지 확인
-    if (not state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations and 
-        not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation):
-        state.subgraphs.createGwtGeneratorByFunctionModel.all_complete = True
-        state.subgraphs.createGwtGeneratorByFunctionModel.is_processing = False
-        return state
+    LogUtil.add_info_log(state, "다음 GWT 생성 작업 선택 중...")
     
-    # 현재 처리 중인 작업이 있으면 상태 유지
-    if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
-        return state
+    try:
+        # 모든 처리가 완료되었는지 확인
+        if (not state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations and 
+            not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation):
+            state.subgraphs.createGwtGeneratorByFunctionModel.all_complete = True
+            state.subgraphs.createGwtGeneratorByFunctionModel.is_processing = False
+            LogUtil.add_info_log(state, "모든 GWT 생성 작업이 완료되었습니다.")
+            return state
+        
+        # 현재 처리 중인 작업이 있으면 상태 유지
+        if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            LogUtil.add_info_log(state, "현재 처리 중인 GWT 생성 작업이 있습니다.")
+            return state
+        
+        # 대기 중인 GWT 생성이 있으면 첫 번째 항목을 현재 처리 상태로 설정
+        if state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations:
+            next_generation = state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations.pop(0)
+            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation = next_generation
+            LogUtil.add_info_log(state, f"다음 GWT 생성 작업 선택됨: {next_generation.target_bounded_context.get('name', 'Unknown')}")
+        
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "다음 GWT 생성 작업 선택 중 오류 발생", e)
+        state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
     
-    # 대기 중인 GWT 생성이 있으면 첫 번째 항목을 현재 처리 상태로 설정
-    if state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations:
-        state.subgraphs.createGwtGeneratorByFunctionModel.current_generation = state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations.pop(0)
-    
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 노드 정의: GWT 생성 전처리
@@ -103,41 +126,52 @@ def preprocess_gwt_generation(state: State) -> State:
     - 요약된 ES 값 생성
     - 명령어 별칭 생성
     """
-    # 현재 처리 중인 작업이 없으면 상태 유지
-    if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
-        return state
+    LogUtil.add_info_log(state, "GWT 생성 전처리 시작...")
     
-    current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
-    
-    # 현재 ES 값의 복사본 생성
-    es_value = deepcopy(state.outputs.esValue.model_dump())
-    
-    # 별칭 변환 관리자 생성
-    es_alias_trans_manager = EsAliasTransManager(es_value)
-    current_gen.es_alias_trans_manager = es_alias_trans_manager
-    
-    # 명령어 별칭 생성
-    current_gen.target_command_aliases = [
-        es_alias_trans_manager.uuid_to_alias_dic.get(command_id, command_id)
-        for command_id in current_gen.target_command_ids
-    ]
-    
-    # 요약된 ES 값 생성
-    summarized_es_value = {
-        "deletedProperties": [],
-        "boundedContexts": [
-            ESValueSummarizeWithFilter.get_summarized_bounded_context_value(
-                es_value,
-                current_gen.target_bounded_context,
-                [],
-                es_alias_trans_manager
-            )
+    try:
+        # 현재 처리 중인 작업이 없으면 상태 유지
+        if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            LogUtil.add_info_log(state, "현재 처리 중인 GWT 생성 작업이 없습니다.")
+            return state
+        
+        current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
+        
+        # 현재 ES 값의 복사본 생성
+        es_value = deepcopy(state.outputs.esValue.model_dump())
+        
+        # 별칭 변환 관리자 생성
+        es_alias_trans_manager = EsAliasTransManager(es_value)
+        
+        # 명령어 별칭 생성
+        current_gen.target_command_aliases = [
+            es_alias_trans_manager.uuid_to_alias_dic.get(command_id, command_id)
+            for command_id in current_gen.target_command_ids
         ]
-    }
+        
+        # 요약된 ES 값 생성
+        summarized_es_value = {
+            "deletedProperties": [],
+            "boundedContexts": [
+                ESValueSummarizeWithFilter.get_summarized_bounded_context_value(
+                    es_value,
+                    current_gen.target_bounded_context,
+                    [],
+                    es_alias_trans_manager
+                )
+            ]
+        }
+        
+        # 요약된 ES 값 저장
+        current_gen.summarized_es_value = summarized_es_value
+        
+        LogUtil.add_info_log(state, f"GWT 생성 전처리 완료. Command 별칭: {current_gen.target_command_aliases}")
+        
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "GWT 생성 전처리 중 오류 발생", e)
+        if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.retry_count += 1
     
-    # 요약된 ES 값 저장
-    current_gen.summarized_es_value = summarized_es_value
-    
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 노드 정의: GWT 생성 실행
@@ -147,13 +181,16 @@ def generate_gwt_generation(state: State) -> State:
     - Generator를 통한 GWT 생성
     - 토큰 초과 확인 및 필요한 경우 요약 요청
     """
-    # 현재 처리 중인 작업이 없으면 상태 유지
-    if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
-        return state
-    
-    current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
+    LogUtil.add_info_log(state, "GWT 생성 실행 시작...")
     
     try:
+        # 현재 처리 중인 작업이 없으면 상태 유지
+        if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            LogUtil.add_info_log(state, "현재 처리 중인 GWT 생성 작업이 없습니다.")
+            return state
+        
+        current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
+        
         # 요약 서브그래프에서 처리 결과를 받아온 경우
         if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
             state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
@@ -166,6 +203,7 @@ def generate_gwt_generation(state: State) -> State:
             state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
             
             current_gen.is_token_over_limit = False
+            LogUtil.add_info_log(state, "요약된 ES 값을 사용하여 GWT 생성을 계속합니다.")
 
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
@@ -188,6 +226,8 @@ def generate_gwt_generation(state: State) -> State:
         model_max_input_limit = state.inputs.llmModel.model_max_input_limit
         
         if token_count > model_max_input_limit:  # 토큰 제한 초과 시 요약 처리
+            LogUtil.add_info_log(state, f"토큰 제한 초과 ({token_count} > {model_max_input_limit}). ES 값 요약을 요청합니다.")
+            
             # 빈 요약 ES 값을 사용하여 기본 요청 구조의 토큰 수 계산
             left_generator = CreateGWTGeneratorByFunction(
                 model_name=model_name,
@@ -204,6 +244,7 @@ def generate_gwt_generation(state: State) -> State:
             left_token_count = model_max_input_limit - left_generator.get_token_count()
             if left_token_count < 50:
                 # 너무 작은 토큰 수가 남은 경우 실패로 처리
+                LogUtil.add_error_log(state, f"남은 토큰 수가 너무 적습니다: {left_token_count}")
                 state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
                 return state
 
@@ -221,11 +262,11 @@ def generate_gwt_generation(state: State) -> State:
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
             current_gen.is_token_over_limit = True
-            print(f"[*] 토큰 제한이 초과되어서 이벤트 스토밍 정보를 제한 수치까지 요약해서 전달함")
-            print(f"[*] 요약 이전 Summary 크기: {len(str(current_gen.summarized_es_value))}")
+            LogUtil.add_info_log(state, f"요약 이전 Summary 크기: {len(str(current_gen.summarized_es_value))}")
             return state
         
         # Generator 실행 결과
+        LogUtil.add_info_log(state, f"GWT 생성 중... (재시도: {current_gen.retry_count})")
         result = generator.generate(current_gen.retry_count > 0)
         result = JsonUtil.convert_to_dict(result)
         
@@ -234,8 +275,10 @@ def generate_gwt_generation(state: State) -> State:
         
         es_value = state.outputs.esValue.model_dump()
         if result and "result" in result:
+            es_alias_trans_manager = EsAliasTransManager(es_value)
+
             for scenario in result["result"]:
-                target_command_id = current_gen.es_alias_trans_manager.alias_to_uuid_dic.get(
+                target_command_id = es_alias_trans_manager.alias_to_uuid_dic.get(
                     scenario.get("targetCommandId"), scenario.get("targetCommandId")
                 )
                 
@@ -247,7 +290,7 @@ def generate_gwt_generation(state: State) -> State:
                 if not scenario.get("gwts") or len(scenario["gwts"]) == 0:
                     continue
                 
-                examples = _get_examples(scenario["gwts"], es_value, current_gen.es_alias_trans_manager)
+                examples = _get_examples(scenario["gwts"], es_value)
                 if not examples or len(examples) == 0:
                     continue
                 
@@ -256,11 +299,14 @@ def generate_gwt_generation(state: State) -> State:
         
         # 생성된 GWT 저장
         current_gen.commands_to_replace = commands_to_replace
+        LogUtil.add_info_log(state, f"GWT 생성 완료. {len(commands_to_replace)}개의 Command에 대한 GWT가 생성되었습니다.")
     
     except Exception as e:
-        print(f"GWT 생성 중 오류 발생: {e}")
-        current_gen.retry_count += 1
+        LogUtil.add_exception_object_log(state, "GWT 생성 실행 중 오류 발생", e)
+        if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.retry_count += 1
     
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 노드 정의: GWT 생성 후처리
@@ -269,18 +315,22 @@ def postprocess_gwt_generation(state: State) -> State:
     GWT 생성 후처리 작업 수행
     - 생성된 GWT를 ES 모델에 적용
     """
-    # 현재 처리 중인 작업이 없으면 상태 유지
-    if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
-        return state
-    
-    current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
-    
-    # 생성된 GWT가 없으면 실패로 처리
-    if not current_gen.commands_to_replace:
-        current_gen.retry_count += 1
-        return state
+    LogUtil.add_info_log(state, "GWT 생성 후처리 시작...")
     
     try:
+        # 현재 처리 중인 작업이 없으면 상태 유지
+        if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            LogUtil.add_info_log(state, "현재 처리 중인 GWT 생성 작업이 없습니다.")
+            return state
+        
+        current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
+        
+        # 생성된 GWT가 없으면 실패로 처리
+        if not current_gen.commands_to_replace:
+            LogUtil.add_info_log(state, "생성된 GWT가 없습니다. 재시도합니다.")
+            current_gen.retry_count += 1
+            return state
+        
         # ES 값의 복사본 생성
         es_value = deepcopy(state.outputs.esValue.model_dump())
         
@@ -291,12 +341,16 @@ def postprocess_gwt_generation(state: State) -> State:
         # ES 값 업데이트
         state.outputs.esValue.elements = es_value["elements"]
         current_gen.generation_complete = True
+        
+        LogUtil.add_info_log(state, f"GWT 후처리 완료. {len(current_gen.commands_to_replace)}개의 Command가 업데이트되었습니다.")
     
     except Exception as e:
-        print(f"GWT 적용 중 오류 발생: {e}")
-        current_gen.retry_count += 1
-        current_gen.commands_to_replace = []
+        LogUtil.add_exception_object_log(state, "GWT 생성 후처리 중 오류 발생", e)
+        if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.retry_count += 1
+            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.commands_to_replace = []
     
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 노드 정의: GWT 생성 검증 및 완료 처리
@@ -306,25 +360,45 @@ def validate_gwt_generation(state: State) -> State:
     - 생성 결과 검증
     - 완료 처리 또는 재시도 결정
     """
-    # 현재 처리 중인 작업이 없으면 상태 유지
-    if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
-        return state
+    LogUtil.add_info_log(state, "GWT 생성 검증 시작...")
     
-    current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
-    
-    # 생성 완료 확인
-    if current_gen.generation_complete:
-        # 완료된 작업을 완료 목록에 추가
-        state.subgraphs.createGwtGeneratorByFunctionModel.completed_generations.append(current_gen)
-        # 현재 작업 초기화
-        state.subgraphs.createGwtGeneratorByFunctionModel.current_generation = None
-        state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
+    try:
+        # 현재 처리 중인 작업이 없으면 상태 유지
+        if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            LogUtil.add_info_log(state, "현재 처리 중인 GWT 생성 작업이 없습니다.")
+            return state
+        
+        current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
+        
+        # 생성 완료 확인
+        if current_gen.generation_complete:
+            # 변수 정리
+            current_gen.target_bounded_context = {}
+            current_gen.target_command_ids = []
+            current_gen.target_aggregate_names = []
+            current_gen.description = ""
+            current_gen.summarized_es_value = {}
+            current_gen.target_command_aliases = []
+            current_gen.commands_to_replace = []
 
-    elif current_gen.retry_count > state.subgraphs.createGwtGeneratorByFunctionModel.max_retry_count:
-        # 최대 재시도 횟수 초과 시 실패로 처리하고 다음 작업으로 이동
+            # 완료된 작업을 완료 목록에 추가
+            state.subgraphs.createGwtGeneratorByFunctionModel.completed_generations.append(current_gen)
+            # 현재 작업 초기화
+            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation = None
+            state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
+            LogUtil.add_info_log(state, f"GWT 생성 작업이 성공적으로 완료되었습니다. (진행률: {state.outputs.currentProgressCount}/{state.outputs.totalProgressCount})")
+
+        elif current_gen.retry_count > state.subgraphs.createGwtGeneratorByFunctionModel.max_retry_count:
+            # 최대 재시도 횟수 초과 시 실패로 처리하고 다음 작업으로 이동
+            LogUtil.add_error_log(state, f"최대 재시도 횟수 초과: {current_gen.retry_count}")
+            state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
+            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation = None
+        
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "GWT 생성 검증 중 오류 발생", e)
         state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
-        state.subgraphs.createGwtGeneratorByFunctionModel.current_generation = None
     
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 단순 완료 처리를 위한 함수
@@ -332,6 +406,29 @@ def complete_processing(state: State) -> State:
     """
     GWT 생성 프로세스 완료
     """
+    LogUtil.add_info_log(state, "GWT 생성 프로세스가 완료되었습니다.")
+    
+    try:
+        # 완료된 작업 수 정보 로그
+        completed_count = len(state.subgraphs.createGwtGeneratorByFunctionModel.completed_generations)
+        failed = state.subgraphs.createGwtGeneratorByFunctionModel.is_failed
+        
+        if failed:
+            LogUtil.add_error_log(state, f"GWT 생성 프로세스가 오류로 인해 완료되었습니다. 완료된 작업: {completed_count}개")
+        else:
+            LogUtil.add_info_log(state, f"GWT 생성 프로세스가 성공적으로 완료되었습니다. 완료된 작업: {completed_count}개")
+        
+        # 변수 정리
+        subgraph_model = state.subgraphs.createGwtGeneratorByFunctionModel
+        subgraph_model.draft_options = {}
+        subgraph_model.current_generation = None
+        subgraph_model.completed_generations = []
+        subgraph_model.pending_generations = []
+
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "GWT 생성 프로세스 완료 처리 중 오류 발생", e)
+    
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 라우팅 함수: 다음 단계 결정
@@ -512,7 +609,7 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
     return run_subgraph
 
 # 유틸리티 함수
-def _get_examples(gwts: List[Dict[str, Any]], es_value: Dict[str, Any], es_alias_trans_manager: EsAliasTransManager) -> List[Dict[str, Any]]:
+def _get_examples(gwts: List[Dict[str, Any]], es_value: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     GWT 시나리오로부터 examples 데이터 구조를 생성하는 함수
     """

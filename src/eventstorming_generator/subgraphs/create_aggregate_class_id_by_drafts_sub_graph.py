@@ -677,7 +677,6 @@ def _modify_actions_for_reference_class_value_object(actions: List[ActionModel],
         to_aggregate = _get_aggregate_by_name(es_value, action.args["referenceClass"])
         
         if not from_aggregate or not to_aggregate:
-            print(f"Warning: Could not find referenced aggregate for {action.args['valueObjectName']}")
             continue
         
         # 이름 형식 변경

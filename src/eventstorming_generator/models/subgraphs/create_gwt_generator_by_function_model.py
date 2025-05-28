@@ -10,7 +10,6 @@ class GWTGenerationState(BaseModelWithItem):
     target_aggregate_names: List[str] = []
     description: str = ""
     summarized_es_value: Dict[str, Any] = {}
-    es_alias_trans_manager: Any = None
     target_command_aliases: List[str] = []
     retry_count: int = 0
     commands_to_replace: List[Dict[str, Any]] = []

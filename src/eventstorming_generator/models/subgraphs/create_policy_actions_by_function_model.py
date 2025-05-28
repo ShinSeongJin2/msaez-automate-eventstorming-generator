@@ -8,7 +8,6 @@ class PolicyActionGenerationState(BaseModelWithItem):
     target_bounded_context: Dict[str, Any] = {}
     description: str = ""
     summarized_es_value: Dict[str, Any] = {}
-    es_alias_trans_manager: Optional[Any] = None
     is_accumulated: bool = False
     retry_count: int = 0
     created_actions: List[ActionModel] = []
