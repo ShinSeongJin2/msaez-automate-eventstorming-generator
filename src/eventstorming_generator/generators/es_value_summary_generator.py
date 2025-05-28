@@ -1,10 +1,11 @@
 from typing import Any, Dict, Optional
 from .base import BaseGenerator
+from ..models import ESValueSummaryGeneratorOutput
 
 class ESValueSummaryGenerator(BaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         self.inputs_types_to_check = ["context", "elementIds"]
-        super().__init__(model_name, model_kwargs, client)
+        super().__init__(model_name, model_kwargs, client, structured_output_class=ESValueSummaryGeneratorOutput)
 
     def _build_agent_role_prompt(self) -> str:
         return """Role: Context Analyzer and Domain-Driven Design Specialist
