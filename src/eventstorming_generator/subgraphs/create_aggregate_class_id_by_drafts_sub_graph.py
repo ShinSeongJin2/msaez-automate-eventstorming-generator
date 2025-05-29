@@ -332,8 +332,7 @@ def postprocess_class_id_generation(state: State) -> State:
         current_gen.generation_complete = True
         
         LogUtil.add_info_log(state, "Class ID generation post-processing completed successfully")
-        state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
-    
+
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"Error in class ID generation post-processing", e)
         if state.subgraphs.createAggregateClassIdByDraftsModel.current_generation:
