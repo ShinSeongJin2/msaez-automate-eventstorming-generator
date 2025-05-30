@@ -1,20 +1,29 @@
 import asyncio
 import signal
+import threading
 
 from eventstorming_generator.utils.job_util import JobUtil
 from eventstorming_generator.graph import graph
 from eventstorming_generator.models import State
+from eventstorming_generator.run_healcheck_server import run_healcheck_server
 
 # 전역 변수로 모니터링 루프 제어
 _monitoring_active = True
 
 
 def main():
-    """메인 함수 - Job 모니터링 시작"""
+    """메인 함수 - Flask 서버와 Job 모니터링 동시 시작"""
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # Flask 서버를 별도 스레드에서 시작
+    flask_thread = threading.Thread(target=run_healcheck_server, daemon=True)
+    flask_thread.start()
+    print("[시스템] Flask 서버가 포트 2024에서 시작되었습니다.")
+    print("[시스템] 헬스체크 엔드포인트: http://localhost:2024/ok")
+
+    # Job 모니터링 시작
     asyncio.run(monitor_jobs_async(5))
 
 def signal_handler(signum, frame):
