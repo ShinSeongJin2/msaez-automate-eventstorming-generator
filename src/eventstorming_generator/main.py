@@ -1,6 +1,9 @@
 import asyncio
 import signal
+
 from eventstorming_generator.utils.job_util import JobUtil
+from eventstorming_generator.graph import graph
+from eventstorming_generator.models import State
 
 # 전역 변수로 모니터링 루프 제어
 _monitoring_active = True
@@ -36,7 +39,7 @@ async def monitor_jobs_async(interval_seconds: int = 5):
         while _monitoring_active:
             try:
                 # 미처리 Job들 비동기 처리
-                processed_count = await JobUtil.process_all_unprocessed_jobs_async()
+                processed_count = await JobUtil.process_all_unprocessed_jobs_async(process_job)
                 
                 if processed_count > 0:
                     print(f"[비동기 모니터링] {processed_count}개 Job 처리 완료")
@@ -55,6 +58,8 @@ async def monitor_jobs_async(interval_seconds: int = 5):
     
     print("\n[비동기 Job 모니터링 종료]")
 
+def process_job(state: State):
+    graph.invoke(state)
 
 if __name__ == "__main__":
     main()

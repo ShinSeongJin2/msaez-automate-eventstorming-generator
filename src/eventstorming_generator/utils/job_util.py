@@ -1,5 +1,6 @@
 import re
 import threading
+from typing import Callable
 
 from ..systems.firebase_system import FirebaseSystem
 from ..models import State
@@ -200,7 +201,7 @@ class JobUtil:
             return []
 
     @staticmethod
-    async def process_job_async(job_id: str) -> bool:
+    async def process_job_async(job_id: str, process_function: Callable) -> bool:
         """
         특정 Job을 비동기로 처리 (isProcessed를 true로 변경하고 state 로그 출력)
         
@@ -226,12 +227,16 @@ class JobUtil:
                 return False
             
             # state 데이터 로그 출력
-            state_data = job_data.get("state")   
-            state = JsonUtil.convert_to_dict(state_data)
+            state = job_data.get("state")   
             if not state:
                 print(f"[Job 처리] Job ID: {job_id} - State 데이터 변환 실패")
                 return False
             
+            state = State(**state)
+            state.inputs.jobId = job_id
+
+            process_function(state)
+
             return True
         
         except Exception as e:
@@ -241,7 +246,7 @@ class JobUtil:
             firebase_system.delete_data(job_path)
 
     @staticmethod
-    async def process_all_unprocessed_jobs_async() -> int:
+    async def process_all_unprocessed_jobs_async(process_function: Callable) -> int:
         """
         모든 미처리 Job들을 비동기로 찾아서 처리
         
@@ -259,7 +264,7 @@ class JobUtil:
             
             # 모든 Job을 동시에 비동기 처리
             import asyncio
-            tasks = [JobUtil.process_job_async(job_id) for job_id in unprocessed_jobs]
+            tasks = [JobUtil.process_job_async(job_id, process_function) for job_id in unprocessed_jobs]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             processed_count = sum(1 for result in results if result is True)
