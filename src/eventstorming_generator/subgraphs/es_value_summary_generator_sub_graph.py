@@ -14,12 +14,12 @@ def prepare_es_value_summary_generation(state: State) -> State:
     ES 값 요약 생성을 위한 준비 작업 수행
     - 입력 데이터 설정 및 초기화
     """
-    LogUtil.add_info_log(state, "ES 값 요약 생성 준비 시작...")
+    LogUtil.add_info_log(state, "ES value summary generation preparation started...")
     
     try:
         # 이미 처리 중이거나 완료된 경우 상태 유지
         if state.subgraphs.esValueSummaryGeneratorModel.is_processing:
-            LogUtil.add_info_log(state, "ES 값 요약 생성이 이미 처리 중입니다.")
+            LogUtil.add_info_log(state, "ES value summary generation is already in progress")
             return state
         
         # 처리 상태 초기화
@@ -28,11 +28,11 @@ def prepare_es_value_summary_generation(state: State) -> State:
         state.subgraphs.esValueSummaryGeneratorModel.is_failed = False
         state.subgraphs.esValueSummaryGeneratorModel.retry_count = 0
         
-        LogUtil.add_info_log(state, "ES 값 요약 생성 준비 완료")
+        LogUtil.add_info_log(state, "ES value summary generation preparation completed")
         JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "ES 값 요약 생성 준비 중 오류 발생", e)
+        LogUtil.add_exception_object_log(state, "Error during ES value summary generation preparation", e)
         state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
@@ -45,7 +45,7 @@ def preprocess_es_value_summary_generation(state: State) -> State:
     - 요소 ID 추출
     - ES 별칭 변환 관리자 초기화
     """
-    LogUtil.add_info_log(state, "ES 값 요약 전처리 시작...")
+    LogUtil.add_info_log(state, "ES value summary pre-processing started...")
     
     try:
         es_value = state.outputs.esValue.model_dump()
@@ -86,11 +86,11 @@ def preprocess_es_value_summary_generation(state: State) -> State:
         state.subgraphs.esValueSummaryGeneratorModel.summarized_es_value = summarized_es_value
         state.subgraphs.esValueSummaryGeneratorModel.element_ids = element_ids
         
-        LogUtil.add_info_log(state, f"ES 값 요약 전처리 완료 - 추출된 요소 ID 수: {len(element_ids)}")
+        LogUtil.add_info_log(state, f"ES value summary pre-processing completed - extracted element ID count: {len(element_ids)}")
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "ES 값 요약 전처리 중 오류 발생", e)
+        LogUtil.add_exception_object_log(state, "Error during ES value summary pre-processing", e)
         state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
@@ -102,14 +102,14 @@ def generate_es_value_summary(state: State) -> State:
     ES 값 요약 생성 실행
     - ESValueSummaryGenerator를 통한 요소 ID 정렬
     """
-    LogUtil.add_info_log(state, "ES 값 요약 생성 실행 시작...")
+    LogUtil.add_info_log(state, "ES value summary generation execution started...")
     
     try:
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
         current_gen = state.subgraphs.esValueSummaryGeneratorModel
         
-        LogUtil.add_info_log(state, f"사용할 AI 모델: {model_name}")
+        LogUtil.add_info_log(state, f"Using AI model: {model_name}")
         
         # 요약 생성 Generator 생성
         generator = ESValueSummaryGenerator(
@@ -130,14 +130,14 @@ def generate_es_value_summary(state: State) -> State:
         if result_dict and "result" in result_dict and "sortedElementIds" in result_dict["result"]:
             sorted_element_ids = result_dict["result"]["sortedElementIds"]
             current_gen.sorted_element_ids = sorted_element_ids
-            LogUtil.add_info_log(state, f"ES 값 요약 생성 완료 - 정렬된 요소 ID 수: {len(sorted_element_ids)}")
+            LogUtil.add_info_log(state, f"ES value summary generation completed - sorted element ID count: {len(sorted_element_ids)}")
         else:
-            raise ValueError("정렬된 요소 ID를 찾을 수 없습니다.")
+            raise ValueError("Sorted element ID not found")
         
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "ES 값 요약 생성 중 오류 발생", e)
+        LogUtil.add_exception_object_log(state, "Error during ES value summary generation", e)
         current_gen.retry_count += 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
@@ -149,11 +149,11 @@ def postprocess_es_value_summary_generation(state: State) -> State:
     ES 값 요약 생성 후처리 작업 수행
     - 정렬된 요소 ID를 기준으로 토큰 제한 내에서 요약된 ES 값 생성
     """
-    LogUtil.add_info_log(state, "ES 값 요약 후처리 시작...")
+    LogUtil.add_info_log(state, "ES value summary post-processing started...")
     
     try:
         if not state.subgraphs.esValueSummaryGeneratorModel.sorted_element_ids:
-            raise ValueError("정렬된 요소 ID가 없습니다.")
+            raise ValueError("Sorted element ID not found")
         
         # 요소별로 그룹화하고 우선순위를 다시 재조정
         sorted_element_ids = _resort_with_priority(
@@ -161,7 +161,7 @@ def postprocess_es_value_summary_generation(state: State) -> State:
             state.subgraphs.esValueSummaryGeneratorModel.sorted_element_ids
         )
         
-        LogUtil.add_info_log(state, f"우선순위 재정렬 완료 - 요소 수: {len(sorted_element_ids)}")
+        LogUtil.add_info_log(state, f"Priority resorting completed - element count: {len(sorted_element_ids)}")
         
         # 토큰 제한 내에서 요약된 ES 값 생성
         summarized_es_value = _get_summary_within_token_limit(
@@ -175,11 +175,11 @@ def postprocess_es_value_summary_generation(state: State) -> State:
         # 결과 저장
         state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value = summarized_es_value
         
-        LogUtil.add_info_log(state, "ES 값 요약 후처리 완료")
+        LogUtil.add_info_log(state, "ES value summary post-processing completed")
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "ES 값 요약 후처리 중 오류 발생", e)
+        LogUtil.add_exception_object_log(state, "Error during ES value summary post-processing", e)
         state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
@@ -191,21 +191,21 @@ def validate_es_value_summary_generation(state: State) -> State:
     ES 값 요약 생성 결과 검증
     - 생성된 요약 값 확인 및 완료 처리
     """
-    LogUtil.add_info_log(state, "ES 값 요약 생성 검증 시작...")
+    LogUtil.add_info_log(state, "ES value summary generation validation started...")
     
     try:
         # 생성된 요약 값이 있으면 완료 처리
         if state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value:
             state.subgraphs.esValueSummaryGeneratorModel.is_complete = True
-            LogUtil.add_info_log(state, "ES 값 요약 생성 검증 완료 - 성공")
+            LogUtil.add_info_log(state, "ES value summary generation validation completed - success")
         else:
             state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
-            LogUtil.add_info_log(state, f"ES 값 요약 생성 검증 실패 - 재시도 횟수: {state.subgraphs.esValueSummaryGeneratorModel.retry_count}")
+            LogUtil.add_info_log(state, f"ES value summary generation validation failed - retry count: {state.subgraphs.esValueSummaryGeneratorModel.retry_count}")
         
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "ES 값 요약 생성 검증 중 오류 발생", e)
+        LogUtil.add_exception_object_log(state, "Error during ES value summary generation validation", e)
         state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
@@ -217,9 +217,9 @@ def complete_processing(state: State) -> State:
     ES 값 요약 생성 프로세스 완료
     """
     if state.subgraphs.esValueSummaryGeneratorModel.is_failed:
-        LogUtil.add_info_log(state, "ES 값 요약 생성 프로세스 실패로 완료")
+        LogUtil.add_info_log(state, "ES value summary generation process failed and completed")
     else:
-        LogUtil.add_info_log(state, "ES 값 요약 생성 프로세스 성공적으로 완료")
+        LogUtil.add_info_log(state, "ES value summary generation process completed successfully")
     
     try:
         
@@ -236,7 +236,7 @@ def complete_processing(state: State) -> State:
         JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "ES 값 요약 생성 완료 처리 중 오류 발생", e)
+        LogUtil.add_exception_object_log(state, "Error during ES value summary generation completion", e)
     
     return state
 
