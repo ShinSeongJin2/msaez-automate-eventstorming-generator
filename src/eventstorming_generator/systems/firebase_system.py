@@ -246,7 +246,132 @@ class FirebaseSystem:
         except Exception as e:
             print(f"데이터 조회 실패: {str(e)}")
             return None
-  
+
+    def get_children_data(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
+        """
+        특정 경로의 모든 자식 노드 데이터를 조회
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로 (예: 'jobs/eventstorming_generator')
+            
+        Returns:
+            Optional[Dict[str, Dict[str, Any]]]: 자식 노드들의 데이터 (key: 자식 노드명, value: 데이터)
+        """
+        try:
+            ref = self.database.reference(path)
+            data = ref.get()
+            
+            if data is None or not isinstance(data, dict):
+                return None
+            
+            return data
+        except Exception as e:
+            print(f"자식 데이터 조회 실패: {str(e)}")
+            return None
+
+    async def get_children_data_async(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
+        """
+        특정 경로의 모든 자식 노드 데이터를 비동기로 조회
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            
+        Returns:
+            Optional[Dict[str, Dict[str, Any]]]: 자식 노드들의 데이터
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(self._sync_get_children_data, path)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 자식 데이터 조회 실패: {str(e)}")
+            return None
+
+    def _sync_get_children_data(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
+        """동기 get_children_data의 내부 구현"""
+        try:
+            ref = self.database.reference(path)
+            data = ref.get()
+            
+            if data is None or not isinstance(data, dict):
+                return None
+            
+            return data
+        except Exception as e:
+            print(f"자식 데이터 조회 실패: {str(e)}")
+            return None
+
+
+    def delete_data(self, path: str) -> bool:
+        """
+        특정 경로의 데이터 삭제
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            
+        Returns:
+            bool: 성공 여부
+        """
+        try:
+            ref = self.database.reference(path)
+            ref.delete()
+            return True
+        except Exception as e:
+            print(f"데이터 삭제 실패: {str(e)}")
+            return False
+
+    async def delete_data_async(self, path: str) -> bool:
+        """
+        특정 경로의 데이터를 비동기로 삭제
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            
+        Returns:
+            bool: 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(self._sync_delete_data, path)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 데이터 삭제 실패: {str(e)}")
+            return False
+    
+    def _sync_delete_data(self, path: str) -> bool:
+        """동기 delete_data의 내부 구현"""
+        try:
+            ref = self.database.reference(path)
+            ref.delete()
+            return True
+        except Exception as e:
+            print(f"데이터 삭제 실패: {str(e)}")
+            return False
+    
+    def delete_data_fire_and_forget(self, path: str) -> None:
+        """
+        Firebase 데이터를 삭제하되 결과를 기다리지 않음 (Fire and Forget)
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+        """
+        try:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.delete_data_async(path))
+                else:
+                    loop.run_until_complete(self.delete_data_async(path))
+            except RuntimeError:
+                asyncio.run(self.delete_data_async(path))
+        except Exception as e:
+            print(f"Fire and Forget 삭제 실패: {str(e)}")
 
 FirebaseSystem.initialize(
     service_account_path=os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"),

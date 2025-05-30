@@ -166,3 +166,107 @@ class JobUtil:
         # 별도 스레드에서 실행하여 메인 스레드를 차단하지 않음
         thread = threading.Thread(target=_async_wrapper, daemon=True)
         thread.start()
+
+
+    @staticmethod
+    async def find_unprocessed_jobs_async() -> list:
+        """
+        Firebase에서 isProcessed가 false인 Job들을 비동기로 찾아서 반환
+        
+        Returns:
+            list: 미처리 Job ID 리스트
+        """
+        try:
+            firebase_system = FirebaseSystem.instance()
+            jobs_data = await firebase_system.get_children_data_async("requestedJobs/eventstorming_generator")
+            
+            if not jobs_data:
+                return []
+            
+            unprocessed_jobs = []
+            for job_id, job_data in jobs_data.items():
+                # Job ID 유효성 검증
+                if not JobUtil.is_valid_job_id(job_id):
+                    print(f"유효하지 않은 Job ID 발견: {job_id}")
+                    firebase_system.delete_data_fire_and_forget(f"requestedJobs/eventstorming_generator/{job_id}")
+                    continue
+                
+                unprocessed_jobs.append(job_id)
+            
+            return unprocessed_jobs
+        
+        except Exception as e:
+            print(f"비동기 미처리 Job 검색 실패: {str(e)}")
+            return []
+
+    @staticmethod
+    async def process_job_async(job_id: str) -> bool:
+        """
+        특정 Job을 비동기로 처리 (isProcessed를 true로 변경하고 state 로그 출력)
+        
+        Args:
+            job_id (str): 처리할 Job ID
+            
+        Returns:
+            bool: 처리 성공 여부
+        """
+        job_path = f"requestedJobs/eventstorming_generator/{job_id}"
+        
+        try:
+            # Job ID 유효성 검증
+            if not JobUtil.is_valid_job_id(job_id):
+                print(f"유효하지 않은 Job ID: {job_id}")
+                return False
+            firebase_system = FirebaseSystem.instance()
+            
+            # 현재 Job 데이터 조회
+            job_data = firebase_system.get_data(job_path)
+            if not job_data:
+                print(f"Job 데이터를 찾을 수 없음: {job_id}")
+                return False
+            
+            # state 데이터 로그 출력
+            state_data = job_data.get("state")   
+            state = JsonUtil.convert_to_dict(state_data)
+            if not state:
+                print(f"[Job 처리] Job ID: {job_id} - State 데이터 변환 실패")
+                return False
+            
+            return True
+        
+        except Exception as e:
+            print(f"Job 처리 중 오류 발생 (Job ID: {job_id}): {str(e)}")
+            return False
+        finally:
+            firebase_system.delete_data(job_path)
+
+    @staticmethod
+    async def process_all_unprocessed_jobs_async() -> int:
+        """
+        모든 미처리 Job들을 비동기로 찾아서 처리
+        
+        Returns:
+            int: 처리된 Job 개수
+        """
+        try:
+            unprocessed_jobs = await JobUtil.find_unprocessed_jobs_async()
+            
+            if not unprocessed_jobs:
+                print("[Job 모니터링] 처리할 미처리 Job이 없습니다.")
+                return 0
+            
+            print(f"[Job 모니터링] {len(unprocessed_jobs)}개의 미처리 Job 발견")
+            
+            # 모든 Job을 동시에 비동기 처리
+            import asyncio
+            tasks = [JobUtil.process_job_async(job_id) for job_id in unprocessed_jobs]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            processed_count = sum(1 for result in results if result is True)
+            
+            print(f"[Job 모니터링] 총 {processed_count}개의 Job 처리 완료")
+            return processed_count
+        
+        except Exception as e:
+            print(f"비동기 미처리 Job 일괄 처리 중 오류 발생: {str(e)}")
+            return 0
