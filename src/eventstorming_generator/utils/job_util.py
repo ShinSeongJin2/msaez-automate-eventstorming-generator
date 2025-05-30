@@ -1,6 +1,7 @@
 import re
 import threading
 from typing import Callable
+import asyncio
 
 from ..systems.firebase_system import FirebaseSystem
 from ..models import State
@@ -203,13 +204,14 @@ class JobUtil:
     @staticmethod
     async def process_job_async(job_id: str, process_function: Callable) -> bool:
         """
-        특정 Job을 비동기로 처리 (isProcessed를 true로 변경하고 state 로그 출력)
+        특정 Job을 비동기로 처리 (백그라운드 태스크로 실행하여 논블로킹)
         
         Args:
             job_id (str): 처리할 Job ID
+            process_function (Callable): 비동기 처리 함수
             
         Returns:
-            bool: 처리 성공 여부
+            bool: 처리 시작 성공 여부
         """
         job_path = f"requestedJobs/eventstorming_generator/{job_id}"
         
@@ -218,6 +220,7 @@ class JobUtil:
             if not JobUtil.is_valid_job_id(job_id):
                 print(f"유효하지 않은 Job ID: {job_id}")
                 return False
+            
             firebase_system = FirebaseSystem.instance()
             
             # 현재 Job 데이터 조회
@@ -235,42 +238,61 @@ class JobUtil:
             state = State(**state)
             state.inputs.jobId = job_id
 
-            process_function(state)
-
+            # Job을 백그라운드 태스크로 시작 (논블로킹)
+            asyncio.create_task(JobUtil._execute_job_background(job_id, state, process_function))
+            
+            # requestedJobs에서 즉시 삭제 (중복 처리 방지)
+            firebase_system.delete_data_fire_and_forget(job_path)
+            
             return True
         
         except Exception as e:
-            print(f"Job 처리 중 오류 발생 (Job ID: {job_id}): {str(e)}")
+            print(f"Job 처리 시작 중 오류 발생 (Job ID: {job_id}): {str(e)}")
             return False
-        finally:
-            firebase_system.delete_data(job_path)
+
+    @staticmethod
+    async def _execute_job_background(job_id: str, state: State, process_function: Callable):
+        """
+        백그라운드에서 실제 Job 처리를 수행하는 내부 함수
+        
+        Args:
+            job_id (str): Job ID
+            state (State): 처리할 상태 객체
+            process_function (Callable): 비동기 처리 함수
+        """
+        try:
+            print(f"[Job 시작] Job ID: {job_id}")
+            await process_function(state)
+        except Exception as e:
+            print(f"[Job 백그라운드 처리 오류] Job ID: {job_id}, 오류: {str(e)}")
 
     @staticmethod
     async def process_all_unprocessed_jobs_async(process_function: Callable) -> int:
         """
-        모든 미처리 Job들을 비동기로 찾아서 처리
+        모든 미처리 Job들을 비동기로 찾아서 처리 (논블로킹)
         
+        Args:
+            process_function (Callable): 비동기 처리 함수
+            
         Returns:
-            int: 처리된 Job 개수
+            int: 처리 시작된 Job 개수
         """
         try:
             unprocessed_jobs = await JobUtil.find_unprocessed_jobs_async()
             
             if not unprocessed_jobs:
-                print("[Job 모니터링] 처리할 미처리 Job이 없습니다.")
                 return 0
             
             print(f"[Job 모니터링] {len(unprocessed_jobs)}개의 미처리 Job 발견")
             
-            # 모든 Job을 동시에 비동기 처리
-            import asyncio
+            # 모든 Job을 동시에 백그라운드 태스크로 시작
             tasks = [JobUtil.process_job_async(job_id, process_function) for job_id in unprocessed_jobs]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            processed_count = sum(1 for result in results if result is True)
+            started_count = sum(1 for result in results if result is True)
             
-            print(f"[Job 모니터링] 총 {processed_count}개의 Job 처리 완료")
-            return processed_count
+            print(f"[Job 모니터링] 총 {started_count}개의 Job 처리 시작")
+            return started_count
         
         except Exception as e:
             print(f"비동기 미처리 Job 일괄 처리 중 오류 발생: {str(e)}")

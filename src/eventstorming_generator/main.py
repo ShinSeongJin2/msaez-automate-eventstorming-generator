@@ -38,11 +38,11 @@ async def monitor_jobs_async(interval_seconds: int = 5):
     try:
         while _monitoring_active:
             try:
-                # 미처리 Job들 비동기 처리
-                processed_count = await JobUtil.process_all_unprocessed_jobs_async(process_job)
+                # 미처리 Job들 비동기 처리 (논블로킹)
+                processed_count = await JobUtil.process_all_unprocessed_jobs_async(process_job_async)
                 
                 if processed_count > 0:
-                    print(f"[비동기 모니터링] {processed_count}개 Job 처리 완료")
+                    print(f"[비동기 모니터링] {processed_count}개 Job 처리 시작됨")
                 
                 # 다음 체크까지 비동기 대기
                 await asyncio.sleep(interval_seconds)
@@ -58,8 +58,15 @@ async def monitor_jobs_async(interval_seconds: int = 5):
     
     print("\n[비동기 Job 모니터링 종료]")
 
-def process_job(state: State):
-    graph.invoke(state)
+async def process_job_async(state: State):
+    """비동기 Job 처리 함수"""
+    try:
+        # graph.invoke를 별도 executor에서 실행하여 논블로킹 처리
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, graph.invoke, state)
+        print(f"[Job 완료] Job ID: {state.inputs.jobId}")
+    except Exception as e:
+        print(f"[Job 처리 오류] Job ID: {state.inputs.jobId}, 오류: {str(e)}")
 
 if __name__ == "__main__":
     main()
