@@ -29,9 +29,13 @@ class JobUtil:
     _queue_lock = threading.Lock()
     _initialized = False
     
+    _procssed_job_ids = set()
+
     # 설정값
     MAX_QUEUE_SIZE = 100  # 큐 최대 크기
     WORKER_TIMEOUT = 5.0  # 작업자 스레드 종료 대기 시간
+
+
     
     @classmethod
     def _initialize_cleanup(cls):
@@ -143,7 +147,7 @@ class JobUtil:
         processed_count = 0
         
         try:
-            while not shutdown_event.is_set():
+            while True:
                 try:
                     # 큐에서 업데이트 요청 가져오기 (타임아웃 1초)
                     update_request = update_queue.get(timeout=1.0)
@@ -159,8 +163,28 @@ class JobUtil:
                     update_queue.task_done()
                     
                 except queue.Empty:
-                    # 타임아웃 - 계속 루프
+                    # 큐가 비어있음 - shutdown_event 확인
+                    if shutdown_event.is_set():
+                        # 종료 요청이 있고 큐가 비어있으면 한 번 더 확인 후 종료
+                        try:
+                            # 마지막으로 0.1초 더 기다려서 혹시 남은 요청이 있는지 확인
+                            update_request = update_queue.get(timeout=0.1)
+                            if update_request is None:
+                                print(f"[Job Worker] Job ID {job_id} 최종 종료 신호 수신")
+                                break
+                            
+                            # 마지막 요청 처리
+                            JobUtil._execute_firebase_update(update_request)
+                            processed_count += 1
+                            update_queue.task_done()
+                            
+                        except queue.Empty:
+                            # 정말로 큐가 비어있음 - 종료
+                            print(f"[Job Worker] Job ID {job_id} 큐 비어있음 확인, 종료")
+                            break
+                    # shutdown_event가 설정되지 않았으면 계속 대기
                     continue
+                    
                 except Exception as e:
                     print(f"[Job Worker Error] Job ID {job_id} 업데이트 처리 중 오류: {str(e)}")
                     
@@ -225,6 +249,12 @@ class JobUtil:
             print(f"[Job Queue Error] 유효하지 않은 Job ID: {job_id}")
             return
         
+        # 이미 종료 신호가 설정된 Job에 대해서는 업데이트 요청 거부
+        with JobUtil._queue_lock:
+            if job_id in JobUtil._shutdown_events and JobUtil._shutdown_events[job_id].is_set():
+                print(f"[Job Queue Warning] Job ID {job_id}는 이미 종료 중입니다 - 업데이트 요청 무시됨")
+                return
+        
         # 작업자가 없으면 생성
         JobUtil._ensure_worker_for_job(job_id)
         
@@ -280,6 +310,7 @@ class JobUtil:
     def cleanup_job_resources(job_id: str):
         """
         특정 Job의 리소스 정리 (큐, 스레드 등)
+        큐에 있는 모든 업데이트가 완료된 후 안전하게 종료
         
         Args:
             job_id (str): 정리할 Job ID
@@ -288,36 +319,38 @@ class JobUtil:
             if job_id in JobUtil._shutdown_events:
                 print(f"[Job Cleanup] Job ID {job_id} 리소스 정리 시작")
                 
-                # 종료 이벤트 설정
-                JobUtil._shutdown_events[job_id].set()
+                # 1단계: 새로운 요청 추가 방지 (아직 종료 신호는 보내지 않음)
+                if job_id in JobUtil._update_queues:
+                    queue_obj = JobUtil._update_queues[job_id]
+                          
+                    while not queue_obj.empty():
+                        time.sleep(1)
                 
-                # 큐에 종료 신호 추가 (None)
+                # 2단계: 종료 신호 설정
+                JobUtil._shutdown_events[job_id].set()
+                print(f"[Job Cleanup] Job ID {job_id} 종료 신호 설정")
+                
+                # 3단계: 종료 신호(None)를 큐에 추가
                 if job_id in JobUtil._update_queues:
                     try:
-                        # 남은 큐 작업들 처리 완료 대기 (최대 2초)
-                        queue_obj = JobUtil._update_queues[job_id]
-                        
-                        # 종료 신호 추가
-                        queue_obj.put(None, timeout=1.0)
-                        
-                        # 큐 비우기 (처리되지 않은 요청들 제거)
-                        while not queue_obj.empty():
-                            try:
-                                queue_obj.get_nowait()
-                                queue_obj.task_done()
-                            except queue.Empty:
-                                break
-                    except:
-                        pass
+                        JobUtil._update_queues[job_id].put(None, timeout=1.0)
+                        print(f"[Job Cleanup] Job ID {job_id} 최종 종료 신호 전송")
+                    except queue.Full:
+                        print(f"[Job Cleanup Warning] Job ID {job_id} 큐가 가득참 - 강제 종료")
+                    except Exception as e:
+                        print(f"[Job Cleanup Error] Job ID {job_id} 종료 신호 전송 실패: {str(e)}")
                 
-                # 스레드 종료 대기
+                # 4단계: 스레드 종료 대기
                 if job_id in JobUtil._worker_threads:
                     worker_thread = JobUtil._worker_threads[job_id]
+                    print(f"[Job Cleanup] Job ID {job_id} 작업자 스레드 종료 대기...")
                     worker_thread.join(timeout=JobUtil.WORKER_TIMEOUT)
                     if worker_thread.is_alive():
                         print(f"[Job Cleanup Warning] Job ID {job_id} 작업자 스레드가 {JobUtil.WORKER_TIMEOUT}초 내에 종료되지 않음")
+                    else:
+                        print(f"[Job Cleanup] Job ID {job_id} 작업자 스레드 정상 종료")
                 
-                # 리소스 정리
+                # 5단계: 리소스 정리
                 JobUtil._update_queues.pop(job_id, None)
                 JobUtil._worker_threads.pop(job_id, None)
                 JobUtil._shutdown_events.pop(job_id, None)
@@ -475,11 +508,16 @@ class JobUtil:
         job_path = f"requestedJobs/eventstorming_generator/{job_id}"
         
         try:
+            if job_id in JobUtil._procssed_job_ids:
+                print(f"이미 처리된 Job ID: {job_id}")
+                return False
+            JobUtil._procssed_job_ids.add(job_id)
+
             # Job ID 유효성 검증
             if not JobUtil.is_valid_job_id(job_id):
                 print(f"유효하지 않은 Job ID: {job_id}")
                 return False
-            
+
             firebase_system = FirebaseSystem.instance()
             
             # 현재 Job 데이터 조회
@@ -500,13 +538,11 @@ class JobUtil:
             # Job을 백그라운드 태스크로 시작 (논블로킹)
             asyncio.create_task(JobUtil._execute_job_background(job_id, state, process_function))
             
-            # requestedJobs에서 즉시 삭제 (중복 처리 방지)
-            firebase_system.delete_data_fire_and_forget(job_path)
-            
             return True
         
         except Exception as e:
             print(f"Job 처리 시작 중 오류 발생 (Job ID: {job_id}): {str(e)}")
+            FirebaseSystem.instance().delete_data_fire_and_forget(job_path)
             return False
 
     @staticmethod
@@ -523,6 +559,8 @@ class JobUtil:
             print(f"[Job 시작] Job ID: {job_id}")
             await process_function(state)
         except Exception as e:
+            job_path = f"requestedJobs/eventstorming_generator/{job_id}"
+            FirebaseSystem.instance().delete_data_fire_and_forget(job_path)
             print(f"[Job 백그라운드 처리 오류] Job ID: {job_id}, 오류: {str(e)}")
 
     @staticmethod
@@ -556,3 +594,47 @@ class JobUtil:
         except Exception as e:
             print(f"비동기 미처리 Job 일괄 처리 중 오류 발생: {str(e)}")
             return 0
+
+    @staticmethod
+    def print_job_status_summary():
+        """
+        현재 활성 Job들의 상태 요약 출력 (디버깅용)
+        """
+        with JobUtil._queue_lock:
+            active_jobs = list(JobUtil._update_queues.keys())
+        
+        if not active_jobs:
+            print("[Job Status] 활성 Job 없음")
+            return
+        
+        print(f"[Job Status] 활성 Job {len(active_jobs)}개:")
+        for job_id in active_jobs:
+            status = JobUtil.get_queue_status(job_id)
+            worker_status = "정상" if status["worker_alive"] else "종료됨"
+            shutdown_status = "종료 중" if status["shutdown_requested"] else "실행 중"
+            print(f"  - {job_id}: 큐크기={status['queue_size']}, 작업자={worker_status}, 상태={shutdown_status}")
+
+    @staticmethod
+    def wait_for_job_completion(job_id: str, timeout: float = 30.0) -> bool:
+        """
+        특정 Job의 큐가 완전히 비워질 때까지 대기 (테스트/디버깅용)
+        
+        Args:
+            job_id (str): 대기할 Job ID
+            timeout (float): 최대 대기 시간 (초)
+            
+        Returns:
+            bool: 큐가 비워졌으면 True, 타임아웃이면 False
+        """
+        if job_id not in JobUtil._update_queues:
+            return True
+        
+        wait_start = time.time()
+        queue_obj = JobUtil._update_queues[job_id]
+        
+        while (time.time() - wait_start) < timeout:
+            if queue_obj.empty():
+                return True
+            time.sleep(0.1)
+        
+        return False

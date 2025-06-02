@@ -6,6 +6,8 @@ from eventstorming_generator.utils.job_util import JobUtil
 from eventstorming_generator.graph import graph
 from eventstorming_generator.models import State
 from eventstorming_generator.run_healcheck_server import run_healcheck_server
+from eventstorming_generator.systems.firebase_system import FirebaseSystem
+
 
 # 전역 변수로 모니터링 루프 제어
 _monitoring_active = True
@@ -88,6 +90,10 @@ async def process_job_async(state: State):
         try:
             print(f"[Job 정리] Job ID {job_id} 리소스 정리 중...")
             JobUtil.cleanup_job_resources(job_id)
+            
+            job_request_path = f"requestedJobs/eventstorming_generator/{job_id}"
+            FirebaseSystem.instance().delete_data_fire_and_forget(job_request_path)
+
             print(f"[Job 정리 완료] Job ID {job_id}")
         except Exception as cleanup_error:
             print(f"[Job 정리 오류] Job ID {job_id} 리소스 정리 중 오류: {str(cleanup_error)}")
