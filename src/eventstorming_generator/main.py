@@ -69,13 +69,28 @@ async def monitor_jobs_async(interval_seconds: int = 5):
 
 async def process_job_async(state: State):
     """비동기 Job 처리 함수"""
+    job_id = state.inputs.jobId
+    
     try:
+        print(f"[Job 시작] Job ID: {job_id}")
+        
         # graph.invoke를 별도 executor에서 실행하여 논블로킹 처리
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, graph.invoke, state)
-        print(f"[Job 완료] Job ID: {state.inputs.jobId}")
+        
+        print(f"[Job 완료] Job ID: {job_id}")
+        
     except Exception as e:
-        print(f"[Job 처리 오류] Job ID: {state.inputs.jobId}, 오류: {str(e)}")
+        print(f"[Job 처리 오류] Job ID: {job_id}, 오류: {str(e)}")
+        
+    finally:
+        # 작업 완료 후 항상 리소스 정리
+        try:
+            print(f"[Job 정리] Job ID {job_id} 리소스 정리 중...")
+            JobUtil.cleanup_job_resources(job_id)
+            print(f"[Job 정리 완료] Job ID {job_id}")
+        except Exception as cleanup_error:
+            print(f"[Job 정리 오류] Job ID {job_id} 리소스 정리 중 오류: {str(cleanup_error)}")
 
 if __name__ == "__main__":
     main()

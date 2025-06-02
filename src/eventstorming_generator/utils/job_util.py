@@ -2,12 +2,45 @@ import re
 import threading
 from typing import Callable
 import asyncio
+import queue
+import time
+from dataclasses import dataclass
+from typing import Dict, Optional
+import atexit
+import weakref
 
 from ..systems.firebase_system import FirebaseSystem
 from ..models import State
 from ..utils import JsonUtil
 
+@dataclass
+class UpdateRequest:
+    """Firebase 업데이트 요청 데이터 클래스"""
+    state: State
+    timestamp: float
+    operation_type: str  # 'update', 'set', 'delete'
+    path_suffix: Optional[str] = None  # 추가 경로가 필요한 경우
+
 class JobUtil:
+    # 클래스 레벨 변수로 큐와 스레드 관리
+    _update_queues: Dict[str, queue.Queue] = {}
+    _worker_threads: Dict[str, threading.Thread] = {}
+    _shutdown_events: Dict[str, threading.Event] = {}
+    _queue_lock = threading.Lock()
+    _initialized = False
+    
+    # 설정값
+    MAX_QUEUE_SIZE = 100  # 큐 최대 크기
+    WORKER_TIMEOUT = 5.0  # 작업자 스레드 종료 대기 시간
+    
+    @classmethod
+    def _initialize_cleanup(cls):
+        """프로그램 종료시 자동 정리를 위한 초기화"""
+        if not cls._initialized:
+            # 프로그램 종료시 자동으로 모든 리소스 정리
+            atexit.register(cls.cleanup_all_job_resources)
+            cls._initialized = True
+    
     @staticmethod
     def is_valid_job_id(job_id: str) -> bool:
         """
@@ -65,6 +98,262 @@ class JobUtil:
         
         return True
 
+    @staticmethod
+    def _ensure_worker_for_job(job_id: str):
+        """
+        특정 Job ID에 대한 작업자 스레드가 존재하는지 확인하고 없으면 생성
+        
+        Args:
+            job_id (str): Job ID
+        """
+        # 자동 정리 초기화
+        JobUtil._initialize_cleanup()
+        
+        with JobUtil._queue_lock:
+            if job_id not in JobUtil._update_queues:
+                # 큐와 이벤트 생성 (크기 제한 적용)
+                JobUtil._update_queues[job_id] = queue.Queue(maxsize=JobUtil.MAX_QUEUE_SIZE)
+                JobUtil._shutdown_events[job_id] = threading.Event()
+                
+                # 작업자 스레드 시작
+                worker_thread = threading.Thread(
+                    target=JobUtil._update_worker,
+                    args=(job_id,),
+                    name=f"JobUpdateWorker-{job_id}",
+                    daemon=True
+                )
+                worker_thread.start()
+                JobUtil._worker_threads[job_id] = worker_thread
+                
+                print(f"[Job Queue] Job ID {job_id}에 대한 업데이트 큐 및 작업자 스레드 생성됨")
+
+    @staticmethod
+    def _update_worker(job_id: str):
+        """
+        Job별 Firebase 업데이트 작업자 스레드
+        
+        Args:
+            job_id (str): 처리할 Job ID
+        """
+        print(f"[Job Worker] Job ID {job_id} 업데이트 작업자 스레드 시작")
+        
+        update_queue = JobUtil._update_queues[job_id]
+        shutdown_event = JobUtil._shutdown_events[job_id]
+        
+        processed_count = 0
+        
+        try:
+            while not shutdown_event.is_set():
+                try:
+                    # 큐에서 업데이트 요청 가져오기 (타임아웃 1초)
+                    update_request = update_queue.get(timeout=1.0)
+                    
+                    if update_request is None:  # 종료 신호
+                        print(f"[Job Worker] Job ID {job_id} 종료 신호 수신")
+                        break
+                    
+                    # Firebase 업데이트 실행
+                    JobUtil._execute_firebase_update(update_request)
+                    processed_count += 1
+                    
+                    update_queue.task_done()
+                    
+                except queue.Empty:
+                    # 타임아웃 - 계속 루프
+                    continue
+                except Exception as e:
+                    print(f"[Job Worker Error] Job ID {job_id} 업데이트 처리 중 오류: {str(e)}")
+                    
+        except Exception as e:
+            print(f"[Job Worker Fatal] Job ID {job_id} 작업자 스레드 치명적 오류: {str(e)}")
+        
+        finally:
+            print(f"[Job Worker] Job ID {job_id} 업데이트 작업자 스레드 종료 (처리된 요청: {processed_count}개)")
+
+    @staticmethod
+    def _execute_firebase_update(update_request: UpdateRequest):
+        """
+        Firebase 업데이트 실행
+        
+        Args:
+            update_request (UpdateRequest): 업데이트 요청
+        """
+        try:
+            firebase_system = FirebaseSystem.instance()
+            job_id = update_request.state.inputs.jobId
+            
+            # 기본 경로 구성
+            base_path = f"jobs/eventstorming_generator/{job_id}"
+            if update_request.path_suffix:
+                path = f"{base_path}/{update_request.path_suffix}"
+            else:
+                path = base_path
+            
+            # 업데이트 데이터 준비
+            data = {
+                "state": JsonUtil.convert_to_json(update_request.state),
+                "lastUpdated": update_request.timestamp
+            }
+            
+            # 업데이트 타입에 따른 처리
+            if update_request.operation_type == "set":
+                firebase_system.set_data(path, data)
+            elif update_request.operation_type == "update":
+                firebase_system.update_data(path, data)
+            elif update_request.operation_type == "delete":
+                firebase_system.delete_data(path)
+            
+            # 성공 로그는 상세 디버깅이 필요한 경우에만 출력
+            # print(f"[Firebase Update] Job ID {job_id} {update_request.operation_type} 성공")
+            
+        except Exception as e:
+            print(f"[Firebase Update Error] Job ID {update_request.state.inputs.jobId} 업데이트 실행 실패: {str(e)}")
+
+    @staticmethod
+    def _add_update_to_queue(state: State, operation_type: str, path_suffix: Optional[str] = None):
+        """
+        업데이트 요청을 큐에 추가
+        
+        Args:
+            state (State): 상태 객체
+            operation_type (str): 업데이트 타입 ('set', 'update', 'delete')
+            path_suffix (str, optional): 추가 경로
+        """
+        job_id = state.inputs.jobId
+        
+        if not JobUtil.is_valid_job_id(job_id):
+            print(f"[Job Queue Error] 유효하지 않은 Job ID: {job_id}")
+            return
+        
+        # 작업자가 없으면 생성
+        JobUtil._ensure_worker_for_job(job_id)
+        
+        # 업데이트 요청 생성
+        update_request = UpdateRequest(
+            state=state,
+            timestamp=time.time(),
+            operation_type=operation_type,
+            path_suffix=path_suffix
+        )
+        
+        # 큐에 추가
+        try:
+            JobUtil._update_queues[job_id].put(update_request, timeout=2.0)
+        except queue.Full:
+            print(f"[Job Queue Warning] Job ID {job_id} 큐가 가득참 - 업데이트 요청 무시됨")
+        except KeyError:
+            print(f"[Job Queue Error] Job ID {job_id} 큐가 존재하지 않음")
+        except Exception as e:
+            print(f"[Job Queue Error] 큐 추가 실패: {str(e)}")
+
+    @staticmethod
+    def get_queue_status(job_id: str) -> Dict[str, any]:
+        """
+        특정 Job의 큐 상태 조회
+        
+        Args:
+            job_id (str): Job ID
+            
+        Returns:
+            Dict[str, any]: 큐 상태 정보
+        """
+        with JobUtil._queue_lock:
+            status = {
+                "exists": job_id in JobUtil._update_queues,
+                "queue_size": 0,
+                "worker_alive": False,
+                "shutdown_requested": False
+            }
+            
+            if job_id in JobUtil._update_queues:
+                status["queue_size"] = JobUtil._update_queues[job_id].qsize()
+            
+            if job_id in JobUtil._worker_threads:
+                status["worker_alive"] = JobUtil._worker_threads[job_id].is_alive()
+            
+            if job_id in JobUtil._shutdown_events:
+                status["shutdown_requested"] = JobUtil._shutdown_events[job_id].is_set()
+            
+            return status
+
+    @staticmethod
+    def cleanup_job_resources(job_id: str):
+        """
+        특정 Job의 리소스 정리 (큐, 스레드 등)
+        
+        Args:
+            job_id (str): 정리할 Job ID
+        """
+        with JobUtil._queue_lock:
+            if job_id in JobUtil._shutdown_events:
+                print(f"[Job Cleanup] Job ID {job_id} 리소스 정리 시작")
+                
+                # 종료 이벤트 설정
+                JobUtil._shutdown_events[job_id].set()
+                
+                # 큐에 종료 신호 추가 (None)
+                if job_id in JobUtil._update_queues:
+                    try:
+                        # 남은 큐 작업들 처리 완료 대기 (최대 2초)
+                        queue_obj = JobUtil._update_queues[job_id]
+                        
+                        # 종료 신호 추가
+                        queue_obj.put(None, timeout=1.0)
+                        
+                        # 큐 비우기 (처리되지 않은 요청들 제거)
+                        while not queue_obj.empty():
+                            try:
+                                queue_obj.get_nowait()
+                                queue_obj.task_done()
+                            except queue.Empty:
+                                break
+                    except:
+                        pass
+                
+                # 스레드 종료 대기
+                if job_id in JobUtil._worker_threads:
+                    worker_thread = JobUtil._worker_threads[job_id]
+                    worker_thread.join(timeout=JobUtil.WORKER_TIMEOUT)
+                    if worker_thread.is_alive():
+                        print(f"[Job Cleanup Warning] Job ID {job_id} 작업자 스레드가 {JobUtil.WORKER_TIMEOUT}초 내에 종료되지 않음")
+                
+                # 리소스 정리
+                JobUtil._update_queues.pop(job_id, None)
+                JobUtil._worker_threads.pop(job_id, None)
+                JobUtil._shutdown_events.pop(job_id, None)
+                
+                print(f"[Job Cleanup] Job ID {job_id} 리소스 정리 완료")
+
+    @staticmethod
+    def cleanup_all_job_resources():
+        """
+        모든 Job의 리소스 정리
+        """
+        print("[Job Cleanup] 모든 Job 리소스 정리 시작")
+        
+        with JobUtil._queue_lock:
+            job_ids = list(JobUtil._shutdown_events.keys())
+        
+        for job_id in job_ids:
+            try:
+                JobUtil.cleanup_job_resources(job_id)
+            except Exception as e:
+                print(f"[Job Cleanup Error] Job ID {job_id} 정리 중 오류: {str(e)}")
+        
+        print("[Job Cleanup] 모든 Job 리소스 정리 완료")
+
+    @staticmethod
+    def get_all_job_status() -> Dict[str, Dict[str, any]]:
+        """
+        모든 활성 Job의 상태 조회
+        
+        Returns:
+            Dict[str, Dict[str, any]]: 모든 Job의 상태 정보
+        """
+        with JobUtil._queue_lock:
+            job_ids = list(JobUtil._update_queues.keys())
+        
+        return {job_id: JobUtil.get_queue_status(job_id) for job_id in job_ids}
 
     @staticmethod
     def new_job_to_firebase(state: State):
@@ -96,27 +385,12 @@ class JobUtil:
     @staticmethod
     def new_job_to_firebase_fire_and_forget(state: State):
         """
-        새로운 작업을 Firebase에 업로드하되 결과를 기다리지 않음
-        백그라운드에서 실행되어 메인 코드 실행을 차단하지 않음
+        새로운 작업을 Firebase에 큐 기반으로 안전하게 업로드
         
         Args:
             state (State): 업로드할 상태 객체
         """
-        def _async_wrapper():
-            try:
-                FirebaseSystem.instance().set_data_fire_and_forget(
-                    f"jobs/eventstorming_generator/{state.inputs.jobId}",
-                    {
-                        "state": JsonUtil.convert_to_json(state)
-                    }
-                )
-            except Exception as e:
-                print(f"백그라운드 Firebase 업로드 실패: {str(e)}")
-        
-        # 별도 스레드에서 실행하여 메인 스레드를 차단하지 않음
-        thread = threading.Thread(target=_async_wrapper, daemon=True)
-        thread.start()
-
+        JobUtil._add_update_to_queue(state, "set")
 
     @staticmethod
     def update_job_to_firebase(state: State):
@@ -148,27 +422,12 @@ class JobUtil:
     @staticmethod
     def update_job_to_firebase_fire_and_forget(state: State):
         """
-        작업 상태를 Firebase에 업데이트하되 결과를 기다리지 않음
-        백그라운드에서 실행되어 메인 코드 실행을 차단하지 않음
+        작업 상태를 Firebase에 큐 기반으로 안전하게 업데이트
         
         Args:
             state (State): 업데이트할 상태 객체
         """
-        def _async_wrapper():
-            try:
-                FirebaseSystem.instance().update_data_fire_and_forget(
-                    f"jobs/eventstorming_generator/{state.inputs.jobId}",
-                    {
-                        "state": JsonUtil.convert_to_json(state)
-                    }
-                )
-            except Exception as e:
-                print(f"백그라운드 Firebase 업데이트 실패: {str(e)}")
-        
-        # 별도 스레드에서 실행하여 메인 스레드를 차단하지 않음
-        thread = threading.Thread(target=_async_wrapper, daemon=True)
-        thread.start()
-
+        JobUtil._add_update_to_queue(state, "update")
 
     @staticmethod
     async def find_unprocessed_jobs_async() -> list:
