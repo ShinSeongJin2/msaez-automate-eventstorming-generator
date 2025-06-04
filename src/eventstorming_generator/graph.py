@@ -19,6 +19,8 @@ def create_bounded_contexts(state: State):
     JobUtil.new_job_to_firebase_fire_and_forget(state)
 
     try :
+        created_bounded_contexts = {}
+
         # 모든 BoundedContext들에 대해 반복
         for context_name, context in state.inputs.selectedDraftOptions.items():
             bc_name = context.get("boundedContext", {}).get("name", "")
@@ -62,7 +64,16 @@ def create_bounded_contexts(state: State):
                 
                 # 상태 업데이트
                 state.outputs.esValue = updated_es_value
-    
+
+                for element in state.outputs.esValue.elements.values():
+                    if element.get("_type") == "org.uengine.modeling.model.BoundedContext" and element.get("name", "").lower() == bc_name.lower():
+                        created_bounded_contexts[bc_name] = element
+                        break
+        
+        # 생성된 내용으로 Boundconxt 내용을 교체하기
+        for context_name, context in state.inputs.selectedDraftOptions.items():
+            context["boundedContext"] = created_bounded_contexts[context_name]
+
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"Error creating bounded contexts", e)
         return "complete"
