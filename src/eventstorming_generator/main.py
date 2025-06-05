@@ -78,7 +78,7 @@ async def process_job_async(state: State):
         
         # graph.invoke를 별도 executor에서 실행하여 논블로킹 처리
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, graph.invoke, state)
+        await loop.run_in_executor(None, graph.invoke, state, {"recursion_limit": 2147483647})
         
         print(f"[Job 완료] Job ID: {job_id}")
         

@@ -6,7 +6,7 @@ from .test_utils import TestUtils
 def test_graph():
     try:
         
-        result = State(**graph.invoke(input_state))
+        result = State(**graph.invoke(input_state, {"recursion_limit": 2147483647}))
         TestUtils.save_dict_to_temp_file(result.outputs.esValue, "test_graph")
         TestUtils.save_es_summarize_result_to_temp_file(result.outputs.esValue, "test_graph")
 
