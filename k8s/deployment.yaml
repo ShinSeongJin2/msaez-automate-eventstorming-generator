@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eventstorming-generator
+  labels:
+    app: eventstorming-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eventstorming-generator
+  template:
+    metadata:
+      labels:
+        app: eventstorming-generator
+    spec:
+      containers:
+      - name: eventstorming-generator
+        image: asia-northeast3-docker.pkg.dev/eventstorming-tool-db/eventstorming-repo/eventstorming-generator:latest
+        ports:
+        - containerPort: 2024
+        env:
+        - name: AI_MODEL
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: AI_MODEL
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: OPENAI_API_KEY
+        - name: LANGSMITH_TRACING
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: LANGSMITH_TRACING
+        - name: LANGSMITH_PROJECT
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: LANGSMITH_PROJECT
+        - name: LANGSMITH_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: LANGSMITH_API_KEY
+        - name: FIREBASE_SERVICE_ACCOUNT_PATH
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: FIREBASE_SERVICE_ACCOUNT_PATH
+        - name: FIREBASE_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: FIREBASE_DATABASE_URL
+        volumeMounts:
+        - name: firebase-key-volume
+          mountPath: /app/.auth
+          readOnly: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "200m"
+          limits:
+            memory: "256Mi"
+            cpu: "300m"
+        livenessProbe:
+          httpGet:
+            path: /ok
+            port: 2024
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ok
+            port: 2024
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: firebase-key-volume
+        secret:
+          secretName: firebase-key
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eventstorming-generator-service
+spec:
+  selector:
+    app: eventstorming-generator
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 2024
+  type: LoadBalancer 
