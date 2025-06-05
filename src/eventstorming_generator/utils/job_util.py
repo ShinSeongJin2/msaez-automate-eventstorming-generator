@@ -7,11 +7,11 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 import atexit
-import weakref
 
 from ..systems.firebase_system import FirebaseSystem
 from ..models import State
 from ..utils import JsonUtil
+from ..config import Config
 
 @dataclass
 class UpdateRequest:
@@ -207,7 +207,7 @@ class JobUtil:
             job_id = update_request.state.inputs.jobId
             
             # 기본 경로 구성
-            base_path = f"jobs/eventstorming_generator/{job_id}"
+            base_path = Config.get_job_path(job_id)
             if update_request.path_suffix:
                 path = f"{base_path}/{update_request.path_suffix}"
             else:
@@ -391,7 +391,7 @@ class JobUtil:
     @staticmethod
     def new_job_to_firebase(state: State):
         FirebaseSystem.instance().set_data(
-            f"jobs/eventstorming_generator/{state.inputs.jobId}",
+            Config.get_job_path(state.inputs.jobId),
             {
                 "state": JsonUtil.convert_to_json(state)
             }
@@ -409,7 +409,7 @@ class JobUtil:
             bool: 성공 여부
         """
         return await FirebaseSystem.instance().set_data_async(
-            f"jobs/eventstorming_generator/{state.inputs.jobId}",
+            Config.get_job_path(state.inputs.jobId),
             {
                 "state": JsonUtil.convert_to_json(state)
             }
@@ -428,7 +428,7 @@ class JobUtil:
     @staticmethod
     def update_job_to_firebase(state: State):
         FirebaseSystem.instance().update_data(
-            f"jobs/eventstorming_generator/{state.inputs.jobId}",
+            Config.get_job_path(state.inputs.jobId),
             {
                 "state": JsonUtil.convert_to_json(state)
             }
@@ -446,7 +446,7 @@ class JobUtil:
             bool: 성공 여부
         """
         return await FirebaseSystem.instance().update_data_async(
-            f"jobs/eventstorming_generator/{state.inputs.jobId}",
+            Config.get_job_path(state.inputs.jobId),
             {
                 "state": JsonUtil.convert_to_json(state)
             }
@@ -472,7 +472,7 @@ class JobUtil:
         """
         try:
             firebase_system = FirebaseSystem.instance()
-            jobs_data = await firebase_system.get_children_data_async("requestedJobs/eventstorming_generator")
+            jobs_data = await firebase_system.get_children_data_async(Config.get_requested_job_root_path())
             
             if not jobs_data:
                 return []
@@ -482,7 +482,7 @@ class JobUtil:
                 # Job ID 유효성 검증
                 if not JobUtil.is_valid_job_id(job_id):
                     print(f"유효하지 않은 Job ID 발견: {job_id}")
-                    firebase_system.delete_data_fire_and_forget(f"requestedJobs/eventstorming_generator/{job_id}")
+                    firebase_system.delete_data_fire_and_forget(Config.get_requested_job_path(job_id))
                     continue
                 
                 unprocessed_jobs.append(job_id)
@@ -505,7 +505,7 @@ class JobUtil:
         Returns:
             bool: 처리 시작 성공 여부
         """
-        job_path = f"requestedJobs/eventstorming_generator/{job_id}"
+        requested_job_path = Config.get_requested_job_path(job_id)
         
         try:
             if job_id in JobUtil._procssed_job_ids:
@@ -521,7 +521,7 @@ class JobUtil:
             firebase_system = FirebaseSystem.instance()
             
             # 현재 Job 데이터 조회
-            job_data = firebase_system.get_data(job_path)
+            job_data = firebase_system.get_data(requested_job_path)
             if not job_data:
                 print(f"Job 데이터를 찾을 수 없음: {job_id}")
                 return False
@@ -542,7 +542,7 @@ class JobUtil:
         
         except Exception as e:
             print(f"Job 처리 시작 중 오류 발생 (Job ID: {job_id}): {str(e)}")
-            FirebaseSystem.instance().delete_data_fire_and_forget(job_path)
+            FirebaseSystem.instance().delete_data_fire_and_forget(requested_job_path)
             return False
 
     @staticmethod
@@ -559,8 +559,8 @@ class JobUtil:
             print(f"[Job 시작] Job ID: {job_id}")
             await process_function(state)
         except Exception as e:
-            job_path = f"requestedJobs/eventstorming_generator/{job_id}"
-            FirebaseSystem.instance().delete_data_fire_and_forget(job_path)
+            requested_job_path = Config.get_requested_job_path(job_id)
+            FirebaseSystem.instance().delete_data_fire_and_forget(requested_job_path)
             print(f"[Job 백그라운드 처리 오류] Job ID: {job_id}, 오류: {str(e)}")
 
     @staticmethod
