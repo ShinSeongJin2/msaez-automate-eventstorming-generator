@@ -94,4 +94,4 @@ spec:
     - protocol: TCP
       port: 80
       targetPort: 2024
-  type: LoadBalancer 
+  type: ClusterIP 
