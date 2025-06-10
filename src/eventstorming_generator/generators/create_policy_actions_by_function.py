@@ -39,27 +39,42 @@ Please follow these rules:
    - Ensure policies don't create circular dependencies
 5. When creating policies, consider:
    - Business rules and constraints from requirements
+   - Domain events and their business implications
+   - Context relationships and interaction patterns
    - Eventual consistency requirements
    - Error handling and compensation scenarios
    - Performance implications of cross-context communication
-6. Validation criteria for each policy:
+6. Leverage the provided domain events to understand:
+   - Event triggers and their business significance
+   - Cross-context event flows and dependencies
+   - Event-driven workflow patterns
+7. Consider context relations when designing policies:
+   - Respect bounded context boundaries
+   - Align with defined interaction patterns (Pub/Sub, API calls, etc.)
+   - Ensure policies support the specified context relationships
+8. Validation criteria for each policy:
    - Must have clear trigger conditions
    - Should respect bounded context boundaries
    - Must be idempotent where possible
    - Should handle failure scenarios gracefully
-7. Avoid:
+   - Should align with defined context interaction patterns
+9. Avoid:
    - Tightly coupled policies across multiple contexts
    - Policies that could cause deadlocks
    - Over-complicated policy chains
-   - Ambiguous or vague policy names"""
+   - Ambiguous or vague policy names
+   - Policies that contradict defined context relationships"""
 
     def _build_inference_guidelines_prompt(self) -> str:
         return """
 Inference Guidelines:
 1. The process of reasoning should be directly related to the output result, not a reference to a general strategy.
 2. Context Analysis: Thoroughly analyze the provided event storming model and functional requirements to understand the business objectives, domain boundaries, and integration points.
-3. Policy Design: Derive clear and distinct policies that connect related events with appropriate commands, ensuring each policy delivers unique business value.
-4. Validation: Verify that policies avoid duplication, circular dependencies, and only span across aggregates or bounded contexts when necessary.
+3. Domain Events Analysis: Examine the provided domain events to understand business workflows, event sequences, and cross-context interactions.
+4. Context Relations Analysis: Review context relationships to understand interaction patterns, data flow directions, and integration constraints.
+5. Policy Design: Derive clear and distinct policies that connect related events with appropriate commands, ensuring each policy delivers unique business value while respecting context boundaries.
+6. Cross-Context Validation: Ensure policies align with defined context interaction patterns and don't violate bounded context principles.
+7. Validation: Verify that policies avoid duplication, circular dependencies, and only span across aggregates or bounded contexts when necessary and supported by context relations.
 """
 
     def _build_request_format_prompt(self) -> str:
@@ -241,33 +256,60 @@ Inference Guidelines:
                         "name": "KitchenPreparation",
                         "description": "Kitchen must be notified 2 hours before reservation time"
                     }
+                ],
+                "events": [
+                    {
+                        "name": "ReservationCreated",
+                        "description": "A new reservation has been created by the customer",
+                        "displayName": "Reservation Created"
+                    },
+                    {
+                        "name": "TableAssigned",
+                        "description": "A table has been assigned to the reservation",
+                        "displayName": "Table Assigned"
+                    },
+                    {
+                        "name": "KitchenNotified",
+                        "description": "Kitchen has been notified for preparation",
+                        "displayName": "Kitchen Notified"
+                    }
+                ],
+                "contextRelations": [
+                    {
+                        "name": "ReservationToKitchen",
+                        "type": "Pub/Sub",
+                        "direction": "sends to",
+                        "targetContext": "Kitchen Service",
+                        "reason": "Kitchen needs to be notified of confirmed reservations for preparation",
+                        "interactionPattern": "Reservation service publishes ReservationConfirmed events that kitchen service subscribes to"
+                    }
                 ]
             }
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": """Based on the detailed analysis of the event storming model and functional requirements, three distinct policies have been derived. The "TableAssignmentPolicy" connects the "ReservationCreated" event to the "AssignTable" command, ensuring that table assignment is automatically triggered upon reservation creation. The "KitchenPreparationPolicy" links the "ReservationConfirmed" event to the "PrepareKitchen" command, initiating kitchen preparation as soon as the reservation is confirmed. Lastly, the "ReservationConfirmationPolicy" ties the "TableAssigned" event to the "ConfirmReservation" command, finalizing the reservation process through a status update. Each policy is carefully designed to span across aggregate boundaries while avoiding duplication and circular dependencies, thereby delivering clear and actionable business value.""",
+            "inference": """Based on the comprehensive analysis of the event storming model, functional requirements, domain events, and context relationships, three distinct policies have been derived. The analysis considers the defined domain events (ReservationCreated, TableAssigned, KitchenNotified) and the Pub/Sub interaction pattern between Reservation and Kitchen contexts. The "TableAssignmentPolicy" connects the "ReservationCreated" event to the "AssignTable" command, ensuring automatic table assignment upon reservation creation. The "KitchenPreparationPolicy" leverages the defined context relationship to link the "ReservationConfirmed" event to the "PrepareKitchen" command, following the specified Pub/Sub pattern for cross-context communication. The "ReservationConfirmationPolicy" ties the "TableAssigned" event to the "ConfirmReservation" command, completing the reservation workflow. Each policy respects bounded context boundaries and aligns with the defined interaction patterns while avoiding circular dependencies.""",
             "result": {
                 "extractedPolicies": [
                     {
                         "name": "TableAssignmentPolicy",
                         "alias": "Table Assignment Automation",
-                        "reason": "Automatically assign appropriate table upon reservation creation",
+                        "reason": "Automatically assign appropriate table upon reservation creation, following business rule requirements",
                         "fromEventId": "evt-reservation-created",
                         "toCommandId": "cmd-assign-table"
                     },
                     {
                         "name": "KitchenPreparationPolicy",
                         "alias": "Kitchen Preparation Trigger",
-                        "reason": "Initiate kitchen preparation process when reservation is confirmed",
+                        "reason": "Initiate kitchen preparation process when reservation is confirmed, leveraging Pub/Sub context relationship",
                         "fromEventId": "evt-reservation-confirmed",
                         "toCommandId": "cmd-prepare-kitchen"
                     },
                     {
                         "name": "ReservationConfirmationPolicy",
                         "alias": "Reservation Status Update",
-                        "reason": "Update reservation status after successful table assignment",
+                        "reason": "Update reservation status after successful table assignment to complete the workflow",
                         "fromEventId": "evt-table-assigned",
                         "toCommandId": "cmd-confirm-reservation"
                     }

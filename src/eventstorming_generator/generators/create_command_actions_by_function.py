@@ -84,19 +84,41 @@ Business Logic Extraction:
    - Validation rules
    - Business process flows
 
+Domain Events Integration:
+1. Leverage predefined domain events from the functional requirements:
+   - Use existing event names and descriptions as reference
+   - Ensure generated events align with business semantics
+   - Consider event sequencing and dependencies
+2. Map user actions to appropriate domain events:
+   - Connect UI actions to meaningful business events
+   - Maintain consistency between event names and business vocabulary
+
+Context Relations Consideration:
+1. Account for inter-context relationships:
+   - Identify external events that may trigger commands
+   - Consider Pub/Sub patterns for loose coupling
+   - Plan for eventual consistency across contexts
+2. Integration patterns:
+   - Use appropriate interaction patterns (Pub/Sub, API calls, etc.)
+   - Ensure proper data ownership and boundary management
+   - Consider performance and reliability implications
+
 Avoid:
 1. Duplicate commands or events
 2. CRUD operations disguised as business operations
 3. Comments in the output JSON
 4. Overly complex command/event structures
 5. Using commands/events for simple queries
+6. Ignoring predefined domain events and context relationships
 
 Best Practices:
 1. Keep commands focused on single responsibility
 2. Ensure events capture complete state changes
 3. Design for eventual consistency
 4. Consider security and authorization requirements
-5. Plan for versioning and backward compatibility"""
+5. Plan for versioning and backward compatibility
+6. Align with existing domain vocabulary and event definitions
+7. Respect context boundaries and integration patterns"""
 
     def _build_inference_guidelines_prompt(self) -> str:
         return """
@@ -525,7 +547,39 @@ Inference Guidelines:
                             }
                         ]
                     }
-                }
+                },
+                "events": [
+                    {
+                        "name": "GuestVerified",
+                        "description": "Guest information is verified with ID and name",
+                        "displayName": "Guest Verified"
+                    },
+                    {
+                        "name": "BookingRequested",
+                        "description": "Guest requests a room booking with preferences",
+                        "displayName": "Booking Requested"
+                    },
+                    {
+                        "name": "BookingConfirmed",
+                        "description": "Room booking is confirmed and payment processed",
+                        "displayName": "Booking Confirmed"
+                    },
+                    {
+                        "name": "BookingCancelled",
+                        "description": "Guest or system cancels the booking",
+                        "displayName": "Booking Cancelled"
+                    }
+                ],
+                "contextRelations": [
+                    {
+                        "name": "HotelToPaymentIntegration",
+                        "type": "API",
+                        "direction": "calls",
+                        "targetContext": "Payment Service",
+                        "reason": "Hotel booking needs to process payments and handle refunds",
+                        "interactionPattern": "Synchronous API calls for payment processing, asynchronous events for payment confirmations"
+                    }
+                ]
             },
 
             "Target Aggregate To Generate Actions": "Booking"
@@ -878,11 +932,23 @@ Business Logic:
 * Proper actor assignments for Commands and ReadModels
 * State transitions are properly handled
 
+Domain Events Alignment:
+* Generated events align with predefined domain events from functional requirements
+* Event names and semantics are consistent with business vocabulary
+* Event sequencing and dependencies are properly handled
+
+Context Relations Integration:
+* External context interactions are considered (API calls, Pub/Sub patterns)
+* Integration patterns respect bounded context boundaries
+* Inter-context event flows are properly designed
+* Data ownership and consistency boundaries are maintained
+
 Best Practices:
 * Commands maintain single responsibility
 * No CRUD operations disguised as business operations
 * Appropriate pagination for list operations
 * Proper error handling considerations
 * Security and authorization requirements included
+* Eventual consistency patterns are considered
 """
         }

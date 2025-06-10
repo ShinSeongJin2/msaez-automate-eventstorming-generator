@@ -35,22 +35,26 @@ Please follow these rules:
    - Extract all relevant GWT scenarios from the provided requirements
    - Each GWT must be directly related to the specified command IDs
    - Ensure full coverage of acceptance criteria and business rules
+   - Consider domain events and their business meanings for comprehensive test coverage
+   - Take into account context relationships when designing cross-boundary scenarios
 
 2. GWT Structure:
    - Given: Must reference valid Aggregate state with realistic property values
    - When: Must match Command properties exactly as defined in the schema
    - Then: Must include all mandatory Event properties with expected outcomes
+   - Leverage event definitions to ensure proper event property mapping
 
 3. Quality Guidelines:
    - Generate unique, non-duplicated GWT scenarios
    - Each scenario should test a specific aspect or business rule
    - Include both positive and negative test scenarios
    - Ensure property values are realistic and type-compatible
+   - Consider event descriptions and business meanings for realistic test data
 
 4. Property Mapping:
    - Given: Use only properties defined in the Aggregate
    - When: Include all required Command parameters
-   - Then: Map to all relevant Event properties
+   - Then: Map to all relevant Event properties using event definitions
    - Use "N/A" only for truly unrelated properties
 
 5. Validation Rules:
@@ -58,8 +62,19 @@ Please follow these rules:
    - Include boundary conditions and edge cases
    - Consider state transitions and their validity
    - Check for proper error scenarios
+   - Incorporate context relationship patterns when applicable
 
-6. Output Format:
+6. Event-Driven Considerations:
+   - Use provided event definitions to understand expected outcomes
+   - Ensure Then scenarios align with event descriptions and display names
+   - Consider event-driven workflows and state changes
+
+7. Context Boundary Awareness:
+   - Be mindful of context relationships when designing scenarios
+   - Consider how external context interactions might affect test scenarios
+   - Include scenarios that validate proper boundary interactions
+
+8. Output Format:
    - Provide clean JSON without comments
    - Use consistent property naming
    - Ensure all required fields are populated
@@ -305,6 +320,33 @@ Inference Guidelines:
                         "name": "DiscontinuationReason",
                         "description": "Reason for discontinuation is mandatory and must be descriptive"
                     }
+                ],
+                "events": [
+                    {
+                        "name": "StockAdded",
+                        "description": "재고가 추가되어 제품의 재고 수량이 증가함",
+                        "displayName": "재고가 추가됨"
+                    },
+                    {
+                        "name": "ProductDiscontinued",
+                        "description": "제품이 단종되어 더 이상 판매되지 않음",
+                        "displayName": "제품이 단종됨"
+                    },
+                    {
+                        "name": "StockBelowThreshold",
+                        "description": "재고 수준이 임계값 아래로 떨어짐",
+                        "displayName": "재고 부족 알림"
+                    }
+                ],
+                "contextRelations": [
+                    {
+                        "name": "InventoryToSales",
+                        "type": "Pub/Sub",
+                        "direction": "sends to",
+                        "targetContext": "Sales Management",
+                        "reason": "재고 변경 사항을 판매 시스템에 알려 가용 재고를 반영해야 함",
+                        "interactionPattern": "재고 추가/감소 이벤트를 발행하여 판매 시스템에서 구독"
+                    }
                 ]
             },
             
@@ -392,5 +434,8 @@ Inference Guidelines:
 * Make sure each command has an appropriate GWT from the user's requirements.
 * Make sure your scenarios reflect the best use of GWT in your code generation.
 * The generated GWT must have the properties found in the Aggregate, Command, and Event presented.
+* Consider the provided event definitions and their business meanings when creating Then scenarios.
+* Take into account context relationships and their interaction patterns when designing cross-boundary test scenarios.
+* Ensure event-driven workflows are properly validated through the GWT scenarios.
 """
         }

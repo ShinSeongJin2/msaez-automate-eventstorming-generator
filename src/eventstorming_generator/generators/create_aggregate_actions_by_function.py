@@ -80,15 +80,30 @@ Structural Rules:
    - Prevent the creation of trivial or redundant ValueObjects by including properties directly in the Aggregate unless a special case dictates otherwise.
    - Do not generate an excessive number of ValueObjects.
 
-Creation Guidelines:
-9. Create only:
-   - Aggregates listed under 'Aggregate to create'.
-   - All ValueObjects from the provided structure that have a direct association with the Aggregate.
-   - Enumerations for any property requiring a fixed set of values.
-   - All supporting types needed for the properties.
+Event-Driven Design Considerations:
+9. Domain Events Integration:
+   - Consider how domain events influence aggregate state transitions and properties.
+   - Ensure aggregates can produce and handle relevant domain events described in the functional requirements.
+   - Include properties that support event sourcing and state tracking when events indicate state changes.
+   - Map event data to appropriate aggregate properties and value objects.
 
-10. Property Type Selection:
+10. Context Relationship Considerations:
+    - Analyze context relationships (Pub/Sub, API calls, shared databases) to understand external dependencies.
+    - For Pub/Sub relationships, ensure aggregates can publish and consume relevant events.
+    - Consider how external context interactions affect aggregate design and required properties.
+    - Include properties needed for integration patterns described in context relationships.
+
+Creation Guidelines:
+11. Create only:
+    - Aggregates listed under 'Aggregate to create'.
+    - All ValueObjects from the provided structure that have a direct association with the Aggregate.
+    - Enumerations for any property requiring a fixed set of values.
+    - All supporting types needed for the properties.
+    - Properties that support domain events and context integration patterns.
+
+12. Property Type Selection:
     - Opt for specific types over generic ones.
+    - Consider event payload requirements when defining properties.
     - Example mappings:
       • startDate → Date
       • currentCapacity → Integer
@@ -97,14 +112,15 @@ Creation Guidelines:
       • status → Enumeration
 
 Type Dependency Resolution:
-11. Before finalizing your result:
+13. Before finalizing your result:
     - Validate all property types.
     - Create Enumerations for properties representing classifications, statuses, or types.
     - Ensure that all custom types are clearly defined.
     - Verify the appropriate usage of ValueObjects versus Enumerations.
+    - Confirm that aggregate design supports required domain events and context interactions.
 
 Constraints:
-12. Rules:
+14. Rules:
     - Only reference existing Aggregates without altering them.
     - Do not recreate types that already exist in the system.
     - Avoid including comments in the output JSON object.
@@ -113,12 +129,13 @@ Constraints:
     - Refrain from appending type names (e.g., 'Enumeration' or 'ValueObject') to object names; use base names only (e.g., 'BookStatus' rather than 'BookStatusEnumeration').
     - Ensure names are unique across both new and existing elements, with no duplicates.
 
-13. Required Elements:
+15. Required Elements:
     - Every ValueObject and Enumeration must be directly associated with an Aggregate.
     - Every generated ValueObject and Enumeration must be included as a named attribute in at least one Aggregate.
     - Implement all elements specified in the user's structure.
     - Accurately map all relationships.
-    - Provide corresponding definitions for all custom types."""
+    - Provide corresponding definitions for all custom types.
+    - Ensure aggregate design supports the event flows and context relationships described in functional requirements."""
 
     def _build_inference_guidelines_prompt(self) -> str:
         return """
@@ -131,6 +148,14 @@ Inference Guidelines:
 6. When properties represent state or status information, enforce the use of Enumerations to clearly define valid values.
 7. Verify that every ValueObject and Enumeration is directly associated with an Aggregate; avoid nested or subordinate ValueObject definitions.
 8. Avoid creating unnecessary or excessive ValueObjects; integrate properties directly into the Aggregate unless a distinct ValueObject offers significant encapsulation.
+9. Consider domain events and their impact on aggregate design:
+   - Analyze which events the aggregate should produce or consume.
+   - Ensure aggregate properties support event-driven state transitions.
+   - Include necessary properties for event sourcing and audit trails when indicated by events.
+10. Evaluate context relationships and integration patterns:
+    - Consider how Pub/Sub, API calls, or shared database patterns affect aggregate design.
+    - Include properties needed for external system integration.
+    - Ensure aggregate boundaries align with context relationship patterns.
 """
 
     def _build_request_format_prompt(self) -> str:
@@ -344,7 +369,52 @@ Inference Guidelines:
                             }
                         ]
                     }
-                }
+                },
+                "events": [
+                    {
+                        "name": "OrderPlaced",
+                        "description": "Customer has successfully placed a new order.",
+                        "displayName": "Order Placed"
+                    },
+                    {
+                        "name": "OrderConfirmed",
+                        "description": "Order has been confirmed and payment processed.",
+                        "displayName": "Order Confirmed"
+                    },
+                    {
+                        "name": "OrderShipped",
+                        "description": "Order has been shipped to customer.",
+                        "displayName": "Order Shipped"
+                    },
+                    {
+                        "name": "OrderDelivered",
+                        "description": "Order has been delivered to customer.",
+                        "displayName": "Order Delivered"
+                    },
+                    {
+                        "name": "OrderCancelled",
+                        "description": "Order has been cancelled by customer or system.",
+                        "displayName": "Order Cancelled"
+                    }
+                ],
+                "contextRelations": [
+                    {
+                        "name": "OrderToPayment",
+                        "type": "API Call",
+                        "direction": "calls",
+                        "targetContext": "Payment Service",
+                        "reason": "Order service needs to process payments synchronously.",
+                        "interactionPattern": "REST API call to payment service for payment processing."
+                    },
+                    {
+                        "name": "OrderToInventory",
+                        "type": "Pub/Sub",
+                        "direction": "publishes to",
+                        "targetContext": "Inventory Service",
+                        "reason": "Order placement should trigger inventory updates asynchronously.",
+                        "interactionPattern": "Publish OrderPlaced event for inventory reservation."
+                    }
+                ]
             },
             
             "Suggested Structure": [
@@ -485,5 +555,15 @@ Inference Guidelines:
    * Alias properties: {self.client.get("preferredLanguage")} only
    * Follow consistent naming patterns
    * Use domain-specific terminology
+
+2. Event-Driven Design:
+   * Consider domain events that influence aggregate state and properties
+   * Include properties needed for event sourcing and state tracking
+   * Ensure aggregates support required event publishing and consumption
+
+3. Context Integration:
+   * Analyze context relationships (Pub/Sub, API calls) for integration requirements
+   * Include properties needed for external system interactions
+   * Design aggregates to support described integration patterns
 """,
         }
