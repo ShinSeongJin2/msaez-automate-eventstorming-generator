@@ -492,7 +492,39 @@ class JobUtil:
         except Exception as e:
             print(f"비동기 미처리 Job 검색 실패: {str(e)}")
             return []
+    
+    @staticmethod
+    async def watch_requested_jobs_async(callback: Callable) -> bool:
+        """
+        미처리 Job을 비동기로 찾아서 콜백 함수로 전달
+        
+        Args:
+            callback (Callable): 미처리 Job 콜백 함수
+        """
 
+        def _callback(data, path):
+            if not data or path != "/":
+                return
+            
+            requested_jobs = []
+            for job_id, job_data in data.items():
+                if not JobUtil.is_valid_job_id(job_id):
+                    print(f"유효하지 않은 Job ID 발견: {job_id}")
+                    firebase_system.delete_data(Config.get_requested_job_path(job_id))
+                    continue
+                requested_jobs.append(job_id)
+            callback(requested_jobs)
+
+        try:
+            firebase_system = FirebaseSystem.instance()
+            await firebase_system.watch_data_async(
+                Config.get_requested_job_root_path(), _callback
+            )
+            return True
+        except Exception as e:
+            print(f"요청된 Job 감지 실패: {str(e)}")
+            return False
+    
     @staticmethod
     async def process_job_async(job_id: str, process_function: Callable) -> bool:
         """

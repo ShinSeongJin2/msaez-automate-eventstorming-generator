@@ -1,6 +1,6 @@
 import firebase_admin
 from firebase_admin import credentials, db
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 import os
 import asyncio
 import concurrent.futures
@@ -42,6 +42,8 @@ class FirebaseSystem:
         
         self.database = db
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+        # watch 기능을 위한 리스너 관리
+        self._listeners: Dict[str, Any] = {}
         self._initialized = True
     
 
@@ -372,6 +374,207 @@ class FirebaseSystem:
                 asyncio.run(self.delete_data_async(path))
         except Exception as e:
             print(f"Fire and Forget 삭제 실패: {str(e)}")
+
+
+    def watch_data(self, path: str, callback: Callable[[Optional[Dict[str, Any]]], None]) -> bool:
+        """
+        특정 경로의 데이터 변화를 감시하고 콜백 함수 호출
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            callback (Callable): 데이터 변화 시 호출할 콜백 함수
+            
+        Returns:
+            bool: 감시 시작 성공 여부
+        """
+        try:
+            # 이미 해당 경로를 감시 중인 경우 기존 리스너 제거
+            if path in self._listeners:
+                self.unwatch_data(path)
+            
+            ref = self.database.reference(path)
+            
+            def listener(snapshot):
+                try:
+                    data = snapshot.val()
+                    callback(data)
+                except Exception as e:
+                    print(f"콜백 함수 실행 실패: {str(e)}")
+            
+            # 리스너 등록
+            ref.listen(listener)
+            self._listeners[path] = ref
+            return True
+        except Exception as e:
+            print(f"데이터 감시 시작 실패: {str(e)}")
+            return False
+
+    async def watch_data_async(self, path: str, callback: Callable[[Optional[Dict[str, Any]]], None]) -> bool:
+        """
+        특정 경로의 데이터 변화를 비동기로 감시하고 콜백 함수 호출
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            callback (Callable): 데이터 변화 시 호출할 콜백 함수
+            
+        Returns:
+            bool: 감시 시작 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(self._sync_watch_data, path, callback)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 데이터 감시 시작 실패: {str(e)}")
+            return False
+
+    def _sync_watch_data(self, path: str, callback: Callable[[Optional[Dict[str, Any]]], None]) -> bool:
+        """동기 watch_data의 내부 구현"""
+        try:
+            # 이미 해당 경로를 감시 중인 경우 기존 리스너 제거
+            if path in self._listeners:
+                self.unwatch_data(path)
+            
+            ref = self.database.reference(path)
+            
+            def listener(snapshot):
+                try:
+                    callback(snapshot.data, snapshot.path)
+                except Exception as e:
+                    print(f"콜백 함수 실행 실패: {str(e)}")
+            
+            # 리스너 등록
+            ref.listen(listener)
+            self._listeners[path] = ref
+            return True
+        except Exception as e:
+            print(f"데이터 감시 시작 실패: {str(e)}")
+            return False
+
+    def unwatch_data(self, path: str) -> bool:
+        """
+        특정 경로의 데이터 감시 중단
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            
+        Returns:
+            bool: 감시 중단 성공 여부
+        """
+        try:
+            if path in self._listeners:
+                ref = self._listeners[path]
+                # 모든 리스너 제거
+                ref.listen(None)
+                del self._listeners[path]
+                return True
+            else:
+                print(f"경로 '{path}'에 대한 활성 리스너가 없습니다.")
+                return False
+        except Exception as e:
+            print(f"데이터 감시 중단 실패: {str(e)}")
+            return False
+
+    async def unwatch_data_async(self, path: str) -> bool:
+        """
+        특정 경로의 데이터 감시를 비동기로 중단
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            
+        Returns:
+            bool: 감시 중단 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(self._sync_unwatch_data, path)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 데이터 감시 중단 실패: {str(e)}")
+            return False
+
+    def _sync_unwatch_data(self, path: str) -> bool:
+        """동기 unwatch_data의 내부 구현"""
+        try:
+            if path in self._listeners:
+                ref = self._listeners[path]
+                ref.listen(None)
+                del self._listeners[path]
+                return True
+            else:
+                print(f"경로 '{path}'에 대한 활성 리스너가 없습니다.")
+                return False
+        except Exception as e:
+            print(f"데이터 감시 중단 실패: {str(e)}")
+            return False
+
+    def unwatch_all(self) -> bool:
+        """
+        모든 경로의 데이터 감시 중단
+        
+        Returns:
+            bool: 모든 감시 중단 성공 여부
+        """
+        try:
+            paths_to_remove = list(self._listeners.keys())
+            success_count = 0
+            
+            for path in paths_to_remove:
+                if self.unwatch_data(path):
+                    success_count += 1
+            
+            return success_count == len(paths_to_remove)
+        except Exception as e:
+            print(f"모든 데이터 감시 중단 실패: {str(e)}")
+            return False
+
+    async def unwatch_all_async(self) -> bool:
+        """
+        모든 경로의 데이터 감시를 비동기로 중단
+        
+        Returns:
+            bool: 모든 감시 중단 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                self._sync_unwatch_all
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 모든 데이터 감시 중단 실패: {str(e)}")
+            return False
+
+    def _sync_unwatch_all(self) -> bool:
+        """동기 unwatch_all의 내부 구현"""
+        try:
+            paths_to_remove = list(self._listeners.keys())
+            success_count = 0
+            
+            for path in paths_to_remove:
+                if self._sync_unwatch_data(path):
+                    success_count += 1
+            
+            return success_count == len(paths_to_remove)
+        except Exception as e:
+            print(f"모든 데이터 감시 중단 실패: {str(e)}")
+            return False
+
+    def get_active_watchers(self) -> list[str]:
+        """
+        현재 감시 중인 경로들의 목록을 반환
+        
+        Returns:
+            list[str]: 감시 중인 경로들의 리스트
+        """
+        return list(self._listeners.keys())
 
 FirebaseSystem.initialize(
     service_account_path=os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"),
