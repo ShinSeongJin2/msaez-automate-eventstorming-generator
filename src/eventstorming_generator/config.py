@@ -24,3 +24,11 @@ class Config:
     @staticmethod
     def get_job_path(job_id: str) -> str:
         return f"{Config.get_job_root_path()}/{job_id}"
+
+    @staticmethod
+    def get_active_pods_root_path() -> str:
+        return f"active_pods/eventstorming_generator"
+
+    @staticmethod
+    def get_active_pods_path(pod_id: str) -> str:
+        return f"{Config.get_active_pods_root_path()}/{pod_id}"

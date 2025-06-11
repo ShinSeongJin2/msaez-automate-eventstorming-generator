@@ -1,11 +1,9 @@
 import asyncio
 import signal
-import threading
 
-from eventstorming_generator.utils.job_util import JobUtil
+from eventstorming_generator.utils import JobUtil, PodIdentityManager, PodRegistrationManager
 from eventstorming_generator.graph import graph
 from eventstorming_generator.models import State
-from eventstorming_generator.run_healcheck_server import run_healcheck_server
 from eventstorming_generator.systems.firebase_system import FirebaseSystem
 from eventstorming_generator.config import Config
 
@@ -14,20 +12,21 @@ from eventstorming_generator.config import Config
 _monitoring_active = True
 
 
-def main():
+async def main():
     """메인 함수 - Flask 서버와 Job 모니터링 동시 시작"""
+
+    pod_identity = PodIdentityManager()
+    pod_id = pod_identity.pod_id
+    print(f"[Worker] Pod ID: {pod_id} 시작")
+
+
+    registration_manager = PodRegistrationManager(pod_id)
+    await registration_manager.register_pod()
     
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
-    # Flask 서버를 별도 스레드에서 시작
-    flask_thread = threading.Thread(target=run_healcheck_server, daemon=True)
-    flask_thread.start()
-    print("[시스템] Flask 서버가 포트 2024에서 시작되었습니다.")
-    print("[시스템] 헬스체크 엔드포인트: http://localhost:2024/ok")
-
-    # Job 모니터링 시작
-    asyncio.run(monitor_jobs_async(5))
+    await monitor_jobs_async(5)
 
 def signal_handler(signum, frame):
     """Ctrl+C 등의 시그널 처리"""
@@ -51,7 +50,8 @@ async def monitor_jobs_async(interval_seconds: int = 5):
         while _monitoring_active:
             try:
                 # 미처리 Job들 비동기 처리 (논블로킹)
-                processed_count = await JobUtil.process_all_unprocessed_jobs_async(process_job_async)
+                # processed_count = await JobUtil.process_all_unprocessed_jobs_async(process_job_async)
+                processed_count = 0 # 임시용
                 
                 if processed_count > 0:
                     print(f"[비동기 모니터링] {processed_count}개 Job 처리 시작됨")
@@ -100,4 +100,4 @@ async def process_job_async(state: State):
             print(f"[Job 정리 오류] Job ID {job_id} 리소스 정리 중 오류: {str(cleanup_error)}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

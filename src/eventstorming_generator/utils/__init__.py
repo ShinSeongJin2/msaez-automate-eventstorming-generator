@@ -8,6 +8,8 @@ from .token_counter import TokenCounter
 from .convert_case_util import CaseConvertUtil
 from .job_util import JobUtil
 from .log_util import LogUtil
+from .pod_identity_manager import PodIdentityManager
+from .pod_registration_manager import PodRegistrationManager
 
 __all__ = [
     "EsUtils",
@@ -19,5 +21,7 @@ __all__ = [
     "TokenCounter",
     "CaseConvertUtil",
     "JobUtil",
-    "LogUtil"
+    "LogUtil",
+    "PodIdentityManager",
+    "PodRegistrationManager"
 ]

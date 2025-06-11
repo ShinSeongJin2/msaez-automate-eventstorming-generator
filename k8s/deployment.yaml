@@ -55,6 +55,10 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: FIREBASE_DATABASE_URL
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         volumeMounts:
         - name: firebase-key-volume
           mountPath: /app/.auth
