@@ -9,21 +9,29 @@ class DecentralizedJobManager:
     def __init__(self, pod_id: str, job_processing_func: callable):
         self.pod_id = pod_id
         self.job_processing_func = job_processing_func
-        self.current_job: Optional[str] = None  # 단일 Job 처리
+        self.current_job_id: Optional[str] = None  # 단일 Job 처리
         self.is_processing = False
+        self.current_task: Optional[asyncio.Task] = None  # 현재 실행 중인 작업 태스크
     
+
     async def start_job_monitoring(self):
         """각 Pod가 독립적으로 작업 모니터링 - 순차 처리"""
         print(f"[{self.pod_id}] Job 모니터링 시작 (순차 처리 모드)")
         
         while True:
             try:
+                print(f"[{self.pod_id}] Job 모니터링 중...")
+                
+                # 완료된 작업 확인 및 정리
+                if self.current_task and self.current_task.done():
+                    await self._handle_completed_task()
+                
                 if not self.is_processing:
                     # 현재 처리 중인 Job이 없을 때만 새 Job 검색
                     await self.find_and_process_next_job()
                 
                 # 현재 처리 중인 Job의 heartbeat 전송
-                if self.current_job:
+                if self.current_job_id:
                     await self.send_heartbeat()
                 
                 # 실패한 작업 복구 (다른 Pod의 실패 작업)
@@ -34,7 +42,19 @@ class DecentralizedJobManager:
             except Exception as e:
                 print(f"[{self.pod_id}] 작업 모니터링 오류: {e}")
                 await asyncio.sleep(15)
-    
+
+
+    async def _handle_completed_task(self):
+        """완료된 작업 태스크 처리"""
+        if self.current_task:
+            try:
+                # 태스크에서 예외가 발생했는지 확인
+                await self.current_task
+            except Exception as e:
+                print(f"[{self.pod_id}] Job {self.current_job_id} 처리 중 오류: {e}")
+            finally:
+                self.current_task = None
+
 
     async def find_and_process_next_job(self):
         """사용 가능한 다음 Job 찾기 및 처리 시작"""
@@ -87,7 +107,7 @@ class DecentralizedJobManager:
     
     async def start_job_processing(self, job_id: str):
         """Job 처리 시작"""
-        self.current_job = job_id
+        self.current_job_id = job_id
         self.is_processing = True
         
         print(f"[{self.pod_id}] Job {job_id} 처리 시작")
@@ -96,26 +116,30 @@ class DecentralizedJobManager:
         await self.execute_job_logic(job_id)
     
     async def execute_job_logic(self, job_id: str):
-        """실제 Job 로직 실행 (구현 필요)"""
+        """실제 Job 로직 실행 - 비동기로 백그라운드에서 실행"""
         print(f"[{self.pod_id}] Job {job_id} 로직 실행 중...")
-        asyncio.create_task(self.job_processing_func(job_id, self.complete_job))
+        
+        # 작업을 백그라운드 태스크로 실행하여 heartbeat가 블록되지 않도록 함
+        self.current_task = asyncio.create_task(
+            self.job_processing_func(job_id, self.complete_job)
+        )
     
     def complete_job(self):
         """Job 완료 처리"""
-        print(f"[{self.pod_id}] Job {self.current_job} 처리 완료")
+        print(f"[{self.pod_id}] Job {self.current_job_id} 처리 완료")
 
-        self.current_job = None
+        self.current_job_id = None
         self.is_processing = False
-
+        # current_task는 _handle_completed_task에서 정리됨
 
     async def send_heartbeat(self):
         """현재 처리 중인 Job의 heartbeat 전송"""
-        if not self.current_job:
+        if not self.current_job_id:
             return
         
         try:
             await FirebaseSystem.instance().update_data_async(
-                f"requestedJobs/{self.current_job}",
+                Config.get_requested_job_path(self.current_job_id),
                 {'lastHeartbeat': time.time()}
             )
         except Exception as e:
@@ -126,7 +150,7 @@ class DecentralizedJobManager:
         """다른 Pod의 실패한 작업 복구"""
         try:
             current_time = time.time()
-            requested_jobs = await FirebaseSystem.instance().get_children_data_async("requestedJobs")
+            requested_jobs = await FirebaseSystem.instance().get_children_data_async(Config.get_requested_job_root_path())
             
             if not requested_jobs:
                 return
@@ -151,7 +175,7 @@ class DecentralizedJobManager:
         """실패한 작업 초기화"""
         try:
             await FirebaseSystem.instance().update_data_async(
-                f"requestedJobs/{job_id}",
+                Config.get_requested_job_path(job_id),
                 {
                     'assignedPodId': None,
                     'status': 'pending',
@@ -168,6 +192,6 @@ class DecentralizedJobManager:
         return {
             'pod_id': self.pod_id,
             'is_processing': self.is_processing,
-            'current_job': self.current_job,
+            'current_job_id': self.current_job_id,
             'status': 'processing' if self.is_processing else 'idle'
         }

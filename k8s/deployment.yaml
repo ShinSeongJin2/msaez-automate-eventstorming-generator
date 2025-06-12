@@ -55,7 +55,12 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: FIREBASE_DATABASE_URL
-        - name: POD_NAME
+        - name: NAMESPACE
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: NAMESPACE
+        - name: POD_ID
           valueFrom:
             fieldRef:
               fieldPath: metadata.name

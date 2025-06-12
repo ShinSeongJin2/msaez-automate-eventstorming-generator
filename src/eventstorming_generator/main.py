@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 
 from eventstorming_generator.utils import JobUtil, DecentralizedJobManager
 from eventstorming_generator.graph import graph
@@ -17,7 +18,6 @@ async def process_job_async(job_id: str, complete_job_func: callable):
     """비동기 Job 처리 함수"""
     
     try:
-
         print(f"[Job 시작] Job ID: {job_id}")
         if not JobUtil.is_valid_job_id(job_id):
             print(f"[Job 처리 오류] Job ID: {job_id}, 유효하지 않음")
@@ -36,7 +36,13 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             return False
         state = State(**state)
 
-        graph.invoke(state, {"recursion_limit": 2147483647})
+        # 동기 함수를 스레드에서 실행
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            await loop.run_in_executor(
+                executor, 
+                lambda: graph.invoke(state, {"recursion_limit": 2147483647})
+            )
         print(f"[Job 완료] Job ID: {job_id}")
         
     except Exception as e:
