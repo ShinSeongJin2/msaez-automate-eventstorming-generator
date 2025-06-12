@@ -132,6 +132,7 @@ class DecentralizedJobManager:
         self.is_processing = False
         # current_task는 _handle_completed_task에서 정리됨
 
+
     async def send_heartbeat(self):
         """현재 처리 중인 Job의 heartbeat 전송"""
         if not self.current_job_id:
