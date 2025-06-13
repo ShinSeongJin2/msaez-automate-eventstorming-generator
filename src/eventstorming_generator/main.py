@@ -32,8 +32,7 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             print(f"[Job 처리 오류] Job ID: {job_id}, 유효하지 않음")
             return
         
-        job_request_path = Config.get_requested_job_path(job_id)
-        job_data = FirebaseSystem.instance().get_data(job_request_path)
+        job_data = FirebaseSystem.instance().get_data(Config.get_job_path(job_id))
         if not job_data:
             print(f"[Job 처리 오류] Job ID: {job_id}, 데이터 없음")
             return

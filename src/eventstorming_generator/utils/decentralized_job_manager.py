@@ -21,6 +21,8 @@ class DecentralizedJobManager:
         while True:
             try:
                 print(f"[{self.pod_id}] Job 모니터링 중...")
+
+                requested_jobs = await FirebaseSystem.instance().get_children_data_async(Config.get_requested_job_root_path())
                 
                 # 완료된 작업 확인 및 정리
                 if self.current_task and self.current_task.done():
@@ -28,17 +30,17 @@ class DecentralizedJobManager:
                 
                 if not self.is_processing:
                     # 현재 처리 중인 Job이 없을 때만 새 Job 검색
-                    await self.find_and_process_next_job()
+                    await self.find_and_process_next_job(requested_jobs)
                 
                 # 현재 처리 중인 Job의 heartbeat 전송
                 if self.current_job_id:
                     await self.send_heartbeat()
                 
                 # 대기 중인 작업들의 waitingJobCount 업데이트
-                await self.update_waiting_job_counts()
+                await self.update_waiting_job_counts(requested_jobs)
                 
                 # 실패한 작업 복구 (다른 Pod의 실패 작업)
-                await self.recover_failed_jobs()
+                await self.recover_failed_jobs(requested_jobs)
                 
                 await asyncio.sleep(15)  # 15초마다 체크
                 
@@ -59,11 +61,9 @@ class DecentralizedJobManager:
                 self.current_task = None
 
 
-    async def find_and_process_next_job(self):
+    async def find_and_process_next_job(self, requested_jobs: dict):
         """사용 가능한 다음 Job 찾기 및 처리 시작 (FIFO 순서)"""
         
-        # 요청된 작업들 조회
-        requested_jobs = await FirebaseSystem.instance().get_children_data_async(Config.get_requested_job_root_path())
         if not requested_jobs:
             return
         
@@ -79,48 +79,6 @@ class DecentralizedJobManager:
                     await self.start_job_processing(job_id)
                     break  # 하나만 처리하고 종료
 
-    def _sort_jobs_by_created_at(self, jobs_dict: dict) -> List[Tuple[str, dict]]:
-        """createdAt 기준으로 작업들을 시간순(FIFO)으로 정렬"""
-        jobs_list = [(job_id, job_data) for job_id, job_data in jobs_dict.items()]
-        
-        # createdAt 기준으로 정렬 (오래된 것부터)
-        jobs_list.sort(key=lambda x: x[1].get('createdAt', 0))
-        
-        return jobs_list
-
-    async def update_waiting_job_counts(self):
-        """대기 중인 작업들의 waitingJobCount 업데이트"""
-        try:
-            # 요청된 작업들 조회
-            requested_jobs = await FirebaseSystem.instance().get_children_data_async(Config.get_requested_job_root_path())
-            if not requested_jobs:
-                return
-            
-            # createdAt 기준으로 정렬
-            sorted_jobs = self._sort_jobs_by_created_at(requested_jobs)
-            
-            # 대기 중인 작업들만 필터링 (assignedPodId가 없는 것들)
-            waiting_jobs = []
-            for job_id, job_data in sorted_jobs:
-                if job_data.get('assignedPodId') is None:
-                    waiting_jobs.append((job_id, job_data))
-            
-            # 각 대기 중인 작업의 waitingJobCount 계산 및 업데이트
-            for index, (job_id, job_data) in enumerate(waiting_jobs):
-                waiting_count = index  # 앞에 있는 대기 작업의 개수
-                current_waiting_count = job_data.get('waitingJobCount')
-                
-                # waitingJobCount가 없거나 기존 값과 다를 경우에만 업데이트
-                if current_waiting_count != waiting_count:
-                    await FirebaseSystem.instance().update_data_async(
-                        Config.get_requested_job_path(job_id),
-                        {'waitingJobCount': waiting_count}
-                    )
-                    print(f"[{self.pod_id}] Job {job_id} waitingJobCount 업데이트: {waiting_count}")
-                    
-        except Exception as e:
-            print(f"[{self.pod_id}] waitingJobCount 업데이트 오류: {e}")
-    
     async def atomic_claim_job(self, job_id: str) -> bool:
         """원자적 작업 클레임"""
         
@@ -171,7 +129,7 @@ class DecentralizedJobManager:
         self.current_task = asyncio.create_task(
             self.job_processing_func(job_id, self.complete_job)
         )
-    
+
     def complete_job(self):
         """Job 완료 처리"""
         print(f"[{self.pod_id}] Job {self.current_job_id} 처리 완료")
@@ -179,7 +137,7 @@ class DecentralizedJobManager:
         self.current_job_id = None
         self.is_processing = False
         # current_task는 _handle_completed_task에서 정리됨
-
+    
 
     async def send_heartbeat(self):
         """현재 처리 중인 Job의 heartbeat 전송"""
@@ -195,15 +153,45 @@ class DecentralizedJobManager:
             print(f"[{self.pod_id}] Heartbeat 실패: {e}")
     
 
-    async def recover_failed_jobs(self):
-        """다른 Pod의 실패한 작업 복구"""
+    async def update_waiting_job_counts(self, requested_jobs: dict):
+        """대기 중인 작업들의 waitingJobCount 업데이트"""
         try:
-            current_time = time.time()
-            requested_jobs = await FirebaseSystem.instance().get_children_data_async(Config.get_requested_job_root_path())
-            
             if not requested_jobs:
                 return
             
+            # createdAt 기준으로 정렬
+            sorted_jobs = self._sort_jobs_by_created_at(requested_jobs)
+            
+            # 대기 중인 작업들만 필터링 (assignedPodId가 없는 것들)
+            waiting_jobs = []
+            for job_id, job_data in sorted_jobs:
+                if job_data.get('assignedPodId') is None:
+                    waiting_jobs.append((job_id, job_data))
+            
+            # 각 대기 중인 작업의 waitingJobCount 계산 및 업데이트
+            for index, (job_id, job_data) in enumerate(waiting_jobs):
+                waiting_count = index  # 앞에 있는 대기 작업의 개수
+                current_waiting_count = job_data.get('waitingJobCount')
+                
+                # waitingJobCount가 없거나 기존 값과 다를 경우에만 업데이트
+                if current_waiting_count != waiting_count:
+                    await FirebaseSystem.instance().update_data_async(
+                        Config.get_requested_job_path(job_id),
+                        {'waitingJobCount': waiting_count}
+                    )
+                    print(f"[{self.pod_id}] Job {job_id} waitingJobCount 업데이트: {waiting_count}")
+                    
+        except Exception as e:
+            print(f"[{self.pod_id}] waitingJobCount 업데이트 오류: {e}")
+    
+
+    async def recover_failed_jobs(self, requested_jobs: dict):
+        """다른 Pod의 실패한 작업 복구"""
+        try:     
+            if not requested_jobs:
+                return
+            
+            current_time = time.time()
             for job_id, job_data in requested_jobs.items():
                 assigned_pod = job_data.get('assignedPodId')
                 last_heartbeat = job_data.get('lastHeartbeat', 0)
@@ -236,11 +224,11 @@ class DecentralizedJobManager:
             print(f"[{self.pod_id}] 실패 작업 초기화 오류: {e}")
     
     
-    def get_status(self) -> dict:
-        """현재 Pod 상태 반환"""
-        return {
-            'pod_id': self.pod_id,
-            'is_processing': self.is_processing,
-            'current_job_id': self.current_job_id,
-            'status': 'processing' if self.is_processing else 'idle'
-        }
+    def _sort_jobs_by_created_at(self, jobs_dict: dict) -> List[Tuple[str, dict]]:
+        """createdAt 기준으로 작업들을 시간순(FIFO)으로 정렬"""
+        jobs_list = [(job_id, job_data) for job_id, job_data in jobs_dict.items()]
+        
+        # createdAt 기준으로 정렬 (오래된 것부터)
+        jobs_list.sort(key=lambda x: x[1].get('createdAt', 0))
+        
+        return jobs_list
