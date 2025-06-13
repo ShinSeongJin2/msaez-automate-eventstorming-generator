@@ -1000,6 +1000,7 @@ dependencies = [
     { name = "langgraph" },
     { name = "langsmith" },
     { name = "pluralizer" },
+    { name = "python-dotenv" },
 ]
 
 [package.optional-dependencies]
@@ -1019,6 +1020,7 @@ requires-dist = [
     { name = "langsmith", specifier = ">=0.3.42" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11.1" },
     { name = "pluralizer", specifier = ">=1.2.0" },
+    { name = "python-dotenv", specifier = ">=1.1.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.1" },
 ]
 provides-extras = ["dev"]
