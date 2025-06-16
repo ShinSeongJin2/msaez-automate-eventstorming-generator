@@ -231,6 +231,153 @@ class FirebaseSystem:
             print(f"Fire and Forget 업데이트 실패: {str(e)}")
 
 
+    def conditional_update_data(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> bool:
+        """
+        두 데이터를 비교하여 변경된 부분만 효율적으로 업데이트
+        
+        Args:
+            path (str): Firebase 데이터베이스 기본 경로
+            data_to_update (Dict[str, Any]): 업데이트할 새로운 데이터
+            previous_data (Dict[str, Any]): 기존 데이터
+            
+        Returns:
+            bool: 성공 여부
+        """
+        try:
+            # 데이터 차이점 찾기
+            updates = self._find_data_differences(data_to_update, previous_data)
+            
+            # 변경사항이 없으면 업데이트하지 않음
+            if not updates:
+                return True
+            
+            # Firebase 업데이트용 데이터 정리
+            sanitized_updates = self.sanitize_data_for_firebase(updates)
+            
+            # 기본 경로를 기준으로 업데이트 경로 조정
+            final_updates = {}
+            for update_path, value in sanitized_updates.items():
+                full_path = f"{path}/{update_path}" if path else update_path
+                final_updates[full_path] = value
+            
+            # Firebase 루트에서 다중 경로 업데이트 실행
+            root_ref = self.database.reference()
+            root_ref.update(final_updates)
+            
+            return True
+        except Exception as e:
+            print(f"조건부 데이터 업데이트 실패: {str(e)}")
+            return False
+
+    async def conditional_update_data_async(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> bool:
+        """
+        두 데이터를 비교하여 변경된 부분만 비동기로 효율적으로 업데이트
+        
+        Args:
+            path (str): Firebase 데이터베이스 기본 경로
+            data_to_update (Dict[str, Any]): 업데이트할 새로운 데이터
+            previous_data (Dict[str, Any]): 기존 데이터
+            
+        Returns:
+            bool: 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(self._sync_conditional_update_data, path, data_to_update, previous_data)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 조건부 데이터 업데이트 실패: {str(e)}")
+            return False
+
+    def _sync_conditional_update_data(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> bool:
+        """동기 conditional_update_data의 내부 구현"""
+        try:
+            # 데이터 차이점 찾기
+            updates = self._find_data_differences(data_to_update, previous_data)
+            
+            # 변경사항이 없으면 업데이트하지 않음
+            if not updates:
+                return True
+            
+            # Firebase 업데이트용 데이터 정리
+            sanitized_updates = self.sanitize_data_for_firebase(updates)
+            
+            # 기본 경로를 기준으로 업데이트 경로 조정
+            final_updates = {}
+            for update_path, value in sanitized_updates.items():
+                full_path = f"{path}/{update_path}" if path else update_path
+                final_updates[full_path] = value
+            
+            # Firebase 루트에서 다중 경로 업데이트 실행
+            root_ref = self.database.reference()
+            root_ref.update(final_updates)
+            
+            return True
+        except Exception as e:
+            print(f"조건부 데이터 업데이트 실패: {str(e)}")
+            return False
+
+    def conditional_update_data_fire_and_forget(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> None:
+        """
+        Firebase 데이터를 조건부로 업데이트하되 결과를 기다리지 않음 (Fire and Forget)
+        
+        Args:
+            path (str): Firebase 데이터베이스 경로
+            data_to_update (Dict[str, Any]): 업데이트할 새로운 데이터
+            previous_data (Dict[str, Any]): 기존 데이터
+        """
+        try:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(self.conditional_update_data_async(path, data_to_update, previous_data))
+                else:
+                    loop.run_until_complete(self.conditional_update_data_async(path, data_to_update, previous_data))
+            except RuntimeError:
+                asyncio.run(self.conditional_update_data_async(path, data_to_update, previous_data))
+        except Exception as e:
+            print(f"Fire and Forget 조건부 업데이트 실패: {str(e)}")
+
+    def _find_data_differences(self, new_data: Dict[str, Any], old_data: Dict[str, Any], path_prefix: str = "") -> Dict[str, Any]:
+        """
+        두 딕셔너리를 재귀적으로 비교하여 차이점을 Firebase 업데이트 형태로 반환
+        
+        Args:
+            new_data (Dict[str, Any]): 새로운 데이터
+            old_data (Dict[str, Any]): 기존 데이터
+            path_prefix (str): 현재 경로 접두사
+            
+        Returns:
+            Dict[str, Any]: Firebase 업데이트용 경로-값 딕셔너리
+        """
+        updates = {}
+        
+        # 새 데이터의 모든 키를 확인
+        for key, new_value in new_data.items():
+            current_path = f"{path_prefix}/{key}" if path_prefix else key
+            old_value = old_data.get(key) if old_data else None
+            
+            # 값이 딕셔너리인 경우 재귀적으로 비교
+            if isinstance(new_value, dict) and isinstance(old_value, dict):
+                nested_updates = self._find_data_differences(new_value, old_value, current_path)
+                updates.update(nested_updates)
+            # 값이 다른 경우 업데이트 필요
+            elif new_value != old_value:
+                updates[current_path] = new_value
+        
+        # 기존 데이터에만 있고 새 데이터에 없는 키들은 삭제 처리
+        if old_data:
+            for key in old_data.keys():
+                if key not in new_data:
+                    current_path = f"{path_prefix}/{key}" if path_prefix else key
+                    updates[current_path] = None  # Firebase에서 삭제를 위해 None 사용
+        
+        return updates
+
+
     def get_data(self, path: str) -> Optional[Dict[str, Any]]:
         """
         특정 경로에서 데이터를 딕셔너리 형태로 조회

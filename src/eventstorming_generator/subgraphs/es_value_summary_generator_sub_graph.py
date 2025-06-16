@@ -3,7 +3,7 @@ from typing import Callable, Dict, Any, List
 from copy import deepcopy
 from langgraph.graph import StateGraph
 
-from ..utils import JsonUtil, ESValueSummarizeWithFilter, TokenCounter, LogUtil, JobUtil
+from ..utils import JsonUtil, ESValueSummarizeWithFilter, TokenCounter, LogUtil
 from ..models import State
 from ..utils.es_alias_trans_manager import EsAliasTransManager
 from ..generators.es_value_summary_generator import ESValueSummaryGenerator
@@ -29,12 +29,10 @@ def prepare_es_value_summary_generation(state: State) -> State:
         state.subgraphs.esValueSummaryGeneratorModel.retry_count = 0
         
         LogUtil.add_info_log(state, "ES value summary generation preparation completed")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during ES value summary generation preparation", e)
         state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
 
@@ -87,12 +85,10 @@ def preprocess_es_value_summary_generation(state: State) -> State:
         state.subgraphs.esValueSummaryGeneratorModel.element_ids = element_ids
         
         LogUtil.add_info_log(state, f"ES value summary pre-processing completed - extracted element ID count: {len(element_ids)}")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during ES value summary pre-processing", e)
         state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
 
@@ -133,13 +129,10 @@ def generate_es_value_summary(state: State) -> State:
             LogUtil.add_info_log(state, f"ES value summary generation completed - sorted element ID count: {len(sorted_element_ids)}")
         else:
             raise ValueError("Sorted element ID not found")
-        
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during ES value summary generation", e)
         current_gen.retry_count += 1
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
 
@@ -173,15 +166,12 @@ def postprocess_es_value_summary_generation(state: State) -> State:
         )
         
         # 결과 저장
-        state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value = summarized_es_value
-        
+        state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value = summarized_es_value  
         LogUtil.add_info_log(state, "ES value summary post-processing completed")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during ES value summary post-processing", e)
         state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
 
@@ -201,13 +191,10 @@ def validate_es_value_summary_generation(state: State) -> State:
         else:
             state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
             LogUtil.add_info_log(state, f"ES value summary generation validation failed - retry count: {state.subgraphs.esValueSummaryGeneratorModel.retry_count}")
-        
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during ES value summary generation validation", e)
         state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
 
@@ -233,8 +220,6 @@ def complete_processing(state: State) -> State:
         subgraph_model.element_ids = {}
         subgraph_model.sorted_element_ids = []
 
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
-    
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during ES value summary generation completion", e)
     

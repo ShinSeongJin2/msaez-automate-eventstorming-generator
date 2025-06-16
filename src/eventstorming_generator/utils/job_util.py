@@ -34,6 +34,10 @@ class JobUtil:
     # 설정값
     MAX_QUEUE_SIZE = 100  # 큐 최대 크기
     WORKER_TIMEOUT = 5.0  # 작업자 스레드 종료 대기 시간
+
+    # 조건부 데이터 업데이트를 위한 메모리
+    previous_data_job_id = None
+    previous_data_state = None
  
     @classmethod
     def _initialize_cleanup(cls):
@@ -223,7 +227,15 @@ class JobUtil:
             if update_request.operation_type == "set":
                 firebase_system.set_data(path, data)
             elif update_request.operation_type == "update":
-                firebase_system.update_data(path, data)
+                if JobUtil.previous_data_job_id == job_id:
+                    firebase_system.conditional_update_data(path, data, JobUtil.previous_data_state)
+                    JobUtil.previous_data_job_id = job_id
+                    JobUtil.previous_data_state = data
+                else:
+                    firebase_system.update_data(path, data)
+                    JobUtil.previous_data_job_id = job_id
+                    JobUtil.previous_data_state = data
+        
             elif update_request.operation_type == "delete":
                 firebase_system.delete_data(path)
             
