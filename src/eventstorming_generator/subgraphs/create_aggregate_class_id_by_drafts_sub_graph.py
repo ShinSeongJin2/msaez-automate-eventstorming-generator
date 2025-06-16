@@ -1,11 +1,25 @@
 from typing import Dict, Any, List, Optional, Callable
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, START
 import os
 
 from ..models import ClassIdGenerationState, State, ActionModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateClassIdByDrafts
 from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, JsonUtil, EsUtils, CaseConvertUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ..constants import ResumeNodes
+
+
+def resume_from_create_class_id(state: State):
+    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"] and state.outputs.lastCompletedSubGraphNode:
+        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_CLASS_ID"].values():
+            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedSubGraphNode}")
+            return state.outputs.lastCompletedSubGraphNode
+        else:
+            state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+            LogUtil.add_error_log(state, f"Invalid lastCompletedSubGraphNode: {state.outputs.lastCompletedSubGraphNode}")
+            return "complete"
+    
+    return "prepare"
 
 
 # 노드 정의: 클래스 ID 생성 준비
@@ -83,24 +97,27 @@ def prepare_class_id_generation(state: State) -> State:
             LogUtil.add_info_log(state, "No aggregate references found")
         
         LogUtil.add_info_log(state, "Class ID generation preparation completed")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"Error in class ID generation preparation", e)
         state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
-
 
 # 노드 정의: 다음 생성할 클래스 ID 선택
 def select_next_class_id(state: State) -> State:
     """
     다음에 생성할 클래스 ID를 선택하고 현재 처리 상태로 설정
     """
-    LogUtil.add_info_log(state, "Selecting next class ID generation task...")
+
     
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_CLASS_ID"]["SELECT_NEXT"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Selecting next class ID generation task...")
+
         # 모든 처리가 완료되었는지 확인
         if (not state.subgraphs.createAggregateClassIdByDraftsModel.pending_generations and 
             not state.subgraphs.createAggregateClassIdByDraftsModel.current_generation):
@@ -124,9 +141,7 @@ def select_next_class_id(state: State) -> State:
         LogUtil.add_exception_object_log(state, f"Error selecting next class ID task", e)
         state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
-
 
 # 노드 정의: 클래스 ID 생성 전처리
 def preprocess_class_id_generation(state: State) -> State:
@@ -159,9 +174,7 @@ def preprocess_class_id_generation(state: State) -> State:
         if state.subgraphs.createAggregateClassIdByDraftsModel.current_generation:
             state.subgraphs.createAggregateClassIdByDraftsModel.current_generation.retry_count += 1
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
-
 
 # 노드 정의: 클래스 ID 생성 실행
 def generate_class_id(state: State) -> State:
@@ -284,9 +297,7 @@ def generate_class_id(state: State) -> State:
         if state.subgraphs.createAggregateClassIdByDraftsModel.current_generation:
             state.subgraphs.createAggregateClassIdByDraftsModel.current_generation.retry_count += 1
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
-
 
 # 노드 정의: 클래스 ID 생성 후처리
 def postprocess_class_id_generation(state: State) -> State:
@@ -340,9 +351,7 @@ def postprocess_class_id_generation(state: State) -> State:
             current_gen.retry_count += 1
             current_gen.created_actions = []
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
-
 
 # 노드 정의: 클래스 ID 생성 검증 및 완료 처리
 def validate_class_id_generation(state: State) -> State:
@@ -389,17 +398,18 @@ def validate_class_id_generation(state: State) -> State:
         LogUtil.add_exception_object_log(state, f"Error in class ID generation validation", e)
         state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
-
 
 # 단순 완료 처리를 위한 함수
 def complete_processing(state: State) -> State:
     """
     클래스 ID 생성 프로세스 완료
     """
-    LogUtil.add_info_log(state, "Class ID generation process completed")
+    state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"]
+    state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_CLASS_ID"]["COMPLETE"]
     JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+    LogUtil.add_info_log(state, "Class ID generation process completed")
 
     # 변수 정리
     subgraph_model = state.subgraphs.createAggregateClassIdByDraftsModel
@@ -408,7 +418,6 @@ def complete_processing(state: State) -> State:
     subgraph_model.completed_generations = []
     subgraph_model.pending_generations = []
     return state
-
 
 # 라우팅 함수: 다음 단계 결정
 def decide_next_step(state: State) -> str:
@@ -454,7 +463,6 @@ def decide_next_step(state: State) -> str:
     # 생성된 액션이 있으면 후처리 단계로 이동
     return "postprocess"
 
-
 # 서브그래프 생성 함수
 def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
     """
@@ -474,6 +482,17 @@ def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
     subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(START, resume_from_create_class_id, {
+        "prepare": "prepare",
+        "select_next": "select_next",
+        "preprocess": "preprocess",
+        "generate": "generate",
+        "postprocess": "postprocess",
+        "validate": "validate",
+        "complete": "complete",
+        "es_value_summary_generator": "es_value_summary_generator"
+    })
+
     subgraph.add_conditional_edges(
         "prepare",
         decide_next_step,
@@ -542,9 +561,6 @@ def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
         }
     )
     
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
-    
     # 컴파일된 그래프 반환
     compiled_subgraph = subgraph.compile()
     
@@ -596,7 +612,6 @@ Key considerations:
 3. Properties and identifiers needed for references
 4. Related commands and events that might use these references"""
 
-
 # 유틸리티 함수
 def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: List[str]) -> List[Dict[str, Any]]:
     """
@@ -621,7 +636,6 @@ def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: Li
             filtered_actions.append(action)
     
     return filtered_actions
-
 
 def _filter_bidirectional_actions(actions: List[Dict[str, Any]], es_value: Dict[str, Any], es_alias_trans_manager: EsAliasTransManager) -> List[Dict[str, Any]]:
     """
@@ -658,7 +672,6 @@ def _filter_bidirectional_actions(actions: List[Dict[str, Any]], es_value: Dict[
                 actions[j] = None
     
     return [action for action in actions if action]
-
 
 def _modify_actions_for_reference_class_value_object(actions: List[ActionModel], es_value: Dict[str, Any]) -> List[ActionModel]:
     """
@@ -726,14 +739,12 @@ def _modify_actions_for_reference_class_value_object(actions: List[ActionModel],
     actions.extend(actions_to_add)
     return actions
 
-
 def _get_aggregate_by_id(es_value: Dict[str, Any], aggregate_id: str) -> Optional[Dict[str, Any]]:
     """ID로 Aggregate 찾기"""
     aggregate = es_value["elements"].get(aggregate_id)
     if aggregate and aggregate.get("_type") == "org.uengine.modeling.model.Aggregate":
         return aggregate
     return None
-
 
 def _get_aggregate_by_name(es_value: Dict[str, Any], aggregate_name: str) -> Optional[Dict[str, Any]]:
     """이름으로 Aggregate 찾기"""
@@ -743,7 +754,6 @@ def _get_aggregate_by_name(es_value: Dict[str, Any], aggregate_name: str) -> Opt
             element.get("name") == aggregate_name):
             return element
     return None
-
 
 def _add_aggregate_relation(from_aggregate: Dict[str, Any], to_aggregate: Dict[str, Any], es_value: Dict[str, Any]) -> None:
     """Aggregate 간 관계 추가"""

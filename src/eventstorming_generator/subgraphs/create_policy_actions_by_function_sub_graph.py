@@ -1,12 +1,27 @@
 import os
 from typing import Callable, Dict, Any, List
 from copy import deepcopy
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreatePolicyActionsByFunction
 from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ..constants import ResumeNodes
+
+
+def resume_from_create_policy_actions(state: State):
+    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
+        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_POLICY_ACTIONS"].values():
+            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedSubGraphNode}")
+            return state.outputs.lastCompletedSubGraphNode
+        else:
+            state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
+            LogUtil.add_error_log(state, f"Invalid lastCompletedSubGraphNode: {state.outputs.lastCompletedSubGraphNode}")
+            return "complete"
+    
+    return "prepare"
+
 
 # 노드 정의: 초안으로부터 Policy 액션 생성 준비
 def prepare_policy_actions_generation(state: State) -> State:
@@ -52,7 +67,6 @@ def prepare_policy_actions_generation(state: State) -> State:
         state.subgraphs.createPolicyActionsByFunctionModel.pending_generations = pending_generations
         
         LogUtil.add_info_log(state, f"Prepared {len(pending_generations)} policy action generations")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error preparing policy actions generation", e)
@@ -60,22 +74,25 @@ def prepare_policy_actions_generation(state: State) -> State:
     
     return state
 
-
 # 노드 정의: 다음 생성할 Policy 액션 선택
 def select_next_policy_actions(state: State) -> State:
     """
     다음에 생성할 Policy 액션을 선택하고 현재 처리 상태로 설정
     """
-    LogUtil.add_info_log(state, "Selecting next policy actions...")
     
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["SELECT_NEXT"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Selecting next policy actions generation...")
+
         # 모든 처리가 완료되었는지 확인
         if (not state.subgraphs.createPolicyActionsByFunctionModel.pending_generations and 
             not state.subgraphs.createPolicyActionsByFunctionModel.current_generation):
             state.subgraphs.createPolicyActionsByFunctionModel.all_complete = True
             state.subgraphs.createPolicyActionsByFunctionModel.is_processing = False
             LogUtil.add_info_log(state, "All policy actions generation completed")
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
             return state
         
         # 현재 처리 중인 작업이 있으면 상태 유지
@@ -88,14 +105,12 @@ def select_next_policy_actions(state: State) -> State:
             current_gen = state.subgraphs.createPolicyActionsByFunctionModel.pending_generations.pop(0)
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation = current_gen
             LogUtil.add_info_log(state, f"Selected policy action generation for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error selecting next policy actions", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
     
     return state
-
 
 # 노드 정의: Policy 액션 생성 전처리
 def preprocess_policy_actions_generation(state: State) -> State:
@@ -129,7 +144,6 @@ def preprocess_policy_actions_generation(state: State) -> State:
         current_gen.summarized_es_value = summarized_es_value
         
         LogUtil.add_info_log(state, f"Preprocessed policy actions for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error preprocessing policy actions generation", e)
@@ -137,7 +151,6 @@ def preprocess_policy_actions_generation(state: State) -> State:
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
     
     return state
-
 
 # 노드 정의: Policy 액션 생성 실행
 def generate_policy_actions(state: State) -> State:
@@ -224,7 +237,6 @@ def generate_policy_actions(state: State) -> State:
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
             current_gen.is_token_over_limit = True
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
             return state
 
         # Generator 실행 결과
@@ -253,8 +265,6 @@ def generate_policy_actions(state: State) -> State:
             LogUtil.add_info_log(state, f"No policy actions generated for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
         else:
             LogUtil.add_info_log(state, f"Generated {len(current_gen.created_actions)} policy actions for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
-        
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error generating policy actions", e)
@@ -262,7 +272,6 @@ def generate_policy_actions(state: State) -> State:
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
     
     return state
-
 
 # 노드 정의: Policy 액션 생성 후처리
 def postprocess_policy_actions_generation(state: State) -> State:
@@ -285,7 +294,6 @@ def postprocess_policy_actions_generation(state: State) -> State:
         if not current_gen.created_actions:
             LogUtil.add_info_log(state, "No created actions to postprocess, incrementing retry count")
             current_gen.retry_count += 1
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
             return state
         
         # ES 값의 복사본 생성
@@ -304,7 +312,6 @@ def postprocess_policy_actions_generation(state: State) -> State:
         current_gen.generation_complete = True
         
         LogUtil.add_info_log(state, f"Applied {len(current_gen.created_actions)} policy actions and updated ES value")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error postprocessing policy actions generation", e)
@@ -313,7 +320,6 @@ def postprocess_policy_actions_generation(state: State) -> State:
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation.created_actions = []
     
     return state
-
 
 # 노드 정의: Policy 액션 생성 검증 및 완료 처리
 def validate_policy_actions_generation(state: State) -> State:
@@ -355,20 +361,21 @@ def validate_policy_actions_generation(state: State) -> State:
         else:
             LogUtil.add_info_log(state, f"Policy action generation retry {current_gen.retry_count}/{state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count} for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
         
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
-        
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error validating policy actions generation", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
     
     return state
 
-
 # 단순 완료 처리를 위한 함수
 def complete_processing(state: State) -> State:
     """
     Policy 액션 생성 프로세스 완료
     """
+    state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"]
+    state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["COMPLETE"]
+    JobUtil.update_job_to_firebase_fire_and_forget(state)
+
     LogUtil.add_info_log(state, "Policy actions generation process completed")
 
     # 변수 정리
@@ -377,10 +384,7 @@ def complete_processing(state: State) -> State:
     subgraph_model.current_generation = None
     subgraph_model.completed_generations = []
     subgraph_model.pending_generations = []
-
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
-
 
 # 라우팅 함수: 다음 단계 결정
 def decide_next_step(state: State) -> str:
@@ -426,7 +430,6 @@ def decide_next_step(state: State) -> str:
     # 생성된 액션이 있으면 후처리 단계로 이동
     return "postprocess"
 
-
 # 서브그래프 생성 함수
 def create_policy_actions_by_function_subgraph() -> Callable:
     """
@@ -446,6 +449,17 @@ def create_policy_actions_by_function_subgraph() -> Callable:
     subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(START, resume_from_create_policy_actions, {
+        "prepare": "prepare",
+        "select_next": "select_next",
+        "preprocess": "preprocess",
+        "generate": "generate",
+        "postprocess": "postprocess",
+        "validate": "validate",
+        "complete": "complete",
+        "es_value_summary_generator": "es_value_summary_generator"
+    })
+
     subgraph.add_conditional_edges(
         "prepare",
         decide_next_step,
@@ -513,9 +527,6 @@ def create_policy_actions_by_function_subgraph() -> Callable:
             "complete": "complete"
         }
     )
-    
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
     
     # 컴파일된 그래프 반환
     compiled_subgraph = subgraph.compile()
@@ -614,7 +625,6 @@ def _to_event_update_actions(policies: List[Dict[str, Any]],
         })
     
     return actions
-
 
 # 요약 요청 컨텍스트 빌드 함수
 def _build_request_context(current_gen) -> str:

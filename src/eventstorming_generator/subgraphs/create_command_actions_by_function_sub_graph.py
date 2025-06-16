@@ -1,11 +1,26 @@
 import os
 from typing import Callable, Dict, Any, List
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreateCommandActionsByFunction
 from ..utils import ESFakeActionsUtil, JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ..constants import ResumeNodes
+
+
+def resume_from_create_command_actions(state: State):
+    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
+        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_COMMAND_ACTIONS"].values():
+            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedSubGraphNode}")
+            return state.outputs.lastCompletedSubGraphNode
+        else:
+            state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
+            LogUtil.add_error_log(state, f"Invalid lastCompletedSubGraphNode: {state.outputs.lastCompletedSubGraphNode}")
+            return "complete"
+    
+    return "prepare"
+
 
 def prepare_command_actions_generation(state: State) -> State:
     """
@@ -52,16 +67,20 @@ def prepare_command_actions_generation(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error preparing command actions generation", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def select_next_command_actions(state: State) -> State:
     """
     다음에 처리할 Aggregate를 선택하는 노드
     """
-    LogUtil.add_info_log(state, "Selecting next command actions generation...")
-    
+
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["SELECT_NEXT"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Selecting next command actions generation...")
+
         model = state.subgraphs.createCommandActionsByFunctionModel
         
         # 대기 중인 작업이 없으면 모든 작업 완료
@@ -82,7 +101,6 @@ def select_next_command_actions(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error selecting next command actions", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def preprocess_command_actions_generation(state: State) -> State:
@@ -109,7 +127,6 @@ def preprocess_command_actions_generation(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error preprocessing command actions generation", e)
         state.subgraphs.createCommandActionsByFunctionModel.current_generation.retry_count += 1
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def generate_command_actions(state: State) -> State:
@@ -229,7 +246,6 @@ def generate_command_actions(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error generating command actions", e)
         current_gen.retry_count += 1
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def postprocess_command_actions_generation(state: State) -> State:
@@ -294,7 +310,6 @@ def postprocess_command_actions_generation(state: State) -> State:
         current.retry_count += 1
         current.created_actions = []
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def validate_command_actions_generation(state: State) -> State:
@@ -334,22 +349,30 @@ def validate_command_actions_generation(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error validating command actions generation", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
 
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def complete_processing(state: State) -> State:
     """
     모든 처리가 완료되면 최종 상태 업데이트
     """
-    LogUtil.add_info_log(state, "Completing command actions processing...")
     
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["COMPLETE"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Completing command actions processing...")
+
         subgraph_model = state.subgraphs.createCommandActionsByFunctionModel
         subgraph_model.is_processing = False
         subgraph_model.all_complete = True
         
         completed_count = len(subgraph_model.completed_generations)
-        LogUtil.add_info_log(state, f"Command actions processing completed. Total completed generations: {completed_count}")
+        failed = subgraph_model.is_failed
+        if failed:
+            LogUtil.add_error_log(state, f"Command actions processing completed with failures. {completed_count} command actions processed.")
+        else:
+            LogUtil.add_info_log(state, f"Command actions processing completed successfully. {completed_count} command actions processed.")
 
         # 변수 정리
         subgraph_model.draft_options = {}
@@ -362,7 +385,6 @@ def complete_processing(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error completing command actions processing", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def decide_next_step(state: State) -> str:
@@ -426,6 +448,17 @@ def create_command_actions_by_function_subgraph() -> Callable:
     subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(START, resume_from_create_command_actions, {
+        "prepare": "prepare",
+        "select_next": "select_next",
+        "preprocess": "preprocess",
+        "generate": "generate",
+        "postprocess": "postprocess",
+        "validate": "validate",
+        "complete": "complete",
+        "es_value_summary_generator": "es_value_summary_generator"
+    })
+
     subgraph.add_conditional_edges(
         "prepare",
         decide_next_step,
@@ -494,9 +527,6 @@ def create_command_actions_by_function_subgraph() -> Callable:
         }
     )
     
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
-    
     # 컴파일된 그래프 반환
     compiled_subgraph = subgraph.compile()
     
@@ -510,6 +540,7 @@ def create_command_actions_by_function_subgraph() -> Callable:
         return result
     
     return run_subgraph
+
 
 # 유틸리티 함수들
 def filter_valid_actions(actions: List[ActionModel]) -> List[ActionModel]:

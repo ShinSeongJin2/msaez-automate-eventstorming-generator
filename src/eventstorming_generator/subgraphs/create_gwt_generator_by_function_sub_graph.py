@@ -1,12 +1,27 @@
 import os
 from typing import Callable, Dict, Any, List
 from copy import deepcopy
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, START
 
 from ..models import GWTGenerationState, State, ESValueSummaryGeneratorModel
 from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil, JobUtil
 from ..generators import CreateGWTGeneratorByFunction
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ..constants import ResumeNodes
+
+
+def resume_from_create_gwt(state: State):
+    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"] and state.outputs.lastCompletedSubGraphNode:
+        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_GWT"].values():
+            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedSubGraphNode}")
+            return state.outputs.lastCompletedSubGraphNode
+        else:
+            state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
+            LogUtil.add_error_log(state, f"Invalid lastCompletedSubGraphNode: {state.outputs.lastCompletedSubGraphNode}")
+            return "complete"
+    
+    return "prepare"
+
 
 # 노드 정의: GWT 생성 준비
 def prepare_gwt_generation(state: State) -> State:
@@ -80,8 +95,7 @@ def prepare_gwt_generation(state: State) -> State:
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error preparing GWT generation", e)
         state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
-    
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
+
     return state
 
 # 노드 정의: 다음 생성할 GWT 선택
@@ -89,9 +103,14 @@ def select_next_gwt_generation(state: State) -> State:
     """
     다음에 생성할 GWT를 선택하고 현재 처리 상태로 설정
     """
-    LogUtil.add_info_log(state, "Selecting next GWT generation task...")
     
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_GWT"]["SELECT_NEXT"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Selecting next GWT generation task...")
+
         # 모든 처리가 완료되었는지 확인
         if (not state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations and 
             not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation):
@@ -115,7 +134,6 @@ def select_next_gwt_generation(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error selecting next GWT generation task", e)
         state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 노드 정의: GWT 생성 전처리
@@ -171,7 +189,6 @@ def preprocess_gwt_generation(state: State) -> State:
         if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
             state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.retry_count += 1
     
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 # 노드 정의: GWT 생성 실행
@@ -304,8 +321,7 @@ def generate_gwt_generation(state: State) -> State:
         LogUtil.add_exception_object_log(state, "Error during GWT generation execution", e)
         if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
             state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.retry_count += 1
-    
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
+
     return state
 
 # 노드 정의: GWT 생성 후처리
@@ -348,8 +364,7 @@ def postprocess_gwt_generation(state: State) -> State:
         if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
             state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.retry_count += 1
             state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.commands_to_replace = []
-    
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
+
     return state
 
 # 노드 정의: GWT 생성 검증 및 완료 처리
@@ -396,8 +411,7 @@ def validate_gwt_generation(state: State) -> State:
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during GWT validation and completion", e)
         state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
-    
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
+
     return state
 
 # 단순 완료 처리를 위한 함수
@@ -405,9 +419,14 @@ def complete_processing(state: State) -> State:
     """
     GWT 생성 프로세스 완료
     """
-    LogUtil.add_info_log(state, "GWT generation process completed")
     
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_GWT"]["COMPLETE"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Completing GWT generation process...")
+
         # 완료된 작업 수 정보 로그
         completed_count = len(state.subgraphs.createGwtGeneratorByFunctionModel.completed_generations)
         failed = state.subgraphs.createGwtGeneratorByFunctionModel.is_failed
@@ -426,8 +445,7 @@ def complete_processing(state: State) -> State:
 
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error during GWT generation process completion", e)
-    
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
+
     return state
 
 # 라우팅 함수: 다음 단계 결정
@@ -522,6 +540,17 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
     subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(START, resume_from_create_gwt, {
+        "prepare": "prepare",
+        "select_next": "select_next",
+        "preprocess": "preprocess",
+        "generate": "generate",
+        "postprocess": "postprocess",
+        "validate": "validate",
+        "complete": "complete",
+        "es_value_summary_generator": "es_value_summary_generator"
+    })
+
     subgraph.add_conditional_edges(
         "prepare",
         decide_next_step,
@@ -590,9 +619,6 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         }
     )
     
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
-    
     # 컴파일된 그래프 반환
     compiled_subgraph = subgraph.compile()
     
@@ -606,6 +632,7 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         return result
     
     return run_subgraph
+
 
 # 유틸리티 함수
 def _get_examples(gwts: List[Dict[str, Any]], es_value: Dict[str, Any]) -> List[Dict[str, Any]]:

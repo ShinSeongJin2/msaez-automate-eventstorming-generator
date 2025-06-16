@@ -354,6 +354,7 @@ def create_es_value_summary_generator_subgraph() -> Callable:
     
     return run_subgraph
 
+
 # 유틸리티 함수: 우선순위 기반 요소 ID 재정렬
 def _resort_with_priority(summarized_es_value: Dict[str, Any], sorted_element_ids: List[str]) -> List[str]:
     """

@@ -1,12 +1,27 @@
 from typing import Dict, Any, List, Optional, Callable
 from copy import deepcopy
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, START
 import os
 
 from ..models import AggregateGenerationState, State, ActionModel, EsValueModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateActionsByFunction
 from ..utils import EsActionsUtil, ESFakeActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JsonUtil, JobUtil, LogUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ..constants import ResumeNodes
+
+
+def resume_from_create_aggregates(state: State):
+    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"] and state.outputs.lastCompletedSubGraphNode:
+        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_AGGREGATES"].values():
+            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedSubGraphNode}")
+            return state.outputs.lastCompletedSubGraphNode
+        else:
+            state.subgraphs.createAggregateByFunctionsModel.is_failed = True
+            LogUtil.add_error_log(state, f"Invalid lastCompletedSubGraphNode: {state.outputs.lastCompletedSubGraphNode}")
+            return "complete"
+    
+    return "prepare"
+
 
 # 노드 정의: 초안으로부터 Aggregate 생성 준비
 def prepare_aggregate_generation(state: State) -> State:
@@ -52,33 +67,33 @@ def prepare_aggregate_generation(state: State) -> State:
         
         # 처리할 Aggregate 목록 저장
         state.subgraphs.createAggregateByFunctionsModel.pending_generations = pending_generations
-        
         LogUtil.add_info_log(state, f"Prepared {len(pending_generations)} aggregate generations")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error in prepare_aggregate_generation", e)
         state.subgraphs.createAggregateByFunctionsModel.is_failed = True
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
-
 
 # 노드 정의: 다음 생성할 Aggregate 선택
 def select_next_aggregate(state: State) -> State:
     """
     다음에 생성할 Aggregate를 선택하고 현재 처리 상태로 설정
     """
-    LogUtil.add_info_log(state, "Selecting next aggregate for generation...")
-    
+
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_AGGREGATES"]["SELECT_NEXT"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Selecting next aggregate for generation...")
+
         # 모든 처리가 완료되었는지 확인
         if (not state.subgraphs.createAggregateByFunctionsModel.pending_generations and 
             not state.subgraphs.createAggregateByFunctionsModel.current_generation):
             state.subgraphs.createAggregateByFunctionsModel.all_complete = True
             state.subgraphs.createAggregateByFunctionsModel.is_processing = False
             LogUtil.add_info_log(state, "All aggregate generations completed")
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
             return state
         
         # 현재 처리 중인 작업이 있으면 상태 유지
@@ -94,15 +109,12 @@ def select_next_aggregate(state: State) -> State:
             aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
             bc_name = current_gen.target_bounded_context.get("name", "Unknown")
             LogUtil.add_info_log(state, f"Selected aggregate '{aggregate_name}' in '{bc_name}' bounded context")
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error in select_next_aggregate", e)
         state.subgraphs.createAggregateByFunctionsModel.is_failed = True
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
-
 
 # 노드 정의: Aggregate 생성 전처리
 def preprocess_aggregate_generation(state: State) -> State:
@@ -147,19 +159,15 @@ def preprocess_aggregate_generation(state: State) -> State:
         current_gen.summarized_es_value = summarized_es_value
         
         # 클래스 ID 속성 제거 (필요한 경우)
-        current_gen.draft_option = _remove_class_id_properties(deepcopy(current_gen.draft_option))
-        
+        current_gen.draft_option = _remove_class_id_properties(deepcopy(current_gen.draft_option))  
         LogUtil.add_info_log(state, f"Preprocessing completed for aggregate '{aggregate_name}'")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error in preprocess_aggregate_generation", e)
         if state.subgraphs.createAggregateByFunctionsModel.current_generation:
             state.subgraphs.createAggregateByFunctionsModel.current_generation.retry_count += 1
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
-
 
 # 노드 정의: Aggregate 생성 실행
 def generate_aggregate(state: State) -> State:
@@ -237,7 +245,6 @@ def generate_aggregate(state: State) -> State:
             if left_token_count < 50:
                 LogUtil.add_error_log(state, "Insufficient token space even after removing ES value")
                 state.subgraphs.createAggregateByFunctionsModel.is_failed = True
-                JobUtil.update_job_to_firebase_fire_and_forget(state)
                 return state
 
             # ES 요약 생성 서브그래프 호출 준비
@@ -255,7 +262,6 @@ def generate_aggregate(state: State) -> State:
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
             current_gen.is_token_over_limit = True
             LogUtil.add_info_log(state, "Prepared ES value summary request due to token limit")
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
             return state
         
         # Generator 실행 결과
@@ -277,18 +283,14 @@ def generate_aggregate(state: State) -> State:
         
         # 생성된 액션 저장
         current_gen.created_actions = actionModels
-        
         LogUtil.add_info_log(state, f"Generated {len(actionModels)} actions for aggregate '{aggregate_name}'")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error in generate_aggregate", e)
         if state.subgraphs.createAggregateByFunctionsModel.current_generation:
             state.subgraphs.createAggregateByFunctionsModel.current_generation.retry_count += 1
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
-
 
 # 노드 정의: Aggregate 생성 후처리
 def postprocess_aggregate_generation(state: State) -> State:
@@ -313,7 +315,6 @@ def postprocess_aggregate_generation(state: State) -> State:
         if not current_gen.created_actions:
             LogUtil.add_error_log(state, f"No actions generated for aggregate '{aggregate_name}', incrementing retry count")
             current_gen.retry_count += 1
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
             return state
         
         LogUtil.add_info_log(state, f"Postprocessing {len(current_gen.created_actions)} actions for aggregate '{aggregate_name}'...")
@@ -364,7 +365,6 @@ def postprocess_aggregate_generation(state: State) -> State:
         current_gen.generation_complete = True
         
         LogUtil.add_info_log(state, f"Postprocessing completed for aggregate '{aggregate_name}'")
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error in postprocess_aggregate_generation", e)
@@ -372,10 +372,8 @@ def postprocess_aggregate_generation(state: State) -> State:
             current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
             current_gen.retry_count += 1
             current_gen.created_actions = []
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
-
 
 # 노드 정의: Aggregate 생성 검증 및 완료 처리
 def validate_aggregate_generation(state: State) -> State:
@@ -412,25 +410,27 @@ def validate_aggregate_generation(state: State) -> State:
             state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
             
             LogUtil.add_info_log(state, f"Aggregate '{aggregate_name}' generation completed successfully")
-            JobUtil.update_job_to_firebase_fire_and_forget(state)
         else:
             LogUtil.add_info_log(state, f"Aggregate '{aggregate_name}' generation not yet complete")
 
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error in validate_aggregate_generation", e)
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
 
     return state
-
 
 # 단순 완료 처리를 위한 함수
 def complete_processing(state: State) -> State:
     """
     Aggregate 생성 프로세스 완료
     """
-    LogUtil.add_info_log(state, "Completing aggregate generation process...")
     
     try:
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_AGGREGATES"]["COMPLETE"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        LogUtil.add_info_log(state, "Completing aggregate generation process...")
+
         completed_count = len(state.subgraphs.createAggregateByFunctionsModel.completed_generations)
         failed = state.subgraphs.createAggregateByFunctionsModel.is_failed
         
@@ -444,15 +444,11 @@ def complete_processing(state: State) -> State:
         subgraph_model.current_generation = None
         subgraph_model.completed_generations = []
         subgraph_model.pending_generations = []
-
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "Error in complete_processing", e)
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     return state
-
 
 # 라우팅 함수: 다음 단계 결정
 def decide_next_step(state: State) -> str:
@@ -497,7 +493,6 @@ def decide_next_step(state: State) -> str:
     # 생성된 액션이 있으면 후처리 단계로 이동
     return "postprocess"
 
-
 # 서브그래프 생성 함수
 def create_aggregate_by_functions_subgraph() -> Callable:
     """
@@ -517,6 +512,17 @@ def create_aggregate_by_functions_subgraph() -> Callable:
     subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
     # 엣지 추가 (라우팅)
+    subgraph.add_conditional_edges(START, resume_from_create_aggregates, {
+        "prepare": "prepare",
+        "select_next": "select_next",
+        "preprocess": "preprocess",
+        "generate": "generate",
+        "postprocess": "postprocess",
+        "validate": "validate",
+        "complete": "complete",
+        "es_value_summary_generator": "es_value_summary_generator"
+    })
+
     subgraph.add_conditional_edges(
         "prepare",
         decide_next_step,
@@ -585,9 +591,6 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         }
     )
     
-    # 시작 및 종료 설정
-    subgraph.set_entry_point("prepare")
-    
     # 컴파일된 그래프 반환
     compiled_subgraph = subgraph.compile()
     
@@ -622,7 +625,6 @@ def _remove_class_id_properties(draft_option: List[Dict[str, Any]]) -> List[Dict
         for option in draft_option
     ]
 
-
 def _filter_valid_property_actions(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     유효한 속성 액션 필터링
@@ -654,7 +656,6 @@ def _filter_valid_property_actions(actions: List[Dict[str, Any]]) -> List[Dict[s
     
     return actions
 
-
 def _filter_valid_aggregate_id_actions(actions: List[Dict[str, Any]], target_aggregate_name: str) -> List[Dict[str, Any]]:
     """
     유효한 Aggregate ID 액션 필터링
@@ -676,7 +677,6 @@ def _filter_valid_aggregate_id_actions(actions: List[Dict[str, Any]], target_agg
         action for action in actions
         if action.get("ids", {}).get("aggregateId") in valid_aggregate_ids
     ]
-
 
 def _restore_actions(actions: List[Dict[str, Any]], es_value: Dict[str, Any], target_bounded_context_name: str) -> None:
     """
@@ -717,7 +717,6 @@ def _restore_actions(actions: List[Dict[str, Any]], es_value: Dict[str, Any], ta
                     cmd for cmd in action["args"]["outputCommandIds"] if cmd.get("commandId")
                 ]
 
-
 def _get_id_by_name_in_es_value(name: str, actions: List[Dict[str, Any]], es_value: Dict[str, Any]) -> Optional[str]:
     """
     이름으로 ES 값에서 ID 찾기
@@ -735,7 +734,6 @@ def _get_id_by_name_in_es_value(name: str, actions: List[Dict[str, Any]], es_val
     
     return None
 
-
 def _get_target_bounded_context(es_value: Dict[str, Any], target_bounded_context_name: str) -> Dict[str, Any]:
     """
     대상 Bounded Context 찾기
@@ -748,7 +746,6 @@ def _get_target_bounded_context(es_value: Dict[str, Any], target_bounded_context
     
     # 찾지 못한 경우 빈 객체 반환
     return {}
-
 
 def _remove_prev_bounded_context_related_elements(target_bounded_context_name: str, es_value: Dict[str, Any]) -> None:
     """
@@ -772,7 +769,6 @@ def _remove_prev_bounded_context_related_elements(target_bounded_context_name: s
     # 관련 관계 제거
     for relation_id in es_value_to_remove.get("relations", {}).keys():
         es_value["relations"][relation_id] = None
-
 
 def _get_only_bounded_context_related_summarized_es_value(es_value: Dict[str, Any], target_bounded_context_name: str) -> Dict[str, Any]:
     """

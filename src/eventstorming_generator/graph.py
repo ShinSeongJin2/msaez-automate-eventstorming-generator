@@ -1,22 +1,30 @@
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import StateGraph, START
 from typing import Dict, Any
 
 from eventstorming_generator.models import ActionModel, State
 from eventstorming_generator.utils import EsActionsUtil, JobUtil, LogUtil
 from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph, create_command_actions_by_function_subgraph, create_policy_actions_by_function_subgraph, create_gwt_generator_by_function_subgraph
+from eventstorming_generator.constants import ResumeNodes
 
-def validate_input(state: State):
+def resume_from_root_graph(state: State):
     if not state.inputs.jobId or not JobUtil.is_valid_job_id(state.inputs.jobId):
         LogUtil.add_error_log(state, f"Invalid jobId: {state.inputs.jobId}")
         return "complete"
 
-    return state
+    if state.outputs.lastCompletedRootGraphNode:
+        if state.outputs.lastCompletedRootGraphNode in ResumeNodes["ROOT_GRAPH"].values():
+            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedRootGraphNode}")
+            return state.outputs.lastCompletedRootGraphNode
+        else:
+            LogUtil.add_error_log(state, f"Invalid lastCompletedRootGraphNode: {state.outputs.lastCompletedRootGraphNode}")
+            return "complete"
+    
+    return "create_bounded_contexts"
 
 def create_bounded_contexts(state: State):
     LogUtil.add_info_log(state, "Creating bounded contexts...")
     state.outputs.totalProgressCount = get_total_global_progress_count(state.inputs.selectedDraftOptions)
     state.outputs.currentProgressCount = 0
-    JobUtil.new_job_to_firebase_fire_and_forget(state)
 
     try :
         created_bounded_contexts = {}
@@ -80,7 +88,6 @@ def create_bounded_contexts(state: State):
 
     LogUtil.add_info_log(state, "Creating bounded contexts completed")
     state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
     return state
 
 def route_after_create_aggregates(state: State):
@@ -114,6 +121,7 @@ def route_after_create_gwt(state: State):
     return "complete"
 
 def complete(state: State):
+    state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["COMPLETE"]
     state.outputs.isCompleted = True
     JobUtil.update_job_to_firebase_fire_and_forget(state)
 
@@ -163,7 +171,6 @@ def _get_total_class_id_progress_count(draft_options: Dict[str, Any]):
 
 graph_builder = StateGraph(State)
 
-graph_builder.add_node("validate_input", validate_input)
 graph_builder.add_node("create_bounded_contexts", create_bounded_contexts)
 graph_builder.add_node("create_aggregates", create_aggregate_by_functions_subgraph())
 graph_builder.add_node("create_class_id", create_aggregate_class_id_by_drafts_subgraph())
@@ -172,8 +179,15 @@ graph_builder.add_node("create_policy_actions", create_policy_actions_by_functio
 graph_builder.add_node("create_gwt", create_gwt_generator_by_function_subgraph())
 graph_builder.add_node("complete", complete)
 
-graph_builder.add_edge(START, "validate_input")
-graph_builder.add_edge("validate_input", "create_bounded_contexts")
+graph_builder.add_conditional_edges(START, resume_from_root_graph, {
+    "create_bounded_contexts": "create_bounded_contexts",
+    "create_aggregates": "create_aggregates",
+    "create_class_id": "create_class_id",
+    "create_command_actions": "create_command_actions",
+    "create_policy_actions": "create_policy_actions",
+    "create_gwt": "create_gwt",
+    "complete": "complete"
+})
 graph_builder.add_edge("create_bounded_contexts", "create_aggregates")
 graph_builder.add_conditional_edges("create_aggregates", route_after_create_aggregates, {
     "create_class_id": "create_class_id",
