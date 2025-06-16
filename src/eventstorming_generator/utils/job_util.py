@@ -213,7 +213,9 @@ class JobUtil:
             
             # 업데이트 데이터 준비
             data = {
-                "state": JsonUtil.convert_to_json(update_request.state),
+                "state": JsonUtil.convert_to_dict(JsonUtil.convert_to_json(
+                    update_request.state
+                )),
                 "lastUpdated": update_request.timestamp
             }
             

@@ -92,7 +92,8 @@ class FirebaseSystem:
         """
         try:
             ref = self.database.reference(path)
-            ref.set(data)
+            sanitized_data = self.sanitize_data_for_firebase(data)
+            ref.set(sanitized_data)
             return True
         except Exception as e:
             print(f"데이터 업로드 실패: {str(e)}")
@@ -124,7 +125,8 @@ class FirebaseSystem:
         """동기 set_data의 내부 구현"""
         try:
             ref = self.database.reference(path)
-            ref.set(data)
+            sanitized_data = self.sanitize_data_for_firebase(data)
+            ref.set(sanitized_data)
             return True
         except Exception as e:
             print(f"데이터 업로드 실패: {str(e)}")
@@ -168,7 +170,8 @@ class FirebaseSystem:
         """
         try:
             ref = self.database.reference(path)
-            ref.update(data)
+            sanitized_data = self.sanitize_data_for_firebase(data)
+            ref.update(sanitized_data)
             return True
         except Exception as e:
             print(f"데이터 업데이트 실패: {str(e)}")
@@ -200,7 +203,8 @@ class FirebaseSystem:
         """동기 update_data의 내부 구현"""
         try:
             ref = self.database.reference(path)
-            ref.update(data)
+            sanitized_data = self.sanitize_data_for_firebase(data)
+            ref.update(sanitized_data)
             return True
         except Exception as e:
             print(f"데이터 업데이트 실패: {str(e)}")
@@ -244,6 +248,8 @@ class FirebaseSystem:
             if data is None:
                 return None
             
+            if isinstance(data, dict):
+                return self.restore_data_from_firebase(data)
             return data
         except Exception as e:
             print(f"데이터 조회 실패: {str(e)}")
@@ -266,7 +272,15 @@ class FirebaseSystem:
             if data is None or not isinstance(data, dict):
                 return None
             
-            return data
+            # 각 자식 노드의 데이터를 복원
+            restored_data = {}
+            for key, value in data.items():
+                if isinstance(value, dict):
+                    restored_data[key] = self.restore_data_from_firebase(value)
+                else:
+                    restored_data[key] = value
+            
+            return restored_data
         except Exception as e:
             print(f"자식 데이터 조회 실패: {str(e)}")
             return None
@@ -301,7 +315,15 @@ class FirebaseSystem:
             if data is None or not isinstance(data, dict):
                 return None
             
-            return data
+            # 각 자식 노드의 데이터를 복원
+            restored_data = {}
+            for key, value in data.items():
+                if isinstance(value, dict):
+                    restored_data[key] = self.restore_data_from_firebase(value)
+                else:
+                    restored_data[key] = value
+            
+            return restored_data
         except Exception as e:
             print(f"자식 데이터 조회 실패: {str(e)}")
             return None
@@ -397,7 +419,11 @@ class FirebaseSystem:
             def listener(snapshot):
                 try:
                     data = snapshot.val()
-                    callback(data)
+                    if data is not None and isinstance(data, dict):
+                        restored_data = self.restore_data_from_firebase(data)
+                        callback(restored_data)
+                    else:
+                        callback(data)
                 except Exception as e:
                     print(f"콜백 함수 실행 실패: {str(e)}")
             
@@ -442,7 +468,12 @@ class FirebaseSystem:
             
             def listener(snapshot):
                 try:
-                    callback(snapshot.data, snapshot.path)
+                    data = snapshot.val()
+                    if data is not None and isinstance(data, dict):
+                        restored_data = self.restore_data_from_firebase(data)
+                        callback(restored_data)
+                    else:
+                        callback(data)
                 except Exception as e:
                     print(f"콜백 함수 실행 실패: {str(e)}")
             
@@ -575,6 +606,55 @@ class FirebaseSystem:
             list[str]: 감시 중인 경로들의 리스트
         """
         return list(self._listeners.keys())
+
+
+    def sanitize_data_for_firebase(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Firebase 업로드를 위해 null/빈 배열을 기본값으로 변환
+        
+        Args:
+            data (Dict[str, Any]): 원본 데이터
+            
+        Returns:
+            Dict[str, Any]: 변환된 데이터
+        """
+        def process_value(value):
+            if value is None:
+                return ""  # null → 빈 문자열
+            elif isinstance(value, list) and len(value) == 0:
+                return ["__EMPTY_ARRAY__"]  # 빈 배열 → 마커가 포함된 배열
+            elif isinstance(value, dict):
+                return {k: process_value(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [process_value(item) for item in value]
+            else:
+                return value
+        
+        return {k: process_value(v) for k, v in data.items()}
+
+    def restore_data_from_firebase(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Firebase에서 가져온 데이터를 원본 형태로 복원
+        
+        Args:
+            data (Dict[str, Any]): Firebase에서 가져온 데이터
+            
+        Returns:
+            Dict[str, Any]: 복원된 데이터
+        """
+        def process_value(value):
+            if value == "":
+                return None  # 빈 문자열 → null
+            elif isinstance(value, list) and value == ["__EMPTY_ARRAY__"]:
+                return []  # 마커 → 빈 배열
+            elif isinstance(value, dict):
+                return {k: process_value(v) for k, v in value.items()}
+            elif isinstance(value, list):
+                return [process_value(item) for item in value]
+            else:
+                return value
+        
+        return {k: process_value(v) for k, v in data.items()}
 
 FirebaseSystem.initialize(
     service_account_path=os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH"),
