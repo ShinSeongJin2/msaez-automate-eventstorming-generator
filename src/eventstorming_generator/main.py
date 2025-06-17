@@ -10,18 +10,30 @@ from eventstorming_generator.models import State
 from eventstorming_generator.systems.firebase_system import FirebaseSystem
 from eventstorming_generator.config import Config
 from eventstorming_generator.run_healcheck_server import run_healcheck_server
+from eventstorming_generator.simple_autoscaler import start_autoscaler
 
 async def main():
-    """메인 함수 - Flask 서버와 Job 모니터링 동시 시작"""
+    """메인 함수 - Flask 서버, Job 모니터링, 자동 스케일러 동시 시작"""
 
     flask_thread = threading.Thread(target=run_healcheck_server, daemon=True)
     flask_thread.start()
+
     print("[시스템] Flask 서버가 포트 2024에서 시작되었습니다.")
     print("[시스템] 헬스체크 엔드포인트: http://localhost:2024/ok")
+    print("[시스템] 메트릭 엔드포인트: http://localhost:2024/metrics/waiting-jobs")
 
     pod_id = Config.get_pod_id()
     job_manager = DecentralizedJobManager(pod_id, process_job_async)
-    await job_manager.start_job_monitoring()
+    
+    tasks = []
+    if Config.is_local_run():
+        tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
+        print("[시스템] 작업 모니터링이 시작되었습니다.")
+    else:
+        tasks.append(asyncio.create_task(start_autoscaler()))
+        tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
+        print("[시스템] 자동 스케일러 및 작업 모니터링이 시작되었습니다.")
+    await asyncio.wait(tasks)
 
 async def process_job_async(job_id: str, complete_job_func: callable):
     """비동기 Job 처리 함수"""

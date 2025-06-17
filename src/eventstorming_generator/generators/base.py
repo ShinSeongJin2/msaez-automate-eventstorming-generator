@@ -9,6 +9,7 @@ import uuid
 
 from ..models import BaseModelWithItem
 from ..utils import JsonUtil
+from ..config import Config
 
 
 def init_cache():
@@ -17,7 +18,8 @@ def init_cache():
 
     set_llm_cache(SQLiteCache(database_path=".cache/llm_cache.db"))
 
-init_cache()
+if Config.is_local_run():
+    init_cache()
 
 
 class BaseGenerator(ABC):
@@ -151,7 +153,9 @@ The returned format should be as follows.
         """
         if not self.model:
             raise ValueError("모델이 설정되지 않았습니다. 생성기를 초기화할 때 model 파라미터를 전달하거나 set_model()을 호출하세요.")
-        
+        if not Config.is_local_run():
+            bypass_cache = False
+
         messages = self._get_messages(bypass_cache)
         
         # 구조화된 출력이 설정된 경우 with_structured_output 사용
