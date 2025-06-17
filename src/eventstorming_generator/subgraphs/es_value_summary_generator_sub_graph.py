@@ -14,12 +14,12 @@ def prepare_es_value_summary_generation(state: State) -> State:
     ES 값 요약 생성을 위한 준비 작업 수행
     - 입력 데이터 설정 및 초기화
     """
-    LogUtil.add_info_log(state, "ES value summary generation preparation started...")
+    LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Starting ES value summary generation preparation")
     
     try:
         # 이미 처리 중이거나 완료된 경우 상태 유지
         if state.subgraphs.esValueSummaryGeneratorModel.is_processing:
-            LogUtil.add_info_log(state, "ES value summary generation is already in progress")
+            LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] ES value summary generation already in progress, maintaining state")
             return state
         
         # 처리 상태 초기화
@@ -28,10 +28,12 @@ def prepare_es_value_summary_generation(state: State) -> State:
         state.subgraphs.esValueSummaryGeneratorModel.is_failed = False
         state.subgraphs.esValueSummaryGeneratorModel.retry_count = 0
         
-        LogUtil.add_info_log(state, "ES value summary generation preparation completed")
+        max_tokens = state.subgraphs.esValueSummaryGeneratorModel.max_tokens
+        context_preview = state.subgraphs.esValueSummaryGeneratorModel.context[:100] + "..." if len(state.subgraphs.esValueSummaryGeneratorModel.context) > 100 else state.subgraphs.esValueSummaryGeneratorModel.context
+        LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Preparation completed. Target tokens: {max_tokens}, Context: '{context_preview}'")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error during ES value summary generation preparation", e)
+        LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation preparation", e)
         state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
     
     return state
@@ -43,7 +45,7 @@ def preprocess_es_value_summary_generation(state: State) -> State:
     - 요소 ID 추출
     - ES 별칭 변환 관리자 초기화
     """
-    LogUtil.add_info_log(state, "ES value summary pre-processing started...")
+    LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Starting ES value summary preprocessing")
     
     try:
         es_value = state.outputs.esValue.model_dump()
@@ -84,10 +86,11 @@ def preprocess_es_value_summary_generation(state: State) -> State:
         state.subgraphs.esValueSummaryGeneratorModel.summarized_es_value = summarized_es_value
         state.subgraphs.esValueSummaryGeneratorModel.element_ids = element_ids
         
-        LogUtil.add_info_log(state, f"ES value summary pre-processing completed - extracted element ID count: {len(element_ids)}")
+        summary_size = len(str(summarized_es_value))
+        LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Preprocessing completed. Extracted {len(element_ids)} unique element IDs. Summary size: {summary_size} chars")
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error during ES value summary pre-processing", e)
+        LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary preprocessing", e)
         state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
     
     return state
@@ -98,14 +101,15 @@ def generate_es_value_summary(state: State) -> State:
     ES 값 요약 생성 실행
     - ESValueSummaryGenerator를 통한 요소 ID 정렬
     """
-    LogUtil.add_info_log(state, "ES value summary generation execution started...")
+    current_gen = state.subgraphs.esValueSummaryGeneratorModel
+    retry_info = f" (retry {current_gen.retry_count})" if current_gen.retry_count > 0 else ""
+    LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Starting ES value summary generation{retry_info}")
     
     try:
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
-        current_gen = state.subgraphs.esValueSummaryGeneratorModel
         
-        LogUtil.add_info_log(state, f"Using AI model: {model_name}")
+        LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Using AI model: {model_name} for {len(current_gen.element_ids)} elements")
         
         # 요약 생성 Generator 생성
         generator = ESValueSummaryGenerator(
@@ -126,12 +130,12 @@ def generate_es_value_summary(state: State) -> State:
         if result_dict and "result" in result_dict and "sortedElementIds" in result_dict["result"]:
             sorted_element_ids = result_dict["result"]["sortedElementIds"]
             current_gen.sorted_element_ids = sorted_element_ids
-            LogUtil.add_info_log(state, f"ES value summary generation completed - sorted element ID count: {len(sorted_element_ids)}")
+            LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] ES value summary generation completed successfully. Sorted {len(sorted_element_ids)} element IDs by priority")
         else:
-            raise ValueError("Sorted element ID not found")
+            raise ValueError("Sorted element IDs not found in generation result")
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error during ES value summary generation", e)
+        LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation", e)
         current_gen.retry_count += 1
     
     return state
@@ -142,36 +146,38 @@ def postprocess_es_value_summary_generation(state: State) -> State:
     ES 값 요약 생성 후처리 작업 수행
     - 정렬된 요소 ID를 기준으로 토큰 제한 내에서 요약된 ES 값 생성
     """
-    LogUtil.add_info_log(state, "ES value summary post-processing started...")
+    current_gen = state.subgraphs.esValueSummaryGeneratorModel
+    LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Starting ES value summary postprocessing. Target token limit: {current_gen.max_tokens}")
     
     try:
-        if not state.subgraphs.esValueSummaryGeneratorModel.sorted_element_ids:
-            raise ValueError("Sorted element ID not found")
+        if not current_gen.sorted_element_ids:
+            raise ValueError("Sorted element IDs not available for postprocessing")
         
         # 요소별로 그룹화하고 우선순위를 다시 재조정
         sorted_element_ids = _resort_with_priority(
-            state.subgraphs.esValueSummaryGeneratorModel.summarized_es_value,
-            state.subgraphs.esValueSummaryGeneratorModel.sorted_element_ids
+            current_gen.summarized_es_value,
+            current_gen.sorted_element_ids
         )
         
-        LogUtil.add_info_log(state, f"Priority resorting completed - element count: {len(sorted_element_ids)}")
+        LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Priority resorting completed. Processing {len(sorted_element_ids)} elements in optimized order")
         
         # 토큰 제한 내에서 요약된 ES 값 생성
         summarized_es_value = _get_summary_within_token_limit(
-            state.subgraphs.esValueSummaryGeneratorModel.summarized_es_value,
+            current_gen.summarized_es_value,
             sorted_element_ids,
-            state.subgraphs.esValueSummaryGeneratorModel.max_tokens,
-            state.subgraphs.esValueSummaryGeneratorModel.token_calc_model_vendor,
-            state.subgraphs.esValueSummaryGeneratorModel.token_calc_model_name
+            current_gen.max_tokens,
+            current_gen.token_calc_model_vendor,
+            current_gen.token_calc_model_name
         )
         
         # 결과 저장
-        state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value = summarized_es_value  
-        LogUtil.add_info_log(state, "ES value summary post-processing completed")
+        current_gen.processed_summarized_es_value = summarized_es_value  
+        final_size = len(str(summarized_es_value))
+        LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Postprocessing completed successfully. Final summary size: {final_size} chars (within {current_gen.max_tokens} token limit)")
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error during ES value summary post-processing", e)
-        state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
+        LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary postprocessing", e)
+        current_gen.retry_count += 1
     
     return state
 
@@ -181,20 +187,22 @@ def validate_es_value_summary_generation(state: State) -> State:
     ES 값 요약 생성 결과 검증
     - 생성된 요약 값 확인 및 완료 처리
     """
-    LogUtil.add_info_log(state, "ES value summary generation validation started...")
+    current_gen = state.subgraphs.esValueSummaryGeneratorModel
+    LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Validating ES value summary generation results")
     
     try:
         # 생성된 요약 값이 있으면 완료 처리
-        if state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value:
-            state.subgraphs.esValueSummaryGeneratorModel.is_complete = True
-            LogUtil.add_info_log(state, "ES value summary generation validation completed - success")
+        if current_gen.processed_summarized_es_value:
+            current_gen.is_complete = True
+            final_size = len(str(current_gen.processed_summarized_es_value))
+            LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Validation completed successfully. Summary generated with {final_size} chars")
         else:
-            state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
-            LogUtil.add_info_log(state, f"ES value summary generation validation failed - retry count: {state.subgraphs.esValueSummaryGeneratorModel.retry_count}")
+            current_gen.retry_count += 1
+            LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Validation failed - no processed summary available. Retry count: {current_gen.retry_count}/{current_gen.max_retry_count}")
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error during ES value summary generation validation", e)
-        state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
+        LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation validation", e)
+        current_gen.retry_count += 1
     
     return state
 
@@ -203,14 +211,16 @@ def complete_processing(state: State) -> State:
     """
     ES 값 요약 생성 프로세스 완료
     """
-    if state.subgraphs.esValueSummaryGeneratorModel.is_failed:
-        LogUtil.add_info_log(state, "ES value summary generation process failed and completed")
+    current_gen = state.subgraphs.esValueSummaryGeneratorModel
+    
+    if current_gen.is_failed:
+        LogUtil.add_error_log(state, f"[ES_SUMMARY_SUBGRAPH] ES value summary generation process failed after {current_gen.retry_count} attempts")
     else:
-        LogUtil.add_info_log(state, "ES value summary generation process completed successfully")
+        final_size = len(str(current_gen.processed_summarized_es_value)) if current_gen.processed_summarized_es_value else 0
+        LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] ES value summary generation process completed successfully. Final summary: {final_size} chars")
     
     try:
-        
-        state.subgraphs.esValueSummaryGeneratorModel.is_processing = False
+        current_gen.is_processing = False
 
         # 변수 정리
         subgraph_model = state.subgraphs.esValueSummaryGeneratorModel
@@ -221,7 +231,7 @@ def complete_processing(state: State) -> State:
         subgraph_model.sorted_element_ids = []
 
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error during ES value summary generation completion", e)
+        LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation completion", e)
     
     return state
 

@@ -8,30 +8,34 @@ from eventstorming_generator.constants import ResumeNodes
 
 def resume_from_root_graph(state: State):
     if not state.inputs.jobId or not JobUtil.is_valid_job_id(state.inputs.jobId):
-        LogUtil.add_error_log(state, f"Invalid jobId: {state.inputs.jobId}")
+        LogUtil.add_error_log(state, f"[ROOT_GRAPH] Invalid job ID provided: '{state.inputs.jobId}'")
         return "complete"
 
     if state.outputs.lastCompletedRootGraphNode:
         if state.outputs.lastCompletedRootGraphNode in ResumeNodes["ROOT_GRAPH"].values():
-            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedRootGraphNode}")
+            LogUtil.add_info_log(state, f"[ROOT_GRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedRootGraphNode}'")
             return state.outputs.lastCompletedRootGraphNode
         else:
-            LogUtil.add_error_log(state, f"Invalid lastCompletedRootGraphNode: {state.outputs.lastCompletedRootGraphNode}")
+            LogUtil.add_error_log(state, f"[ROOT_GRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedRootGraphNode}'")
             return "complete"
     
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] Starting new event storming generation process")
     return "create_bounded_contexts"
 
 def create_bounded_contexts(state: State):
-    LogUtil.add_info_log(state, "Creating bounded contexts...")
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] Starting bounded context creation process")
     state.outputs.totalProgressCount = get_total_global_progress_count(state.inputs.selectedDraftOptions)
     state.outputs.currentProgressCount = 0
 
     try :
         created_bounded_contexts = {}
+        context_count = len(state.inputs.selectedDraftOptions)
+        LogUtil.add_info_log(state, f"[ROOT_GRAPH] Processing {context_count} bounded contexts for creation")
 
         # 모든 BoundedContext들에 대해 반복
-        for context_name, context in state.inputs.selectedDraftOptions.items():
+        for idx, (context_name, context) in enumerate(state.inputs.selectedDraftOptions.items(), 1):
             bc_name = context.get("boundedContext", {}).get("name", "")
+            LogUtil.add_info_log(state, f"[ROOT_GRAPH] Processing bounded context {idx}/{context_count}: '{bc_name}'")
             
             # BoundedContext가 존재하는지 확인
             bounded_context_exists = False
@@ -43,6 +47,7 @@ def create_bounded_contexts(state: State):
             
             # 존재하지 않으면 생성
             if not bounded_context_exists and bc_name:
+                LogUtil.add_info_log(state, f"[ROOT_GRAPH] Creating new bounded context: '{bc_name}'")
                 # ActionModel을 생성하여 BoundedContext 생성
                 actions = [
                     ActionModel(
@@ -76,53 +81,71 @@ def create_bounded_contexts(state: State):
                 for element in state.outputs.esValue.elements.values():
                     if element.get("_type") == "org.uengine.modeling.model.BoundedContext" and element.get("name", "").lower() == bc_name.lower():
                         created_bounded_contexts[bc_name] = element
+                        LogUtil.add_info_log(state, f"[ROOT_GRAPH] Successfully created bounded context: '{bc_name}' with ID: '{element.get('id')}'")
                         break
+            else:
+                LogUtil.add_info_log(state, f"[ROOT_GRAPH] Bounded context already exists: '{bc_name}'")
         
         # 생성된 내용으로 Boundconxt 내용을 교체하기
         for context_name, context in state.inputs.selectedDraftOptions.items():
-            context["boundedContext"] = created_bounded_contexts[context_name]
+            if context_name in created_bounded_contexts:
+                context["boundedContext"] = created_bounded_contexts[context_name]
 
     except Exception as e:
-        LogUtil.add_exception_object_log(state, f"Error creating bounded contexts", e)
+        LogUtil.add_exception_object_log(state, f"[ROOT_GRAPH] Failed to create bounded contexts", e)
         return "complete"
 
-    LogUtil.add_info_log(state, "Creating bounded contexts completed")
+    LogUtil.add_info_log(state, f"[ROOT_GRAPH] Bounded context creation completed successfully. Created: {len(created_bounded_contexts)} contexts")
     state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
     return state
 
 def route_after_create_aggregates(state: State):
     if state.subgraphs.createAggregateByFunctionsModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] Aggregate creation failed, terminating process")
         return "complete"
 
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] Aggregate creation completed, proceeding to class ID generation")
     return "create_class_id" 
 
 def route_after_create_class_id(state: State):
     if state.subgraphs.createAggregateClassIdByDraftsModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] Class ID generation failed, terminating process")
         return "complete"
     
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] Class ID generation completed, proceeding to command actions")
     return "create_command_actions"
 
 def route_after_create_command_actions(state: State):
     if state.subgraphs.createCommandActionsByFunctionModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] Command actions creation failed, terminating process")
         return "complete"
     
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] Command actions creation completed, proceeding to policy actions")
     return "create_policy_actions"
 
 def route_after_create_policy_actions(state: State):
     if state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] Policy actions creation failed, terminating process")
         return "complete"
     
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] Policy actions creation completed, proceeding to GWT generation")
     return "create_gwt"
 
 def route_after_create_gwt(state: State):
     if state.subgraphs.createGwtGeneratorByFunctionModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] GWT generation failed, terminating process")
         return "complete"
     
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] GWT generation completed, proceeding to completion")
     return "complete"
 
 def complete(state: State):
     state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["COMPLETE"]
     state.outputs.isCompleted = True
+    total_progress = state.outputs.totalProgressCount
+    current_progress = state.outputs.currentProgressCount
+    
+    LogUtil.add_info_log(state, f"[ROOT_GRAPH] Event storming generation process completed successfully. Final progress: {current_progress}/{total_progress}")
     JobUtil.update_job_to_firebase_fire_and_forget(state)
 
     return state
@@ -136,7 +159,8 @@ def get_total_global_progress_count(draftOptions: Dict[str, Any]):
 
     aggregateClassIDCount = _get_total_class_id_progress_count(draftOptions)
 
-    return boundedContextCount + aggregateCount*3 + aggregateClassIDCount + 1
+    total_count = boundedContextCount + aggregateCount*3 + aggregateClassIDCount + 1
+    return total_count
 
 def _get_total_class_id_progress_count(draft_options: Dict[str, Any]):
     total_progress_count = 0

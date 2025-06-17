@@ -13,13 +13,14 @@ from ..constants import ResumeNodes
 def resume_from_create_policy_actions(state: State):
     if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
         if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_POLICY_ACTIONS"].values():
-            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedSubGraphNode}")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
             return state.outputs.lastCompletedSubGraphNode
         else:
             state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
-            LogUtil.add_error_log(state, f"Invalid lastCompletedSubGraphNode: {state.outputs.lastCompletedSubGraphNode}")
+            LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
             return "complete"
     
+    LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation process")
     return "prepare"
 
 
@@ -30,12 +31,12 @@ def prepare_policy_actions_generation(state: State) -> State:
     - 초안 데이터 설정
     - 처리할 Policy 액션 목록 초기화
     """
-    LogUtil.add_info_log(state, "Preparing policy actions generation...")
+    LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation preparation")
     
     try:
         # 이미 처리 중이면 상태 유지
         if state.subgraphs.createPolicyActionsByFunctionModel.is_processing:
-            LogUtil.add_info_log(state, "Policy actions generation already in progress")
+            LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Policy actions generation already in progress, maintaining state")
             return state
         
         # 초안 데이터 설정
@@ -54,6 +55,8 @@ def prepare_policy_actions_generation(state: State) -> State:
             if "boundedContext" in bounded_context_data:
                 target_bounded_context.update(bounded_context_data["boundedContext"])
             
+            bc_display_name = target_bounded_context.get("displayName", bounded_context_name)
+            
             # Policy 액션 생성 상태 초기화
             generation_state = PolicyActionGenerationState(
                 target_bounded_context=target_bounded_context,
@@ -62,14 +65,15 @@ def prepare_policy_actions_generation(state: State) -> State:
                 generation_complete=False
             )
             pending_generations.append(generation_state)
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Queued policy actions generation for bounded context: '{bc_display_name}'")
         
         # 처리할 Policy 액션 목록 저장
         state.subgraphs.createPolicyActionsByFunctionModel.pending_generations = pending_generations
         
-        LogUtil.add_info_log(state, f"Prepared {len(pending_generations)} policy action generations")
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Preparation completed. Total bounded contexts to process: {len(pending_generations)}")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error preparing policy actions generation", e)
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during policy actions generation preparation", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
     
     return state
@@ -85,29 +89,36 @@ def select_next_policy_actions(state: State) -> State:
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["SELECT_NEXT"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        LogUtil.add_info_log(state, "Selecting next policy actions generation...")
+        pending_count = len(state.subgraphs.createPolicyActionsByFunctionModel.pending_generations)
+        completed_count = len(state.subgraphs.createPolicyActionsByFunctionModel.completed_generations)
+        
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Selecting next policy actions generation. Pending: {pending_count}, Completed: {completed_count}")
 
         # 모든 처리가 완료되었는지 확인
         if (not state.subgraphs.createPolicyActionsByFunctionModel.pending_generations and 
             not state.subgraphs.createPolicyActionsByFunctionModel.current_generation):
             state.subgraphs.createPolicyActionsByFunctionModel.all_complete = True
             state.subgraphs.createPolicyActionsByFunctionModel.is_processing = False
-            LogUtil.add_info_log(state, "All policy actions generation completed")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] All policy actions generation completed successfully. Total processed: {completed_count} bounded contexts")
             return state
         
         # 현재 처리 중인 작업이 있으면 상태 유지
         if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            LogUtil.add_info_log(state, "Current policy action generation in progress")
+            current = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
+            bc_name = current.target_bounded_context.get("displayName", current.target_bounded_context.get("name", "Unknown"))
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Current policy action generation in progress for bounded context: '{bc_name}'")
             return state
         
         # 대기 중인 Policy 액션이 있으면 첫 번째 항목을 현재 처리 상태로 설정
         if state.subgraphs.createPolicyActionsByFunctionModel.pending_generations:
             current_gen = state.subgraphs.createPolicyActionsByFunctionModel.pending_generations.pop(0)
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation = current_gen
-            LogUtil.add_info_log(state, f"Selected policy action generation for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
+            bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
+            remaining_count = len(state.subgraphs.createPolicyActionsByFunctionModel.pending_generations)
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Selected policy action generation for bounded context: '{bc_name}' (remaining: {remaining_count})")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error selecting next policy actions", e)
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed to select next policy actions generation", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
     
     return state
@@ -119,16 +130,15 @@ def preprocess_policy_actions_generation(state: State) -> State:
     - 요약된 ES 값 생성
     - 별칭 변환 관리자 생성
     """
-    LogUtil.add_info_log(state, "Preprocessing policy actions generation...")
+    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to preprocess")
+        return state
+        
+    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
+    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting preprocessing for policy actions in bounded context: '{bc_name}'")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            LogUtil.add_info_log(state, "No current policy action generation to preprocess")
-            return state
-        
-        current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-        
         # 현재 ES 값의 복사본 생성
         es_value = state.outputs.esValue.model_dump()
         
@@ -143,10 +153,10 @@ def preprocess_policy_actions_generation(state: State) -> State:
         # 요약된 ES 값 저장
         current_gen.summarized_es_value = summarized_es_value
         
-        LogUtil.add_info_log(state, f"Preprocessed policy actions for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Preprocessing completed for bounded context: '{bc_name}'. Summary size: {len(str(summarized_es_value))} chars")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error preprocessing policy actions generation", e)
+        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Preprocessing failed for bounded context: '{bc_name}'", e)
         if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
     
@@ -158,15 +168,16 @@ def generate_policy_actions(state: State) -> State:
     Policy 액션 생성 실행
     - Generator를 통한 Policy 액션 생성
     """
-    LogUtil.add_info_log(state, "Generating policy actions...")
+    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to process")
+        return state
+        
+    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
+    retry_info = f" (retry {current_gen.retry_count})" if current_gen.retry_count > 0 else ""
+    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Generating policy actions for bounded context: '{bc_name}'{retry_info}")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            LogUtil.add_info_log(state, "No current policy action generation to process")
-            return state
-        
-        current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
         es_value = state.outputs.esValue.model_dump()
         
         # 요약 서브그래프에서 처리 결과를 받아온 경우
@@ -181,7 +192,7 @@ def generate_policy_actions(state: State) -> State:
             state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
             
             current_gen.is_token_over_limit = False
-            LogUtil.add_info_log(state, "Updated with summarized ES value from subgraph")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Applied summarized ES value for bounded context: '{bc_name}' from summary generator")
 
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
@@ -202,8 +213,10 @@ def generate_policy_actions(state: State) -> State:
         token_count = generator.get_token_count()
         model_max_input_limit = state.inputs.llmModel.model_max_input_limit
         
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Token usage for bounded context '{bc_name}': {token_count}/{model_max_input_limit}")
+        
         if token_count > model_max_input_limit:  # 토큰 제한 초과시 요약 처리
-            LogUtil.add_info_log(state, f"Token limit exceeded ({token_count} > {model_max_input_limit}), requesting summarization")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Token limit exceeded for bounded context '{bc_name}' ({token_count} > {model_max_input_limit}), requesting summarization")
             
             left_generator = CreatePolicyActionsByFunction(
                 model_name=model_name,
@@ -218,7 +231,7 @@ def generate_policy_actions(state: State) -> State:
             
             left_token_count = model_max_input_limit - left_generator.get_token_count()
             if left_token_count < 50:
-                LogUtil.add_info_log(state, "Insufficient token space for summarization")
+                LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Insufficient token space for bounded context '{bc_name}' summarization")
                 state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
                 return state
             
@@ -237,10 +250,11 @@ def generate_policy_actions(state: State) -> State:
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
             current_gen.is_token_over_limit = True
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Prepared ES value summary request for bounded context '{bc_name}' (available tokens: {left_token_count})")
             return state
 
         # Generator 실행 결과
-        LogUtil.add_info_log(state, f"Executing policy actions generation with {token_count} tokens")
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Executing policy actions generation for bounded context '{bc_name}' with {token_count} tokens")
         result = generator.generate(current_gen.retry_count > 0)
         
         # 결과에서 Policy 추출
@@ -262,12 +276,12 @@ def generate_policy_actions(state: State) -> State:
 
         if len(current_gen.created_actions) == 0:
             current_gen.generation_complete = True
-            LogUtil.add_info_log(state, f"No policy actions generated for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] No policy actions generated for bounded context: '{bc_name}'. Proceeding to completion.")
         else:
-            LogUtil.add_info_log(state, f"Generated {len(current_gen.created_actions)} policy actions for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Generated {len(current_gen.created_actions)} policy actions for bounded context: '{bc_name}' from {len(policies)} extracted policies")
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error generating policy actions", e)
+        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to generate policy actions for bounded context: '{bc_name}'", e)
         if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
     
@@ -280,21 +294,22 @@ def postprocess_policy_actions_generation(state: State) -> State:
     - 생성된 액션 적용
     - ES 값 업데이트
     """
-    LogUtil.add_info_log(state, "Postprocessing policy actions generation...")
+    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to postprocess")
+        return state
+        
+    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
+    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting postprocessing for policy actions in bounded context: '{bc_name}'")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            LogUtil.add_info_log(state, "No current policy action generation to postprocess")
-            return state
-        
-        current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-        
         # 생성된 액션이 없으면 재시도 증가
         if not current_gen.created_actions:
-            LogUtil.add_info_log(state, "No created actions to postprocess, incrementing retry count")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] No created actions to postprocess for bounded context: '{bc_name}', incrementing retry count")
             current_gen.retry_count += 1
             return state
+        
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Applying {len(current_gen.created_actions)} policy actions for bounded context: '{bc_name}'")
         
         # ES 값의 복사본 생성
         es_value_to_modify = deepcopy(state.outputs.esValue)
@@ -311,10 +326,10 @@ def postprocess_policy_actions_generation(state: State) -> State:
         state.outputs.esValue = updated_es_value
         current_gen.generation_complete = True
         
-        LogUtil.add_info_log(state, f"Applied {len(current_gen.created_actions)} policy actions and updated ES value")
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Postprocessing completed successfully for bounded context: '{bc_name}'. Applied {len(current_gen.created_actions)} policy actions to ES value")
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error postprocessing policy actions generation", e)
+        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Postprocessing failed for bounded context: '{bc_name}'", e)
         if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation.created_actions = []
@@ -328,16 +343,15 @@ def validate_policy_actions_generation(state: State) -> State:
     - 생성 결과 검증
     - 완료 처리 또는 재시도 결정
     """
-    LogUtil.add_info_log(state, "Validating policy actions generation...")
+    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to validate")
+        return state
+        
+    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
+    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Validating policy actions generation for bounded context: '{bc_name}'")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            LogUtil.add_info_log(state, "No current policy action generation to validate")
-            return state
-        
-        current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-        
         # 생성 완료 확인
         if current_gen.generation_complete:
             # 변수 정리
@@ -351,18 +365,21 @@ def validate_policy_actions_generation(state: State) -> State:
             # 현재 작업 초기화
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation = None
             state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
-            LogUtil.add_info_log(state, f"Policy action generation completed for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
+            
+            total_progress = state.outputs.totalProgressCount
+            current_progress = state.outputs.currentProgressCount
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy action generation completed successfully for bounded context: '{bc_name}'. Progress: {current_progress}/{total_progress}")
 
         elif current_gen.retry_count >= state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count:
             # 최대 재시도 횟수 초과 시 실패로 처리하고 다음 작업으로 이동
             state.subgraphs.createPolicyActionsByFunctionModel.completed_generations.append(current_gen)
             state.subgraphs.createPolicyActionsByFunctionModel.current_generation = None
-            LogUtil.add_info_log(state, f"Policy action generation failed after {current_gen.retry_count} retries for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
+            LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy action generation failed after {current_gen.retry_count} retries for bounded context: '{bc_name}'. Moving to next context.")
         else:
-            LogUtil.add_info_log(state, f"Policy action generation retry {current_gen.retry_count}/{state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count} for bounded context: {current_gen.target_bounded_context.get('name', 'Unknown')}")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Retrying policy action generation for bounded context: '{bc_name}' (attempt {current_gen.retry_count + 1}/{state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count})")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error validating policy actions generation", e)
+        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Validation failed for bounded context: '{bc_name}'", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
     
     return state
@@ -376,7 +393,13 @@ def complete_processing(state: State) -> State:
     state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["COMPLETE"]
     JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-    LogUtil.add_info_log(state, "Policy actions generation process completed")
+    completed_count = len(state.subgraphs.createPolicyActionsByFunctionModel.completed_generations)
+    failed = state.subgraphs.createPolicyActionsByFunctionModel.is_failed
+    
+    if failed:
+        LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed with failures. Successfully processed: {completed_count} bounded contexts")
+    else:
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed successfully. Total processed: {completed_count} bounded contexts")
 
     # 변수 정리
     subgraph_model = state.subgraphs.createPolicyActionsByFunctionModel

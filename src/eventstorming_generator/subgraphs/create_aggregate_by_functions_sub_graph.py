@@ -13,13 +13,14 @@ from ..constants import ResumeNodes
 def resume_from_create_aggregates(state: State):
     if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"] and state.outputs.lastCompletedSubGraphNode:
         if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_AGGREGATES"].values():
-            LogUtil.add_info_log(state, f"Resuming from {state.outputs.lastCompletedSubGraphNode}")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
             return state.outputs.lastCompletedSubGraphNode
         else:
             state.subgraphs.createAggregateByFunctionsModel.is_failed = True
-            LogUtil.add_error_log(state, f"Invalid lastCompletedSubGraphNode: {state.outputs.lastCompletedSubGraphNode}")
+            LogUtil.add_error_log(state, f"[AGGREGATE_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
             return "complete"
     
+    LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Starting aggregate generation process")
     return "prepare"
 
 
@@ -30,12 +31,12 @@ def prepare_aggregate_generation(state: State) -> State:
     - 초안 데이터 설정
     - 처리할 Aggregate 목록 초기화
     """
-    LogUtil.add_info_log(state, "Starting aggregate generation preparation...")
+    LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Starting aggregate generation preparation")
     
     try:
         # 이미 처리 중이면 상태 유지
         if state.subgraphs.createAggregateByFunctionsModel.is_processing:
-            LogUtil.add_info_log(state, "Aggregate generation already in progress, maintaining state")
+            LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Aggregate generation already in progress, maintaining state")
             return state
         
         # 초안 데이터 설정
@@ -51,8 +52,12 @@ def prepare_aggregate_generation(state: State) -> State:
             if "boundedContext" in bounded_context_data:
                 target_bounded_context.update(bounded_context_data["boundedContext"])
             
+            structures = bounded_context_data.get("structure", [])
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Processing bounded context '{bounded_context_name}' with {len(structures)} aggregates")
+            
             # 해당 Bounded Context의 구조 정보를 처리
-            for index, structure in enumerate(bounded_context_data.get("structure", [])):
+            for index, structure in enumerate(structures):
+                aggregate_name = structure.get("aggregate", {}).get("name", "Unknown")
                 # 각 Aggregate 구조에 대한 생성 상태 초기화
                 generation_state = AggregateGenerationState(
                     target_bounded_context=target_bounded_context,
@@ -64,13 +69,14 @@ def prepare_aggregate_generation(state: State) -> State:
                     generation_complete=False
                 )
                 pending_generations.append(generation_state)
+                LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Queued aggregate '{aggregate_name}' in context '{bounded_context_name}' (accumulated: {index > 0})")
         
         # 처리할 Aggregate 목록 저장
         state.subgraphs.createAggregateByFunctionsModel.pending_generations = pending_generations
-        LogUtil.add_info_log(state, f"Prepared {len(pending_generations)} aggregate generations")
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Preparation completed. Total aggregates to process: {len(pending_generations)}")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error in prepare_aggregate_generation", e)
+        LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed during aggregate generation preparation", e)
         state.subgraphs.createAggregateByFunctionsModel.is_failed = True
     
     return state
@@ -86,19 +92,25 @@ def select_next_aggregate(state: State) -> State:
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_AGGREGATES"]["SELECT_NEXT"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        LogUtil.add_info_log(state, "Selecting next aggregate for generation...")
+        pending_count = len(state.subgraphs.createAggregateByFunctionsModel.pending_generations)
+        completed_count = len(state.subgraphs.createAggregateByFunctionsModel.completed_generations)
+        
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Selecting next aggregate. Pending: {pending_count}, Completed: {completed_count}")
 
         # 모든 처리가 완료되었는지 확인
         if (not state.subgraphs.createAggregateByFunctionsModel.pending_generations and 
             not state.subgraphs.createAggregateByFunctionsModel.current_generation):
             state.subgraphs.createAggregateByFunctionsModel.all_complete = True
             state.subgraphs.createAggregateByFunctionsModel.is_processing = False
-            LogUtil.add_info_log(state, "All aggregate generations completed")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] All aggregate generations completed successfully. Total processed: {completed_count}")
             return state
         
         # 현재 처리 중인 작업이 있으면 상태 유지
         if state.subgraphs.createAggregateByFunctionsModel.current_generation:
-            LogUtil.add_info_log(state, "Current generation in progress, maintaining state")
+            current = state.subgraphs.createAggregateByFunctionsModel.current_generation
+            aggregate_name = current.target_aggregate.get("name", "Unknown")
+            bc_name = current.target_bounded_context.get("name", "Unknown")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Current generation in progress: '{aggregate_name}' in context '{bc_name}'")
             return state
         
         # 대기 중인 Aggregate가 있으면 첫 번째 항목을 현재 처리 상태로 설정
@@ -108,10 +120,10 @@ def select_next_aggregate(state: State) -> State:
             
             aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
             bc_name = current_gen.target_bounded_context.get("name", "Unknown")
-            LogUtil.add_info_log(state, f"Selected aggregate '{aggregate_name}' in '{bc_name}' bounded context")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Selected next aggregate: '{aggregate_name}' in context '{bc_name}' (remaining: {len(state.subgraphs.createAggregateByFunctionsModel.pending_generations)})")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error in select_next_aggregate", e)
+        LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed to select next aggregate", e)
         state.subgraphs.createAggregateByFunctionsModel.is_failed = True
     
     return state
@@ -124,25 +136,23 @@ def preprocess_aggregate_generation(state: State) -> State:
     - ID 변환 처리
     - 기존 요소 제거 등
     """
-    LogUtil.add_info_log(state, "Starting aggregate generation preprocessing...")
+    current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] No current generation found, skipping preprocessing")
+        return state
+        
+    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
+    bc_name = current_gen.target_bounded_context.get("name", "Unknown")
+    LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Starting preprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createAggregateByFunctionsModel.current_generation:
-            LogUtil.add_info_log(state, "No current generation found, skipping preprocessing")
-            return state
-        
-        current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
-        aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-        
-        LogUtil.add_info_log(state, f"Preprocessing aggregate '{aggregate_name}'...")
-           
         # 별칭 변환 관리자 생성
         es_alias_trans_manager = EsAliasTransManager(state.outputs.esValue.model_dump())
         
         # 첫 번째 Aggregate 생성인 경우 이전 Bounded Context 관련 요소 제거
         target_bc_removed_es_value = deepcopy(state.outputs.esValue.model_dump())
         if not current_gen.is_accumulated:
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Removing previous elements for fresh start in context '{bc_name}'")
             _remove_prev_bounded_context_related_elements(
                 current_gen.target_bounded_context.get("name", ""), 
                 target_bc_removed_es_value
@@ -160,10 +170,10 @@ def preprocess_aggregate_generation(state: State) -> State:
         
         # 클래스 ID 속성 제거 (필요한 경우)
         current_gen.draft_option = _remove_class_id_properties(deepcopy(current_gen.draft_option))  
-        LogUtil.add_info_log(state, f"Preprocessing completed for aggregate '{aggregate_name}'")
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Preprocessing completed for aggregate '{aggregate_name}'. Summary size: {len(str(summarized_es_value))} chars")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error in preprocess_aggregate_generation", e)
+        LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Preprocessing failed for aggregate '{aggregate_name}'", e)
         if state.subgraphs.createAggregateByFunctionsModel.current_generation:
             state.subgraphs.createAggregateByFunctionsModel.current_generation.retry_count += 1
     
@@ -175,19 +185,17 @@ def generate_aggregate(state: State) -> State:
     Aggregate 생성 실행
     - Generator를 통한 Aggregate 액션 생성
     """
-    LogUtil.add_info_log(state, "Starting aggregate generation...")
+    current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] No current generation found, skipping generation")
+        return state
+        
+    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
+    bc_name = current_gen.target_bounded_context.get("name", "Unknown")
+    retry_info = f" (retry {current_gen.retry_count})" if current_gen.retry_count > 0 else ""
+    LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Generating aggregate '{aggregate_name}' in context '{bc_name}'{retry_info}")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createAggregateByFunctionsModel.current_generation:
-            LogUtil.add_info_log(state, "No current generation found, skipping generation")
-            return state
-        
-        current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
-        aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-        
-        LogUtil.add_info_log(state, f"Generating aggregate '{aggregate_name}'...")
-        
         # 요약 서브그래프에서 처리 결과를 받아온 경우
         if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
             state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
@@ -200,7 +208,7 @@ def generate_aggregate(state: State) -> State:
             state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
 
             current_gen.is_token_over_limit = False
-            LogUtil.add_info_log(state, "Updated with summarized ES value from subgraph")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Applied summarized ES value for '{aggregate_name}' from summary generator")
 
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
@@ -225,7 +233,7 @@ def generate_aggregate(state: State) -> State:
         model_max_input_limit = state.inputs.llmModel.model_max_input_limit
         
         if token_count > model_max_input_limit:
-            LogUtil.add_info_log(state, f"Token count ({token_count}) exceeds limit ({model_max_input_limit}), requesting ES value summary")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Token limit exceeded for '{aggregate_name}' ({token_count} > {model_max_input_limit}), requesting ES value summary")
             
             left_generator = CreateAggregateActionsByFunction(
                 model_name=model_name,
@@ -243,7 +251,7 @@ def generate_aggregate(state: State) -> State:
 
             left_token_count = model_max_input_limit - left_generator.get_token_count()
             if left_token_count < 50:
-                LogUtil.add_error_log(state, "Insufficient token space even after removing ES value")
+                LogUtil.add_error_log(state, f"[AGGREGATE_SUBGRAPH] Insufficient token space for '{aggregate_name}' even after removing ES value")
                 state.subgraphs.createAggregateByFunctionsModel.is_failed = True
                 return state
 
@@ -261,11 +269,11 @@ def generate_aggregate(state: State) -> State:
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
             current_gen.is_token_over_limit = True
-            LogUtil.add_info_log(state, "Prepared ES value summary request due to token limit")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Prepared ES value summary request for '{aggregate_name}' (available tokens: {left_token_count})")
             return state
         
         # Generator 실행 결과
-        LogUtil.add_info_log(state, f"Executing aggregate generation for '{aggregate_name}' with {token_count} tokens")
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Executing generation for '{aggregate_name}' with {token_count} tokens")
         result = generator.generate(current_gen.retry_count > 0)
         
         # 결과에서 액션 추출
@@ -283,10 +291,10 @@ def generate_aggregate(state: State) -> State:
         
         # 생성된 액션 저장
         current_gen.created_actions = actionModels
-        LogUtil.add_info_log(state, f"Generated {len(actionModels)} actions for aggregate '{aggregate_name}'")
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Generated {len(actionModels)} actions for aggregate '{aggregate_name}' (aggregates: {len(result.get('result', {}).get('aggregateActions', []))}, VOs: {len(result.get('result', {}).get('valueObjectActions', []))}, enums: {len(result.get('result', {}).get('enumerationActions', []))})")
     
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error in generate_aggregate", e)
+        LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Failed to generate aggregate '{aggregate_name}'", e)
         if state.subgraphs.createAggregateByFunctionsModel.current_generation:
             state.subgraphs.createAggregateByFunctionsModel.current_generation.retry_count += 1
     
@@ -300,24 +308,23 @@ def postprocess_aggregate_generation(state: State) -> State:
     - ID 변환
     - ES 값 업데이트
     """
-    LogUtil.add_info_log(state, "Starting aggregate generation postprocessing...")
+    current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] No current generation found, skipping postprocessing")
+        return state
+        
+    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
+    bc_name = current_gen.target_bounded_context.get("name", "Unknown")
+    LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Starting postprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createAggregateByFunctionsModel.current_generation:
-            LogUtil.add_info_log(state, "No current generation found, skipping postprocessing")
-            return state
-        
-        current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
-        aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-        
         # 생성된 액션이 없으면 실패로 처리
         if not current_gen.created_actions:
-            LogUtil.add_error_log(state, f"No actions generated for aggregate '{aggregate_name}', incrementing retry count")
+            LogUtil.add_error_log(state, f"[AGGREGATE_SUBGRAPH] No actions generated for aggregate '{aggregate_name}', incrementing retry count")
             current_gen.retry_count += 1
             return state
         
-        LogUtil.add_info_log(state, f"Postprocessing {len(current_gen.created_actions)} actions for aggregate '{aggregate_name}'...")
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Processing {len(current_gen.created_actions)} actions for aggregate '{aggregate_name}'")
         
         # ES 값의 복사본 생성
         es_value = EsValueModel(**deepcopy(state.outputs.esValue.model_dump()))
@@ -340,6 +347,8 @@ def postprocess_aggregate_generation(state: State) -> State:
             current_gen.target_aggregate.get("name", "")
         )
         
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Filtered to {len(actions)} valid actions for aggregate '{aggregate_name}'")
+        
         # ES 값 업데이트를 위한 준비
         es_value_to_modify = EsValueModel(**deepcopy(es_value.model_dump()))
         
@@ -348,6 +357,7 @@ def postprocess_aggregate_generation(state: State) -> State:
         
         # 이전 Bounded Context 관련 요소 제거 (필요한 경우)
         if not current_gen.is_accumulated:
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Removing previous elements for '{aggregate_name}' as this is not accumulated")
             _remove_prev_bounded_context_related_elements(
                 current_gen.target_bounded_context.get("name", ""),
                 es_value_to_modify
@@ -364,10 +374,10 @@ def postprocess_aggregate_generation(state: State) -> State:
         state.outputs.esValue = updated_es_value
         current_gen.generation_complete = True
         
-        LogUtil.add_info_log(state, f"Postprocessing completed for aggregate '{aggregate_name}'")
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Postprocessing completed successfully for aggregate '{aggregate_name}'. Applied {len(actions)} actions to ES value")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error in postprocess_aggregate_generation", e)
+        LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Postprocessing failed for aggregate '{aggregate_name}'", e)
         if state.subgraphs.createAggregateByFunctionsModel.current_generation:
             current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
             current_gen.retry_count += 1
@@ -382,17 +392,16 @@ def validate_aggregate_generation(state: State) -> State:
     - 생성 결과 검증
     - 완료 처리 또는 재시도 결정
     """
-    LogUtil.add_info_log(state, "Validating aggregate generation...")
+    current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
+    if not current_gen:
+        LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] No current generation found, skipping validation")
+        return state
+        
+    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
+    bc_name = current_gen.target_bounded_context.get("name", "Unknown")
+    LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Validating generation for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
-        # 현재 처리 중인 작업이 없으면 상태 유지
-        if not state.subgraphs.createAggregateByFunctionsModel.current_generation:
-            LogUtil.add_info_log(state, "No current generation found, skipping validation")
-            return state
-        
-        current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
-        aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-        
         # 생성 완료 확인
         if current_gen.generation_complete:
             # 변수 정리
@@ -409,12 +418,14 @@ def validate_aggregate_generation(state: State) -> State:
             state.subgraphs.createAggregateByFunctionsModel.current_generation = None
             state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
             
-            LogUtil.add_info_log(state, f"Aggregate '{aggregate_name}' generation completed successfully")
+            total_progress = state.outputs.totalProgressCount
+            current_progress = state.outputs.currentProgressCount
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Aggregate '{aggregate_name}' generation completed successfully. Progress: {current_progress}/{total_progress}")
         else:
-            LogUtil.add_info_log(state, f"Aggregate '{aggregate_name}' generation not yet complete")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Aggregate '{aggregate_name}' generation not yet complete, continuing process")
 
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error in validate_aggregate_generation", e)
+        LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Validation failed for aggregate '{aggregate_name}'", e)
 
     return state
 
@@ -429,15 +440,13 @@ def complete_processing(state: State) -> State:
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_AGGREGATES"]["COMPLETE"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        LogUtil.add_info_log(state, "Completing aggregate generation process...")
-
         completed_count = len(state.subgraphs.createAggregateByFunctionsModel.completed_generations)
         failed = state.subgraphs.createAggregateByFunctionsModel.is_failed
         
         if failed:
-            LogUtil.add_error_log(state, f"Aggregate generation process completed with failures. {completed_count} aggregates processed.")
+            LogUtil.add_error_log(state, f"[AGGREGATE_SUBGRAPH] Aggregate generation process completed with failures. Successfully processed: {completed_count} aggregates")
         else:
-            LogUtil.add_info_log(state, f"Aggregate generation process completed successfully. {completed_count} aggregates processed.")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Aggregate generation process completed successfully. Total processed: {completed_count} aggregates")
 
         # 변수 정리
         subgraph_model = state.subgraphs.createAggregateByFunctionsModel
@@ -446,7 +455,7 @@ def complete_processing(state: State) -> State:
         subgraph_model.pending_generations = []
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "Error in complete_processing", e)
+        LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed during process completion", e)
     
     return state
 
