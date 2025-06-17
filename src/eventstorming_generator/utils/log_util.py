@@ -1,4 +1,6 @@
+import base64
 from eventstorming_generator.models import State, LogModel
+import traceback
 
 class LogUtil:
     @staticmethod
@@ -15,7 +17,8 @@ class LogUtil:
     
     @staticmethod
     def add_exception_object_log(state: State, message: str, exception: Exception):
-        LogUtil.add_log(state, f"{message}: {exception}", "error")
+        base64_traceback = base64.b64encode(traceback.format_exc().encode()).decode()
+        LogUtil.add_log(state, f"{message}: {exception}\nTraceback Code: {base64_traceback}", "error")
 
     @staticmethod
     def add_warning_log(state: State, message: str):

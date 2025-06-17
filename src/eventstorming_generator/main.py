@@ -1,6 +1,7 @@
 import asyncio
 import concurrent.futures
 import threading
+import traceback
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -66,7 +67,7 @@ async def process_job_async(job_id: str, complete_job_func: callable):
         print(f"[Job 완료] Job ID: {job_id}")
         
     except Exception as e:
-        print(f"[Job 처리 오류] Job ID: {job_id}, 오류: {str(e)}")
+        print(f"[Job 처리 오류] Job ID: {job_id}, 오류: {str(e)}, 트레이싱: {traceback.format_exc()}")
         
     finally:
         # 작업 완료 후 항상 리소스 정리
