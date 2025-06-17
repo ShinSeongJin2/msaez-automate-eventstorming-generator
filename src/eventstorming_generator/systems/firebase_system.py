@@ -1,10 +1,10 @@
 import firebase_admin
 from firebase_admin import credentials, db
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, Union
 import os
 import asyncio
 import concurrent.futures
-from functools import partial
+from functools import partial, wraps
 
 class FirebaseSystem:
     _instance: Optional['FirebaseSystem'] = None
@@ -79,6 +79,99 @@ class FirebaseSystem:
         return cls._instance
     
 
+    # =============================================================================
+    # 공통 헬퍼 메서드들
+    # =============================================================================
+    
+    def _execute_with_error_handling(self, operation_name: str, operation_func: Callable, *args, **kwargs) -> Any:
+        """
+        에러 처리가 포함된 공통 실행 래퍼
+        
+        Args:
+            operation_name (str): 작업 이름 (에러 메시지용)
+            operation_func (Callable): 실행할 함수
+            *args, **kwargs: 함수에 전달할 인수들
+            
+        Returns:
+            Any: 실행 결과 또는 실패 시 기본값
+        """
+        try:
+            return operation_func(*args, **kwargs)
+        except Exception as e:
+            print(f"{operation_name} 실패: {str(e)}")
+            return False if operation_name.endswith(('업로드', '업데이트', '삭제', '시작', '중단')) else None
+
+    async def _execute_async_with_error_handling(self, operation_name: str, sync_func: Callable, *args, **kwargs) -> Any:
+        """
+        비동기 실행을 위한 공통 래퍼
+        
+        Args:
+            operation_name (str): 작업 이름
+            sync_func (Callable): 동기 함수
+            *args, **kwargs: 함수에 전달할 인수들
+            
+        Returns:
+            Any: 실행 결과
+        """
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                self._executor,
+                partial(sync_func, *args, **kwargs)
+            )
+            return result
+        except Exception as e:
+            print(f"비동기 {operation_name} 실패: {str(e)}")
+            return False if operation_name.endswith(('업로드', '업데이트', '삭제', '시작', '중단')) else None
+
+    def _execute_fire_and_forget(self, async_func: Callable, *args, **kwargs) -> None:
+        """
+        Fire and Forget 패턴을 위한 공통 실행 래퍼
+        
+        Args:
+            async_func (Callable): 실행할 비동기 함수
+            *args, **kwargs: 함수에 전달할 인수들
+        """
+        try:
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.create_task(async_func(*args, **kwargs))
+                else:
+                    loop.run_until_complete(async_func(*args, **kwargs))
+            except RuntimeError:
+                asyncio.run(async_func(*args, **kwargs))
+        except Exception as e:
+            print(f"Fire and Forget 실행 실패: {str(e)}")
+
+    def _get_firebase_reference(self, path: str = None):
+        """
+        Firebase 참조 객체를 반환하는 공통 메서드
+        
+        Args:
+            path (str): 데이터베이스 경로
+            
+        Returns:
+            firebase_admin.db.Reference: Firebase 참조 객체
+        """
+        return self.database.reference(path) if path else self.database.reference()
+
+    def _prepare_data_for_firebase(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Firebase 업로드용 데이터 준비 (정제 포함)
+        
+        Args:
+            data (Dict[str, Any]): 원본 데이터
+            
+        Returns:
+            Dict[str, Any]: Firebase용으로 정제된 데이터
+        """
+        return self.sanitize_data_for_firebase(data)
+
+    # =============================================================================
+    # 데이터 설정 메서드들
+    # =============================================================================
+
     def set_data(self, path: str, data: Dict[str, Any]) -> bool:
         """
         특정 경로에 딕셔너리 데이터를 업로드
@@ -90,15 +183,14 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        try:
-            ref = self.database.reference(path)
-            sanitized_data = self.sanitize_data_for_firebase(data)
+        def _set_operation():
+            ref = self._get_firebase_reference(path)
+            sanitized_data = self._prepare_data_for_firebase(data)
             ref.set(sanitized_data)
             return True
-        except Exception as e:
-            print(f"데이터 업로드 실패: {str(e)}")
-            return False
-    
+
+        return self._execute_with_error_handling("데이터 업로드", _set_operation)
+
     async def set_data_async(self, path: str, data: Dict[str, Any]) -> bool:
         """
         특정 경로에 딕셔너리 데이터를 비동기로 업로드
@@ -110,28 +202,11 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                partial(self._sync_set_data, path, data)
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 데이터 업로드 실패: {str(e)}")
-            return False
-    
-    def _sync_set_data(self, path: str, data: Dict[str, Any]) -> bool:
-        """동기 set_data의 내부 구현"""
-        try:
-            ref = self.database.reference(path)
-            sanitized_data = self.sanitize_data_for_firebase(data)
-            ref.set(sanitized_data)
-            return True
-        except Exception as e:
-            print(f"데이터 업로드 실패: {str(e)}")
-            return False
-    
+        return await self._execute_async_with_error_handling(
+            "데이터 업로드", 
+            lambda: self.set_data(path, data)
+        )
+
     def set_data_fire_and_forget(self, path: str, data: Dict[str, Any]) -> None:
         """
         Firebase에 데이터를 업로드하되 결과를 기다리지 않음 (Fire and Forget)
@@ -140,22 +215,11 @@ class FirebaseSystem:
             path (str): Firebase 데이터베이스 경로
             data (Dict[str, Any]): 업로드할 딕셔너리 데이터
         """
-        try:
-            # 새로운 이벤트 루프가 없는 경우를 대비한 처리
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # 이미 실행 중인 루프가 있으면 태스크로 추가
-                    asyncio.create_task(self.set_data_async(path, data))
-                else:
-                    # 루프가 실행 중이 아니면 직접 실행
-                    loop.run_until_complete(self.set_data_async(path, data))
-            except RuntimeError:
-                # 이벤트 루프가 없는 경우 새로 생성
-                asyncio.run(self.set_data_async(path, data))
-        except Exception as e:
-            print(f"Fire and Forget 업로드 실패: {str(e)}")
-    
+        self._execute_fire_and_forget(self.set_data_async, path, data)
+
+    # =============================================================================
+    # 데이터 업데이트 메서드들
+    # =============================================================================
     
     def update_data(self, path: str, data: Dict[str, Any]) -> bool:
         """
@@ -168,15 +232,14 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        try:
-            ref = self.database.reference(path)
-            sanitized_data = self.sanitize_data_for_firebase(data)
+        def _update_operation():
+            ref = self._get_firebase_reference(path)
+            sanitized_data = self._prepare_data_for_firebase(data)
             ref.update(sanitized_data)
             return True
-        except Exception as e:
-            print(f"데이터 업데이트 실패: {str(e)}")
-            return False
-    
+
+        return self._execute_with_error_handling("데이터 업데이트", _update_operation)
+
     async def update_data_async(self, path: str, data: Dict[str, Any]) -> bool:
         """
         특정 경로의 데이터를 비동기로 부분 업데이트
@@ -188,28 +251,11 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                partial(self._sync_update_data, path, data)
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 데이터 업데이트 실패: {str(e)}")
-            return False
-    
-    def _sync_update_data(self, path: str, data: Dict[str, Any]) -> bool:
-        """동기 update_data의 내부 구현"""
-        try:
-            ref = self.database.reference(path)
-            sanitized_data = self.sanitize_data_for_firebase(data)
-            ref.update(sanitized_data)
-            return True
-        except Exception as e:
-            print(f"데이터 업데이트 실패: {str(e)}")
-            return False
-    
+        return await self._execute_async_with_error_handling(
+            "데이터 업데이트",
+            lambda: self.update_data(path, data)
+        )
+
     def update_data_fire_and_forget(self, path: str, data: Dict[str, Any]) -> None:
         """
         Firebase 데이터를 업데이트하되 결과를 기다리지 않음 (Fire and Forget)
@@ -218,18 +264,11 @@ class FirebaseSystem:
             path (str): Firebase 데이터베이스 경로
             data (Dict[str, Any]): 업데이트할 딕셔너리 데이터
         """
-        try:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(self.update_data_async(path, data))
-                else:
-                    loop.run_until_complete(self.update_data_async(path, data))
-            except RuntimeError:
-                asyncio.run(self.update_data_async(path, data))
-        except Exception as e:
-            print(f"Fire and Forget 업데이트 실패: {str(e)}")
+        self._execute_fire_and_forget(self.update_data_async, path, data)
 
+    # =============================================================================
+    # 조건부 업데이트 메서드들
+    # =============================================================================
 
     def conditional_update_data(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> bool:
         """
@@ -243,7 +282,7 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        try:
+        def _conditional_update_operation():
             # 데이터 차이점 찾기
             updates = self._find_data_differences(data_to_update, previous_data)
             
@@ -252,7 +291,7 @@ class FirebaseSystem:
                 return True
             
             # Firebase 업데이트용 데이터 정리
-            sanitized_updates = self.sanitize_data_for_firebase(updates)
+            sanitized_updates = self._prepare_data_for_firebase(updates)
             
             # 기본 경로를 기준으로 업데이트 경로 조정
             final_updates = {}
@@ -261,13 +300,11 @@ class FirebaseSystem:
                 final_updates[full_path] = value
             
             # Firebase 루트에서 다중 경로 업데이트 실행
-            root_ref = self.database.reference()
+            root_ref = self._get_firebase_reference()
             root_ref.update(final_updates)
-            
             return True
-        except Exception as e:
-            print(f"조건부 데이터 업데이트 실패: {str(e)}")
-            return False
+
+        return self._execute_with_error_handling("조건부 데이터 업데이트", _conditional_update_operation)
 
     async def conditional_update_data_async(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> bool:
         """
@@ -281,44 +318,10 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                partial(self._sync_conditional_update_data, path, data_to_update, previous_data)
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 조건부 데이터 업데이트 실패: {str(e)}")
-            return False
-
-    def _sync_conditional_update_data(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> bool:
-        """동기 conditional_update_data의 내부 구현"""
-        try:
-            # 데이터 차이점 찾기
-            updates = self._find_data_differences(data_to_update, previous_data)
-            
-            # 변경사항이 없으면 업데이트하지 않음
-            if not updates:
-                return True
-            
-            # Firebase 업데이트용 데이터 정리
-            sanitized_updates = self.sanitize_data_for_firebase(updates)
-            
-            # 기본 경로를 기준으로 업데이트 경로 조정
-            final_updates = {}
-            for update_path, value in sanitized_updates.items():
-                full_path = f"{path}/{update_path}" if path else update_path
-                final_updates[full_path] = value
-            
-            # Firebase 루트에서 다중 경로 업데이트 실행
-            root_ref = self.database.reference()
-            root_ref.update(final_updates)
-            
-            return True
-        except Exception as e:
-            print(f"조건부 데이터 업데이트 실패: {str(e)}")
-            return False
+        return await self._execute_async_with_error_handling(
+            "조건부 데이터 업데이트",
+            lambda: self.conditional_update_data(path, data_to_update, previous_data)
+        )
 
     def conditional_update_data_fire_and_forget(self, path: str, data_to_update: Dict[str, Any], previous_data: Dict[str, Any]) -> None:
         """
@@ -329,17 +332,7 @@ class FirebaseSystem:
             data_to_update (Dict[str, Any]): 업데이트할 새로운 데이터
             previous_data (Dict[str, Any]): 기존 데이터
         """
-        try:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(self.conditional_update_data_async(path, data_to_update, previous_data))
-                else:
-                    loop.run_until_complete(self.conditional_update_data_async(path, data_to_update, previous_data))
-            except RuntimeError:
-                asyncio.run(self.conditional_update_data_async(path, data_to_update, previous_data))
-        except Exception as e:
-            print(f"Fire and Forget 조건부 업데이트 실패: {str(e)}")
+        self._execute_fire_and_forget(self.conditional_update_data_async, path, data_to_update, previous_data)
 
     def _find_data_differences(self, new_data: Dict[str, Any], old_data: Dict[str, Any], path_prefix: str = "") -> Dict[str, Any]:
         """
@@ -377,6 +370,9 @@ class FirebaseSystem:
         
         return updates
 
+    # =============================================================================
+    # 데이터 조회 메서드들
+    # =============================================================================
 
     def get_data(self, path: str) -> Optional[Dict[str, Any]]:
         """
@@ -388,8 +384,8 @@ class FirebaseSystem:
         Returns:
             Optional[Dict[str, Any]]: 조회된 데이터 (딕셔너리 형태) 또는 None
         """
-        try:
-            ref = self.database.reference(path)
+        def _get_operation():
+            ref = self._get_firebase_reference(path)
             data = ref.get()
             
             if data is None:
@@ -398,9 +394,8 @@ class FirebaseSystem:
             if isinstance(data, dict):
                 return self.restore_data_from_firebase(data)
             return data
-        except Exception as e:
-            print(f"데이터 조회 실패: {str(e)}")
-            return None
+
+        return self._execute_with_error_handling("데이터 조회", _get_operation)
 
     def get_children_data(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
         """
@@ -412,8 +407,8 @@ class FirebaseSystem:
         Returns:
             Optional[Dict[str, Dict[str, Any]]]: 자식 노드들의 데이터 (key: 자식 노드명, value: 데이터)
         """
-        try:
-            ref = self.database.reference(path)
+        def _get_children_operation():
+            ref = self._get_firebase_reference(path)
             data = ref.get()
             
             if data is None or not isinstance(data, dict):
@@ -428,9 +423,8 @@ class FirebaseSystem:
                     restored_data[key] = value
             
             return restored_data
-        except Exception as e:
-            print(f"자식 데이터 조회 실패: {str(e)}")
-            return None
+
+        return self._execute_with_error_handling("자식 데이터 조회", _get_children_operation)
 
     async def get_children_data_async(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
         """
@@ -442,39 +436,14 @@ class FirebaseSystem:
         Returns:
             Optional[Dict[str, Dict[str, Any]]]: 자식 노드들의 데이터
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                partial(self._sync_get_children_data, path)
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 자식 데이터 조회 실패: {str(e)}")
-            return None
+        return await self._execute_async_with_error_handling(
+            "자식 데이터 조회",
+            lambda: self.get_children_data(path)
+        )
 
-    def _sync_get_children_data(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
-        """동기 get_children_data의 내부 구현"""
-        try:
-            ref = self.database.reference(path)
-            data = ref.get()
-            
-            if data is None or not isinstance(data, dict):
-                return None
-            
-            # 각 자식 노드의 데이터를 복원
-            restored_data = {}
-            for key, value in data.items():
-                if isinstance(value, dict):
-                    restored_data[key] = self.restore_data_from_firebase(value)
-                else:
-                    restored_data[key] = value
-            
-            return restored_data
-        except Exception as e:
-            print(f"자식 데이터 조회 실패: {str(e)}")
-            return None
-
+    # =============================================================================
+    # 데이터 삭제 메서드들
+    # =============================================================================
 
     def delete_data(self, path: str) -> bool:
         """
@@ -486,13 +455,12 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        try:
-            ref = self.database.reference(path)
+        def _delete_operation():
+            ref = self._get_firebase_reference(path)
             ref.delete()
             return True
-        except Exception as e:
-            print(f"데이터 삭제 실패: {str(e)}")
-            return False
+
+        return self._execute_with_error_handling("데이터 삭제", _delete_operation)
 
     async def delete_data_async(self, path: str) -> bool:
         """
@@ -504,26 +472,10 @@ class FirebaseSystem:
         Returns:
             bool: 성공 여부
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                partial(self._sync_delete_data, path)
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 데이터 삭제 실패: {str(e)}")
-            return False
-    
-    def _sync_delete_data(self, path: str) -> bool:
-        """동기 delete_data의 내부 구현"""
-        try:
-            ref = self.database.reference(path)
-            ref.delete()
-            return True
-        except Exception as e:
-            print(f"데이터 삭제 실패: {str(e)}")
-            return False
+        return await self._execute_async_with_error_handling(
+            "데이터 삭제",
+            lambda: self.delete_data(path)
+        )
     
     def delete_data_fire_and_forget(self, path: str) -> None:
         """
@@ -532,18 +484,11 @@ class FirebaseSystem:
         Args:
             path (str): Firebase 데이터베이스 경로
         """
-        try:
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(self.delete_data_async(path))
-                else:
-                    loop.run_until_complete(self.delete_data_async(path))
-            except RuntimeError:
-                asyncio.run(self.delete_data_async(path))
-        except Exception as e:
-            print(f"Fire and Forget 삭제 실패: {str(e)}")
+        self._execute_fire_and_forget(self.delete_data_async, path)
 
+    # =============================================================================
+    # 데이터 감시 메서드들
+    # =============================================================================
 
     def watch_data(self, path: str, callback: Callable[[Optional[Dict[str, Any]]], None]) -> bool:
         """
@@ -556,12 +501,12 @@ class FirebaseSystem:
         Returns:
             bool: 감시 시작 성공 여부
         """
-        try:
+        def _watch_operation():
             # 이미 해당 경로를 감시 중인 경우 기존 리스너 제거
             if path in self._listeners:
                 self.unwatch_data(path)
             
-            ref = self.database.reference(path)
+            ref = self._get_firebase_reference(path)
             
             def listener(snapshot):
                 try:
@@ -578,9 +523,8 @@ class FirebaseSystem:
             ref.listen(listener)
             self._listeners[path] = ref
             return True
-        except Exception as e:
-            print(f"데이터 감시 시작 실패: {str(e)}")
-            return False
+
+        return self._execute_with_error_handling("데이터 감시 시작", _watch_operation)
 
     async def watch_data_async(self, path: str, callback: Callable[[Optional[Dict[str, Any]]], None]) -> bool:
         """
@@ -593,44 +537,10 @@ class FirebaseSystem:
         Returns:
             bool: 감시 시작 성공 여부
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                partial(self._sync_watch_data, path, callback)
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 데이터 감시 시작 실패: {str(e)}")
-            return False
-
-    def _sync_watch_data(self, path: str, callback: Callable[[Optional[Dict[str, Any]]], None]) -> bool:
-        """동기 watch_data의 내부 구현"""
-        try:
-            # 이미 해당 경로를 감시 중인 경우 기존 리스너 제거
-            if path in self._listeners:
-                self.unwatch_data(path)
-            
-            ref = self.database.reference(path)
-            
-            def listener(snapshot):
-                try:
-                    data = snapshot.val()
-                    if data is not None and isinstance(data, dict):
-                        restored_data = self.restore_data_from_firebase(data)
-                        callback(restored_data)
-                    else:
-                        callback(data)
-                except Exception as e:
-                    print(f"콜백 함수 실행 실패: {str(e)}")
-            
-            # 리스너 등록
-            ref.listen(listener)
-            self._listeners[path] = ref
-            return True
-        except Exception as e:
-            print(f"데이터 감시 시작 실패: {str(e)}")
-            return False
+        return await self._execute_async_with_error_handling(
+            "데이터 감시 시작",
+            lambda: self.watch_data(path, callback)
+        )
 
     def unwatch_data(self, path: str) -> bool:
         """
@@ -642,7 +552,7 @@ class FirebaseSystem:
         Returns:
             bool: 감시 중단 성공 여부
         """
-        try:
+        def _unwatch_operation():
             if path in self._listeners:
                 ref = self._listeners[path]
                 # 모든 리스너 제거
@@ -652,9 +562,8 @@ class FirebaseSystem:
             else:
                 print(f"경로 '{path}'에 대한 활성 리스너가 없습니다.")
                 return False
-        except Exception as e:
-            print(f"데이터 감시 중단 실패: {str(e)}")
-            return False
+
+        return self._execute_with_error_handling("데이터 감시 중단", _unwatch_operation)
 
     async def unwatch_data_async(self, path: str) -> bool:
         """
@@ -666,31 +575,10 @@ class FirebaseSystem:
         Returns:
             bool: 감시 중단 성공 여부
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                partial(self._sync_unwatch_data, path)
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 데이터 감시 중단 실패: {str(e)}")
-            return False
-
-    def _sync_unwatch_data(self, path: str) -> bool:
-        """동기 unwatch_data의 내부 구현"""
-        try:
-            if path in self._listeners:
-                ref = self._listeners[path]
-                ref.listen(None)
-                del self._listeners[path]
-                return True
-            else:
-                print(f"경로 '{path}'에 대한 활성 리스너가 없습니다.")
-                return False
-        except Exception as e:
-            print(f"데이터 감시 중단 실패: {str(e)}")
-            return False
+        return await self._execute_async_with_error_handling(
+            "데이터 감시 중단",
+            lambda: self.unwatch_data(path)
+        )
 
     def unwatch_all(self) -> bool:
         """
@@ -699,7 +587,7 @@ class FirebaseSystem:
         Returns:
             bool: 모든 감시 중단 성공 여부
         """
-        try:
+        def _unwatch_all_operation():
             paths_to_remove = list(self._listeners.keys())
             success_count = 0
             
@@ -708,9 +596,8 @@ class FirebaseSystem:
                     success_count += 1
             
             return success_count == len(paths_to_remove)
-        except Exception as e:
-            print(f"모든 데이터 감시 중단 실패: {str(e)}")
-            return False
+
+        return self._execute_with_error_handling("모든 데이터 감시 중단", _unwatch_all_operation)
 
     async def unwatch_all_async(self) -> bool:
         """
@@ -719,31 +606,10 @@ class FirebaseSystem:
         Returns:
             bool: 모든 감시 중단 성공 여부
         """
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(
-                self._executor,
-                self._sync_unwatch_all
-            )
-            return result
-        except Exception as e:
-            print(f"비동기 모든 데이터 감시 중단 실패: {str(e)}")
-            return False
-
-    def _sync_unwatch_all(self) -> bool:
-        """동기 unwatch_all의 내부 구현"""
-        try:
-            paths_to_remove = list(self._listeners.keys())
-            success_count = 0
-            
-            for path in paths_to_remove:
-                if self._sync_unwatch_data(path):
-                    success_count += 1
-            
-            return success_count == len(paths_to_remove)
-        except Exception as e:
-            print(f"모든 데이터 감시 중단 실패: {str(e)}")
-            return False
+        return await self._execute_async_with_error_handling(
+            "모든 데이터 감시 중단",
+            lambda: self.unwatch_all()
+        )
 
     def get_active_watchers(self) -> list[str]:
         """
@@ -754,6 +620,9 @@ class FirebaseSystem:
         """
         return list(self._listeners.keys())
 
+    # =============================================================================
+    # 데이터 정제 메서드들
+    # =============================================================================
 
     def sanitize_data_for_firebase(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
