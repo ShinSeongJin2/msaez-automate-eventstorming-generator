@@ -18,6 +18,7 @@ class EsValueModel(BaseModelWithItem):
 class OutputsModel(BaseModelWithItem):
     esValue: EsValueModel = EsValueModel()
     isCompleted: bool = False
+    isFailed: bool = False
     logs: List[LogModel] = []
     totalProgressCount: int = 0
     currentProgressCount: int = 0

@@ -140,6 +140,15 @@ def route_after_create_gwt(state: State):
     return "complete"
 
 def complete(state: State):
+    if state.subgraphs.createAggregateByFunctionsModel.is_failed or \
+       state.subgraphs.createAggregateClassIdByDraftsModel.is_failed or \
+       state.subgraphs.createCommandActionsByFunctionModel.is_failed or \
+       state.subgraphs.createPolicyActionsByFunctionModel.is_failed or \
+       state.subgraphs.createGwtGeneratorByFunctionModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] Event storming generation failed, terminating process")
+        state.outputs.isFailed = True
+        return state
+
     state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["COMPLETE"]
     state.outputs.isCompleted = True
     total_progress = state.outputs.totalProgressCount
