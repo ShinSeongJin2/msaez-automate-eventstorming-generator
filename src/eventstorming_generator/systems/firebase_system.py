@@ -626,7 +626,7 @@ class FirebaseSystem:
 
     def sanitize_data_for_firebase(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Firebase 업로드를 위해 null/빈 배열을 기본값으로 변환
+        Firebase 업로드를 위해 null/빈 배열/빈 객체를 기본값으로 변환
         
         Args:
             data (Dict[str, Any]): 원본 데이터
@@ -639,6 +639,8 @@ class FirebaseSystem:
                 return ""  # null → 빈 문자열
             elif isinstance(value, list) and len(value) == 0:
                 return ["__EMPTY_ARRAY__"]  # 빈 배열 → 마커가 포함된 배열
+            elif isinstance(value, dict) and len(value) == 0:
+                return {"__EMPTY_OBJECT__": True}  # 빈 객체 → 마커 객체
             elif isinstance(value, dict):
                 return {k: process_value(v) for k, v in value.items()}
             elif isinstance(value, list):
@@ -663,6 +665,8 @@ class FirebaseSystem:
                 return None  # 빈 문자열 → null
             elif isinstance(value, list) and value == ["__EMPTY_ARRAY__"]:
                 return []  # 마커 → 빈 배열
+            elif isinstance(value, dict) and value == {"__EMPTY_OBJECT__": True}:
+                return {}  # 마커 객체 → 빈 객체
             elif isinstance(value, dict):
                 return {k: process_value(v) for k, v in value.items()}
             elif isinstance(value, list):
