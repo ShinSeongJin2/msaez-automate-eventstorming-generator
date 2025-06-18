@@ -384,7 +384,7 @@ def validate_class_id_generation(state: State) -> State:
     
     try:
         # 생성 완료 확인
-        if current_gen.generation_complete and not current_gen.is_failed:
+        if current_gen.generation_complete and not state.subgraphs.createAggregateClassIdByDraftsModel.is_failed:
             LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation completed successfully for references: {', '.join(current_gen.target_references)}")
 
             # 변수 정리
@@ -474,7 +474,6 @@ def decide_next_step(state: State) -> str:
         # state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Max retry count exceeded for class ID generation. References: {', '.join(current_gen.target_references)} But, it will be completed. (retries: {current_gen.retry_count})")
         current_gen.generation_complete = True
-        current_gen.is_failed = False
         return "validate"
     
     # 현재 작업이 완료되었으면 검증 단계로 이동

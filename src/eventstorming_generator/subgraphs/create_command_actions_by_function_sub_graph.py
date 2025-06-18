@@ -367,7 +367,7 @@ def validate_command_actions_generation(state: State) -> State:
     
     try:
         # 생성 완료 확인
-        if current_gen.generation_complete and not current_gen.is_failed:
+        if current_gen.generation_complete and not state.subgraphs.createCommandActionsByFunctionModel.is_failed:
             # 변수 정리
             current_gen.target_bounded_context = {}
             current_gen.target_aggregate = {}
