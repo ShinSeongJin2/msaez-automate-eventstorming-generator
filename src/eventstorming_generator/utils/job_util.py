@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 import atexit
+import traceback
 
 from ..systems.firebase_system import FirebaseSystem
 from ..models import State
@@ -217,9 +218,11 @@ class JobUtil:
             
             # 업데이트 데이터 준비
             data = {
-                "state": JsonUtil.convert_to_dict(JsonUtil.convert_to_json(
-                    update_request.state
-                )),
+                "state": JobUtil.delete_element_ref_from_state(
+                    JsonUtil.convert_to_dict(JsonUtil.convert_to_json(
+                        update_request.state
+                    ))
+                ),
                 "lastUpdated": update_request.timestamp
             }
             
@@ -473,3 +476,88 @@ class JobUtil:
             state (State): 업데이트할 상태 객체
         """
         JobUtil._add_update_to_queue(state, "update")
+    
+    @staticmethod
+    def delete_element_ref_from_state(state):
+        """
+        state의 outputs.esValue.relations에서 중복 데이터인 sourceElement, targetElement를 제거
+        
+        Args:
+            state (State): 처리할 상태 객체
+        """
+        try:
+            # esValue가 존재하는지 확인
+            if not state['outputs'] or not state['outputs']['esValue']:
+                return state
+            
+            es_value = state['outputs']['esValue']
+            
+            
+            # relations가 존재하는지 확인
+            if not es_value['relations']:
+                return state
+            
+            relations = es_value['relations']
+            
+
+            # 각 relation에서 sourceElement, targetElement 제거
+            for relation_id, relation in relations.items():
+                if 'sourceElement' in relation:
+                    del relation['sourceElement']
+                if 'targetElement' in relation:
+                    del relation['targetElement']
+
+            return state
+        
+        except Exception as e:
+            print(f"[State Optimization Error] delete_element_ref_from_state 실행 중 오류: {str(e)} {traceback.format_exc()}")
+            return state
+
+    @staticmethod
+    def add_element_ref_to_state(state):
+        """
+        state의 outputs.esValue.relations에 sourceElement, targetElement를 복구
+        from/to ID를 이용해 elements에서 해당 요소를 찾아 참조를 재구성
+        
+        Args:
+            state (State): 처리할 상태 객체
+        """
+        try:
+            # esValue가 존재하는지 확인
+            if not hasattr(state.outputs, 'esValue') or not state.outputs.esValue:
+                return state
+            
+            es_value = state.outputs.esValue
+            
+            # relations와 elements가 존재하는지 확인
+            if not hasattr(es_value, 'relations') or not es_value.relations:
+                return state
+            if not hasattr(es_value, 'elements') or not es_value.elements:
+                return state
+            
+            relations = es_value.relations
+            elements = es_value.elements
+            
+            restored_count = 0
+            
+            # 각 relation에 대해 sourceElement, targetElement 복구
+            for relation_id, relation in relations.items():
+                # from ID로 sourceElement 찾기
+                if hasattr(relation, 'from') and getattr(relation, 'from'):
+                    source_element = elements.get(getattr(relation, 'from'))
+                    if source_element:
+                        relation.sourceElement = source_element
+                        restored_count += 1
+                
+                # to ID로 targetElement 찾기
+                if hasattr(relation, 'to') and getattr(relation, 'to'):
+                    target_element = elements.get(getattr(relation, 'to'))
+                    if target_element:
+                        relation.targetElement = target_element
+                        restored_count += 1
+
+            return state
+        
+        except Exception as e:
+            print(f"[State Restoration Error] add_element_ref_to_state 실행 중 오류: {str(e)} {traceback.format_exc()}")
+            return state

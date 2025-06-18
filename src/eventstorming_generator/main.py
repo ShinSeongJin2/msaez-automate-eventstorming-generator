@@ -56,6 +56,7 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             print(f"[Job 처리] Job ID: {job_id} - State 데이터 변환 실패")
             return False
         state = State(**state)
+        state = JobUtil.add_element_ref_to_state(state)
 
         # 동기 함수를 스레드에서 실행
         loop = asyncio.get_event_loop()

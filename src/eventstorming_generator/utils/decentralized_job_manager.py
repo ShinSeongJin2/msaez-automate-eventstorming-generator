@@ -86,6 +86,7 @@ class DecentralizedJobManager:
             if current_data is None:
                 return None
             
+            current_data = FirebaseSystem.instance().restore_data_from_firebase(current_data)
             if current_data.get('assignedPodId') is None:
                 current_data['assignedPodId'] = self.pod_id
                 current_data['claimedAt'] = time.time()
@@ -198,7 +199,6 @@ class DecentralizedJobManager:
                 
                 # 다른 Pod가 할당했지만 5분간 heartbeat 없으면 실패로 간주
                 if (assigned_pod and 
-                    assigned_pod != self.pod_id and  # 다른 Pod의 Job만
                     current_time - last_heartbeat > 300 and
                     job_data.get('status') == 'processing'):
                     
