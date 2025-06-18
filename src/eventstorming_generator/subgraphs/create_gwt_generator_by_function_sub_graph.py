@@ -340,7 +340,7 @@ def generate_gwt_generation(state: State) -> State:
         
         # 생성된 GWT 저장
         current_gen.commands_to_replace = commands_to_replace
-        LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] GWT generation completed for aggregates '{aggregate_names}'. Generated {len(commands_to_replace)} GWT scenarios for {len(commands_to_replace)} commands from {result.get('result', []) if result else 0} scenarios")
+        LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] GWT generation completed for aggregates '{aggregate_names}'. Generated {len(commands_to_replace)} GWT scenarios for {len(commands_to_replace)} commands")
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[GWT_SUBGRAPH] Failed to generate GWT for aggregates '{aggregate_names}' in context '{bc_name}'", e)
