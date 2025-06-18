@@ -291,6 +291,10 @@ def generate_class_id(state: State) -> State:
         # 유효한 액션만 필터링
         filtered_actions = _filter_invalid_actions(actions, current_gen.target_references)
         filtered_actions = _filter_bidirectional_actions(filtered_actions, es_value, EsAliasTransManager(es_value))
+        if len(filtered_actions) == 0:
+            LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] No valid actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
+            current_gen.retry_count += 1
+            return state
         
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Filtered to {len(filtered_actions)} valid actions for references: {', '.join(current_gen.target_references)}")
         
@@ -466,7 +470,11 @@ def decide_next_step(state: State) -> str:
     
     current_gen = state.subgraphs.createAggregateClassIdByDraftsModel.current_generation
     if current_gen.retry_count >= state.subgraphs.createAggregateClassIdByDraftsModel.max_retry_count:
-        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+        # ClassID 생성인 경우에는 실패를 해도, 다음 진행에 영향이 없기 때문에 그대로 진행
+        # state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+        LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Max retry count exceeded for class ID generation. References: {', '.join(current_gen.target_references)} But, it will be completed. (retries: {current_gen.retry_count})")
+        current_gen.generation_complete = True
+        current_gen.is_failed = False
         return "validate"
     
     # 현재 작업이 완료되었으면 검증 단계로 이동
@@ -553,10 +561,11 @@ def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
         "generate",
         decide_next_step,
         {
+            "generate": "generate",
             "postprocess": "postprocess",
             "validate": "validate",
-            "es_value_summary_generator": "es_value_summary_generator",
-            "complete": "complete"
+            "complete": "complete",
+            "es_value_summary_generator": "es_value_summary_generator"
         }
     )
     
