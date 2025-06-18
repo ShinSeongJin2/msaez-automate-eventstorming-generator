@@ -12,6 +12,18 @@
             "type": "shell",
             "command": "uv run python ./src/eventstorming_generator/test.py",
             "problemMatcher": []
+        },
+        {
+            "label": "이미지 빌드",
+            "type": "shell",
+            "command": "bash ./scripts/build_image.sh",
+            "problemMatcher": []
+        },
+        {
+            "label": "k8s에 배포",
+            "type": "shell",
+            "command": "bash ./scripts/apply_to_k8s.sh",
+            "problemMatcher": []
         }
     ]
 }
