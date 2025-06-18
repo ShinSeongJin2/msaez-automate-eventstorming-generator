@@ -28,6 +28,7 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: OPENAI_API_KEY
+        
         - name: LANGSMITH_TRACING
           value: "true"
         - name: LANGSMITH_PROJECT
@@ -37,10 +38,12 @@ spec:
             secretKeyRef:
               name: app-secrets
               key: LANGSMITH_API_KEY
+        
         - name: FIREBASE_SERVICE_ACCOUNT_PATH
           value: "./.auth/serviceAccountKey.json"
         - name: FIREBASE_DATABASE_URL
           value: "https://eventstorming-tool-db.firebaseio.com"
+        
         - name: NAMESPACE
           value: "eventstorming_generator"
         - name: POD_ID
@@ -49,12 +52,20 @@ spec:
               fieldPath: metadata.name
         - name: IS_LOCAL_RUN
           value: "false"
+
+        - name: AUTO_SCALE_NAMESPACE
+          value: "default"
+        - name: AUTO_SCALE_DEPLOYMENT_NAME
+          value: "eventstorming-generator"
+        - name: AUTO_SCALE_SERVICE_NAME
+          value: "eventstorming-generator-service"
         - name: AUTO_SCALE_MIN_REPLICAS
           value: "1"
         - name: AUTO_SCALE_MAX_REPLICAS
           value: "3"
         - name: AUTO_SCALE_TARGET_JOBS_PER_POD
           value: "1"
+        
         volumeMounts:
         - name: firebase-key-volume
           mountPath: /app/.auth

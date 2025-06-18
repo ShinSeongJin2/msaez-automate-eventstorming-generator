@@ -34,6 +34,18 @@ class Config:
     
 
     @staticmethod
+    def autoscaler_namespace() -> str:
+        return os.getenv('AUTO_SCALE_NAMESPACE', 'default')
+    
+    @staticmethod
+    def autoscaler_deployment_name() -> str:
+        return os.getenv('AUTO_SCALE_DEPLOYMENT_NAME', 'eventstorming-generator')
+    
+    @staticmethod
+    def autoscaler_service_name() -> str:
+        return os.getenv('AUTO_SCALE_SERVICE_NAME', 'eventstorming-generator-service')
+
+    @staticmethod
     def autoscaler_min_replicas() -> int:
         return int(os.getenv('AUTO_SCALE_MIN_REPLICAS', '1'))
 

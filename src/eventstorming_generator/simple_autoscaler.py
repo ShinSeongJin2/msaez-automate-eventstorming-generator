@@ -9,9 +9,9 @@ from .config import Config
 
 class SimpleAutoScaler:
     def __init__(self):
-        self.namespace = "default"
-        self.deployment_name = "eventstorming-generator"
-        self.service_name = "eventstorming-generator-service"
+        self.namespace = Config.autoscaler_namespace()
+        self.deployment_name = Config.autoscaler_deployment_name()
+        self.service_name = Config.autoscaler_service_name()
         self.min_replicas = Config.autoscaler_min_replicas()
         self.max_replicas = Config.autoscaler_max_replicas()
         self.target_jobs_per_pod = Config.autoscaler_target_jobs_per_pod()  # 대기 작업 1개당 Pod 1개
