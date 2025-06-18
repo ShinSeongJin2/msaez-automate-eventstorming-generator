@@ -5,7 +5,7 @@ import traceback
 from dotenv import load_dotenv
 load_dotenv()
 
-from eventstorming_generator.utils import JobUtil, DecentralizedJobManager
+from eventstorming_generator.utils import JobUtil, LogUtil, DecentralizedJobManager
 from eventstorming_generator.graph import graph
 from eventstorming_generator.models import State
 from eventstorming_generator.systems.firebase_system import FirebaseSystem
@@ -68,6 +68,10 @@ async def process_job_async(job_id: str, complete_job_func: callable):
         
     except Exception as e:
         print(f"[Job 처리 오류] Job ID: {job_id}, 오류: {str(e)}, 트레이싱: {traceback.format_exc()}")
+
+        state.outputs.is_failed = True
+        LogUtil.add_exception_object_log(state, f"[Job 처리 오류] Job ID: {job_id}", e)
+        JobUtil.update_job_to_firebase(state)
         
     finally:
         # 작업 완료 후 항상 리소스 정리
