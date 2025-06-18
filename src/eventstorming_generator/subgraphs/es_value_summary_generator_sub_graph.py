@@ -312,6 +312,7 @@ def create_es_value_summary_generator_subgraph() -> Callable:
         "generate",
         decide_next_step,
         {
+            "generate": "generate",
             "postprocess": "postprocess",
             "validate": "validate",
             "complete": "complete"
