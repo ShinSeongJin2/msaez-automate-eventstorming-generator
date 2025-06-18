@@ -211,26 +211,31 @@ def complete_processing(state: State) -> State:
     """
     ES 값 요약 생성 프로세스 완료
     """
-    current_gen = state.subgraphs.esValueSummaryGeneratorModel
-    
-    if current_gen.is_failed:
-        LogUtil.add_error_log(state, f"[ES_SUMMARY_SUBGRAPH] ES value summary generation process failed after {current_gen.retry_count} attempts")
-    else:
-        final_size = len(str(current_gen.processed_summarized_es_value)) if current_gen.processed_summarized_es_value else 0
-        LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] ES value summary generation process completed successfully. Final summary: {final_size} chars")
-    
+
     try:
+        
+        current_gen = state.subgraphs.esValueSummaryGeneratorModel
+        failed = current_gen.is_failed
+        
+        if failed:
+            LogUtil.add_error_log(state, f"[ES_SUMMARY_SUBGRAPH] ES value summary generation process failed after {current_gen.retry_count} attempts")
+        else:
+            final_size = len(str(current_gen.processed_summarized_es_value)) if current_gen.processed_summarized_es_value else 0
+            LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] ES value summary generation process completed successfully. Final summary: {final_size} chars")
+    
         current_gen.is_processing = False
 
-        # 변수 정리
-        subgraph_model = state.subgraphs.esValueSummaryGeneratorModel
-        subgraph_model.context = ""
-        subgraph_model.keys_to_filter = []
-        subgraph_model.summarized_es_value = {}
-        subgraph_model.element_ids = {}
-        subgraph_model.sorted_element_ids = []
+        if not failed:
+            # 변수 정리
+            subgraph_model = state.subgraphs.esValueSummaryGeneratorModel
+            subgraph_model.context = ""
+            subgraph_model.keys_to_filter = []
+            subgraph_model.summarized_es_value = {}
+            subgraph_model.element_ids = {}
+            subgraph_model.sorted_element_ids = []
 
     except Exception as e:
+        state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation completion", e)
     
     return state

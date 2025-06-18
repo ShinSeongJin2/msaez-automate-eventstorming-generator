@@ -353,7 +353,7 @@ def validate_policy_actions_generation(state: State) -> State:
     
     try:
         # 생성 완료 확인
-        if current_gen.generation_complete:
+        if current_gen.generation_complete and not current_gen.is_failed:
             # 변수 정리
             current_gen.target_bounded_context = {}
             current_gen.description = ""
@@ -389,24 +389,32 @@ def complete_processing(state: State) -> State:
     """
     Policy 액션 생성 프로세스 완료
     """
-    state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"]
-    state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["COMPLETE"]
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
+    try :
 
-    completed_count = len(state.subgraphs.createPolicyActionsByFunctionModel.completed_generations)
-    failed = state.subgraphs.createPolicyActionsByFunctionModel.is_failed
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["COMPLETE"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        completed_count = len(state.subgraphs.createPolicyActionsByFunctionModel.completed_generations)
+        failed = state.subgraphs.createPolicyActionsByFunctionModel.is_failed
+        
+        if failed:
+            LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed with failures. Successfully processed: {completed_count} bounded contexts")
+        else:
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed successfully. Total processed: {completed_count} bounded contexts")
+
+        if not failed:
+            # 변수 정리
+            subgraph_model = state.subgraphs.createPolicyActionsByFunctionModel
+            subgraph_model.draft_options = {}
+            subgraph_model.current_generation = None
+            subgraph_model.completed_generations = []
+            subgraph_model.pending_generations = []
     
-    if failed:
-        LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed with failures. Successfully processed: {completed_count} bounded contexts")
-    else:
-        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed successfully. Total processed: {completed_count} bounded contexts")
+    except Exception as e:
+        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during policy actions generation process completion", e)
 
-    # 변수 정리
-    subgraph_model = state.subgraphs.createPolicyActionsByFunctionModel
-    subgraph_model.draft_options = {}
-    subgraph_model.current_generation = None
-    subgraph_model.completed_generations = []
-    subgraph_model.pending_generations = []
     return state
 
 # 라우팅 함수: 다음 단계 결정

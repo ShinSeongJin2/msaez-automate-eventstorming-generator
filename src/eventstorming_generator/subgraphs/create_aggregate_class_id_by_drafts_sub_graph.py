@@ -380,7 +380,7 @@ def validate_class_id_generation(state: State) -> State:
     
     try:
         # 생성 완료 확인
-        if current_gen.generation_complete:
+        if current_gen.generation_complete and not current_gen.is_failed:
             LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation completed successfully for references: {', '.join(current_gen.target_references)}")
 
             # 변수 정리
@@ -419,24 +419,32 @@ def complete_processing(state: State) -> State:
     """
     클래스 ID 생성 프로세스 완료
     """
-    state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"]
-    state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_CLASS_ID"]["COMPLETE"]
-    JobUtil.update_job_to_firebase_fire_and_forget(state)
+    try:
 
-    completed_count = len(state.subgraphs.createAggregateClassIdByDraftsModel.completed_generations)
-    failed = state.subgraphs.createAggregateClassIdByDraftsModel.is_failed
+        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_CLASS_ID"]["COMPLETE"]
+        JobUtil.update_job_to_firebase_fire_and_forget(state)
+
+        completed_count = len(state.subgraphs.createAggregateClassIdByDraftsModel.completed_generations)
+        failed = state.subgraphs.createAggregateClassIdByDraftsModel.is_failed
+        
+        if failed:
+            LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation process completed with failures. Successfully processed: {completed_count} reference groups")
+        else:
+            LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation process completed successfully. Total processed: {completed_count} reference groups")
+
+        if not failed:
+            # 변수 정리
+            subgraph_model = state.subgraphs.createAggregateClassIdByDraftsModel
+            subgraph_model.draft_options = {}
+            subgraph_model.current_generation = None
+            subgraph_model.completed_generations = []
+            subgraph_model.pending_generations = []
     
-    if failed:
-        LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation process completed with failures. Successfully processed: {completed_count} reference groups")
-    else:
-        LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation process completed successfully. Total processed: {completed_count} reference groups")
+    except Exception as e:
+        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+        LogUtil.add_exception_object_log(state, "[CLASS_ID_SUBGRAPH] Failed during process completion", e)
 
-    # 변수 정리
-    subgraph_model = state.subgraphs.createAggregateClassIdByDraftsModel
-    subgraph_model.draft_options = {}
-    subgraph_model.current_generation = None
-    subgraph_model.completed_generations = []
-    subgraph_model.pending_generations = []
     return state
 
 # 라우팅 함수: 다음 단계 결정

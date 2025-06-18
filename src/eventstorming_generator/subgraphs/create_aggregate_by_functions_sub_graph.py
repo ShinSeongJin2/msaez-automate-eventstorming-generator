@@ -403,7 +403,7 @@ def validate_aggregate_generation(state: State) -> State:
     
     try:
         # 생성 완료 확인
-        if current_gen.generation_complete:
+        if current_gen.generation_complete and not current_gen.is_failed:
             # 변수 정리
             current_gen.target_bounded_context = {}
             current_gen.target_aggregate = {}
@@ -436,6 +436,7 @@ def complete_processing(state: State) -> State:
     """
     
     try:
+
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_AGGREGATES"]["COMPLETE"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
@@ -448,13 +449,15 @@ def complete_processing(state: State) -> State:
         else:
             LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Aggregate generation process completed successfully. Total processed: {completed_count} aggregates")
 
-        # 변수 정리
-        subgraph_model = state.subgraphs.createAggregateByFunctionsModel
-        subgraph_model.current_generation = None
-        subgraph_model.completed_generations = []
-        subgraph_model.pending_generations = []
+        if not failed:
+            # 변수 정리
+            subgraph_model = state.subgraphs.createAggregateByFunctionsModel
+            subgraph_model.current_generation = None
+            subgraph_model.completed_generations = []
+            subgraph_model.pending_generations = []
         
     except Exception as e:
+        state.subgraphs.createAggregateByFunctionsModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed during process completion", e)
     
     return state
