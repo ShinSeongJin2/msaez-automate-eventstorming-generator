@@ -22,6 +22,7 @@ async def main():
     while True:
         tasks = []
         try:
+            
             # Flask 서버 시작 (첫 실행시에만)
             if flask_thread is None:
                 flask_thread = threading.Thread(target=run_healcheck_server, daemon=True)
@@ -67,6 +68,7 @@ async def process_job_async(job_id: str, complete_job_func: callable):
     """비동기 Job 처리 함수"""
     
     try:
+
         LoggingUtil.debug("main", f"Job 시작: {job_id}")
         if not JobUtil.is_valid_job_id(job_id):
             LoggingUtil.warning("main", f"Job 처리 오류: {job_id}, 유효하지 않음")

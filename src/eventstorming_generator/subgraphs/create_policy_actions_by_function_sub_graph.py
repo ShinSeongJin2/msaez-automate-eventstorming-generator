@@ -5,24 +5,30 @@ from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreatePolicyActionsByFunction
-from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
 
 def resume_from_create_policy_actions(state: State):
-    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
-        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_POLICY_ACTIONS"].values():
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
-            return state.outputs.lastCompletedSubGraphNode
-        else:
-            state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
-            LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
-            return "complete"
-    
-    LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation process")
-    return "prepare"
+    try :
 
+        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_POLICY_ACTIONS"].values():
+                LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
+                return state.outputs.lastCompletedSubGraphNode
+            else:
+                state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
+                LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
+                return "complete"
+        
+        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation process")
+        return "prepare"
+    
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during resume_from_create_policy_actions", e)
+        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
+        return "complete"
 
 # 노드 정의: 초안으로부터 Policy 액션 생성 준비
 def prepare_policy_actions_generation(state: State) -> State:
@@ -31,9 +37,11 @@ def prepare_policy_actions_generation(state: State) -> State:
     - 초안 데이터 설정
     - 처리할 Policy 액션 목록 초기화
     """
-    LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation preparation")
     
     try:
+
+        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation preparation")
+
         # 이미 처리 중이면 상태 유지
         if state.subgraphs.createPolicyActionsByFunctionModel.is_processing:
             LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Policy actions generation already in progress, maintaining state")
@@ -85,6 +93,7 @@ def select_next_policy_actions(state: State) -> State:
     """
     
     try:
+
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["SELECT_NEXT"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
@@ -139,6 +148,7 @@ def preprocess_policy_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting preprocessing for policy actions in bounded context: '{bc_name}'")
     
     try:
+
         # 현재 ES 값의 복사본 생성
         es_value = state.outputs.esValue.model_dump()
         
@@ -157,8 +167,7 @@ def preprocess_policy_actions_generation(state: State) -> State:
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Preprocessing failed for bounded context: '{bc_name}'", e)
-        if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
+        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
     
     return state
 
@@ -178,6 +187,7 @@ def generate_policy_actions(state: State) -> State:
     LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Generating policy actions for bounded context: '{bc_name}'{retry_info}")
     
     try:
+
         es_value = state.outputs.esValue.model_dump()
         
         # 요약 서브그래프에서 처리 결과를 받아온 경우
@@ -303,6 +313,7 @@ def postprocess_policy_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting postprocessing for policy actions in bounded context: '{bc_name}'")
     
     try:
+
         # 생성된 액션이 없으면 재시도 증가
         if not current_gen.created_actions:
             LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] No created actions to postprocess for bounded context: '{bc_name}', incrementing retry count")
@@ -352,6 +363,7 @@ def validate_policy_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Validating policy actions generation for bounded context: '{bc_name}'")
     
     try:
+
         # 생성 완료 확인
         if current_gen.generation_complete and not state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
             # 변수 정리
@@ -412,8 +424,8 @@ def complete_processing(state: State) -> State:
             subgraph_model.pending_generations = []
     
     except Exception as e:
-        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during policy actions generation process completion", e)
+        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
 
     return state
 
@@ -422,44 +434,51 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
-    if state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
-        return "complete"
+    try :
 
-    # 모든 작업이 완료되었으면 완료 상태로 이동
-    if state.subgraphs.createPolicyActionsByFunctionModel.all_complete:
-        return "complete"
-    
-    # 현재 처리 중인 작업이 없으면 다음 작업 선택
-    if not state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-        return "select_next"
-    
-    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-    
-    # 최대 재시도 횟수 초과 시 검증 단계로 이동 (실패 처리)
-    if current_gen.retry_count >= state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count:
-        return "validate"
-    
-    # 현재 작업이 완료되었으면 검증 단계로 이동
-    if current_gen.generation_complete:
-        return "validate"
-    
-    # 토큰 초과 상태 확인
-    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
-        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+        if state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
+            return "complete"
+
+        # 모든 작업이 완료되었으면 완료 상태로 이동
+        if state.subgraphs.createPolicyActionsByFunctionModel.all_complete:
+            return "complete"
+        
+        # 현재 처리 중인 작업이 없으면 다음 작업 선택
+        if not state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
+            return "select_next"
+        
+        current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
+        
+        # 최대 재시도 횟수 초과 시 검증 단계로 이동 (실패 처리)
+        if current_gen.retry_count >= state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count:
+            return "validate"
+        
+        # 현재 작업이 완료되었으면 검증 단계로 이동
+        if current_gen.generation_complete:
+            return "validate"
+        
+        # 토큰 초과 상태 확인
+        if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+            if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+                return "generate"
+            else:
+                return "es_value_summary_generator"
+        
+        # 전처리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
+        if not current_gen.summarized_es_value:
+            return "preprocess"
+        
+        # 기본적으로 생성 실행 단계로 이동
+        if not current_gen.created_actions:
             return "generate"
-        else:
-            return "es_value_summary_generator"
+        
+        # 생성된 액션이 있으면 후처리 단계로 이동
+        return "postprocess"
     
-    # 전처리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
-    if not current_gen.summarized_es_value:
-        return "preprocess"
-    
-    # 기본적으로 생성 실행 단계로 이동
-    if not current_gen.created_actions:
-        return "generate"
-    
-    # 생성된 액션이 있으면 후처리 단계로 이동
-    return "postprocess"
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during decide_next_step", e)
+        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
+        return "complete"
 
 # 서브그래프 생성 함수
 def create_policy_actions_by_function_subgraph() -> Callable:

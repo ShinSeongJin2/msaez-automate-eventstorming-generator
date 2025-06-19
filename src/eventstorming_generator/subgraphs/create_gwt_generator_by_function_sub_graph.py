@@ -4,25 +4,31 @@ from copy import deepcopy
 from langgraph.graph import StateGraph, START
 
 from ..models import GWTGenerationState, State, ESValueSummaryGeneratorModel
-from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil, JobUtil
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil, JobUtil
 from ..generators import CreateGWTGeneratorByFunction
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
 
 def resume_from_create_gwt(state: State):
-    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"] and state.outputs.lastCompletedSubGraphNode:
-        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_GWT"].values():
-            LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
-            return state.outputs.lastCompletedSubGraphNode
-        else:
-            state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
-            LogUtil.add_error_log(state, f"[GWT_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
-            return "complete"
-    
-    LogUtil.add_info_log(state, "[GWT_SUBGRAPH] Starting GWT generation process")
-    return "prepare"
+    try :
 
+        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"] and state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_GWT"].values():
+                LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
+                return state.outputs.lastCompletedSubGraphNode
+            else:
+                state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
+                LogUtil.add_error_log(state, f"[GWT_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
+                return "complete"
+        
+        LogUtil.add_info_log(state, "[GWT_SUBGRAPH] Starting GWT generation process")
+        return "prepare"
+    
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[GWT_SUBGRAPH] Failed during resume_from_create_gwt", e)
+        state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
+        return "complete"
 
 # 노드 정의: GWT 생성 준비
 def prepare_gwt_generation(state: State) -> State:
@@ -31,9 +37,11 @@ def prepare_gwt_generation(state: State) -> State:
     - 초안 데이터 설정
     - 처리할 Command 목록 초기화
     """
-    LogUtil.add_info_log(state, "[GWT_SUBGRAPH] Starting GWT generation preparation")
     
     try:
+
+        LogUtil.add_info_log(state, "[GWT_SUBGRAPH] Starting GWT generation preparation")
+
         # 이미 처리 중이면 상태 유지
         if state.subgraphs.createGwtGeneratorByFunctionModel.is_processing:
             LogUtil.add_info_log(state, "[GWT_SUBGRAPH] GWT generation already in progress, maintaining state")
@@ -114,6 +122,7 @@ def select_next_gwt_generation(state: State) -> State:
     """
     
     try:
+
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_GWT"]["SELECT_NEXT"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
@@ -175,6 +184,7 @@ def preprocess_gwt_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Starting preprocessing for aggregates '{aggregate_names}' in context '{bc_name}' ({command_count} commands)")
     
     try:
+
         # 현재 ES 값의 복사본 생성
         es_value = deepcopy(state.outputs.esValue.model_dump())
         
@@ -207,8 +217,7 @@ def preprocess_gwt_generation(state: State) -> State:
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[GWT_SUBGRAPH] Preprocessing failed for aggregates '{aggregate_names}' in context '{bc_name}'", e)
-        if state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
-            state.subgraphs.createGwtGeneratorByFunctionModel.current_generation.retry_count += 1
+        state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
     
     return state
 
@@ -230,6 +239,7 @@ def generate_gwt_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Generating GWT scenarios for aggregates '{aggregate_names}' in context '{bc_name}'{retry_info}")
     
     try:
+
         # 요약 서브그래프에서 처리 결과를 받아온 경우
         if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
             state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
@@ -365,6 +375,7 @@ def postprocess_gwt_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Starting postprocessing for aggregates '{aggregate_names}' in context '{bc_name}'")
     
     try:
+
         # 생성된 GWT가 없으면 실패로 처리
         if not current_gen.commands_to_replace:
             LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] No GWTs generated for aggregates '{aggregate_names}', incrementing retry count")
@@ -411,6 +422,7 @@ def validate_gwt_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Validating GWT generation for aggregates '{aggregate_names}' in context '{bc_name}'")
     
     try:
+
         # 생성 완료 확인
         if current_gen.generation_complete and not state.subgraphs.createGwtGeneratorByFunctionModel.is_failed:
             # 변수 정리
@@ -476,8 +488,8 @@ def complete_processing(state: State) -> State:
             subgraph_model.pending_generations = []
 
     except Exception as e:
-        state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[GWT_SUBGRAPH] Failed during GWT generation process completion", e)
+        state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
 
     return state
 
@@ -486,45 +498,52 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
-    if state.subgraphs.createGwtGeneratorByFunctionModel.is_failed:
-        return "complete"
+    try :
 
-    # 모든 작업이 완료되었으면 완료 상태로 이동
-    if state.subgraphs.createGwtGeneratorByFunctionModel.all_complete:
-        return "complete"
+        if state.subgraphs.createGwtGeneratorByFunctionModel.is_failed:
+            return "complete"
+
+        # 모든 작업이 완료되었으면 완료 상태로 이동
+        if state.subgraphs.createGwtGeneratorByFunctionModel.all_complete:
+            return "complete"
+        
+        # 현재 처리 중인 작업이 없으면 다음 작업 선택
+        if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
+            return "select_next"
+        
+        current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
+        
+        # 최대 재시도 횟수 초과 시 완료 상태로 이동
+        if current_gen.retry_count > state.subgraphs.createGwtGeneratorByFunctionModel.max_retry_count:
+            state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
+            return "complete"
+        
+        # 현재 작업이 완료되었으면 검증 단계로 이동
+        if current_gen.generation_complete:
+            return "validate"
+        
+        # 토큰 초과 시 요약 서브그래프 실행
+        if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+            if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+                return "generate"
+            else:
+                return "es_value_summary_generator"
+        
+        # 전처리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
+        if not current_gen.summarized_es_value:
+            return "preprocess"
+        
+        # 기본적으로 생성 실행 단계로 이동
+        if not current_gen.commands_to_replace:
+            return "generate"
+        
+        # 생성된 GWT가 있으면 후처리 단계로 이동
+        return "postprocess"
     
-    # 현재 처리 중인 작업이 없으면 다음 작업 선택
-    if not state.subgraphs.createGwtGeneratorByFunctionModel.current_generation:
-        return "select_next"
-    
-    current_gen = state.subgraphs.createGwtGeneratorByFunctionModel.current_generation
-    
-    # 최대 재시도 횟수 초과 시 완료 상태로 이동
-    if current_gen.retry_count > state.subgraphs.createGwtGeneratorByFunctionModel.max_retry_count:
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[GWT_SUBGRAPH] Failed during decide_next_step", e)
         state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
         return "complete"
-    
-    # 현재 작업이 완료되었으면 검증 단계로 이동
-    if current_gen.generation_complete:
-        return "validate"
-    
-    # 토큰 초과 시 요약 서브그래프 실행
-    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
-        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
-            return "generate"
-        else:
-            return "es_value_summary_generator"
-    
-    # 전처리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
-    if not current_gen.summarized_es_value:
-        return "preprocess"
-    
-    # 기본적으로 생성 실행 단계로 이동
-    if not current_gen.commands_to_replace:
-        return "generate"
-    
-    # 생성된 GWT가 있으면 후처리 단계로 이동
-    return "postprocess"
 
 # 요약 요청 컨텍스트 빌드 함수
 def _build_request_context(current_gen: GWTGenerationState) -> str:

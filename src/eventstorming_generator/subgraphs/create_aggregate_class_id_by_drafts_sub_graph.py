@@ -4,24 +4,30 @@ import os
 
 from ..models import ClassIdGenerationState, State, ActionModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateClassIdByDrafts
-from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, JsonUtil, EsUtils, CaseConvertUtil, LogUtil, JobUtil
+from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsUtils, CaseConvertUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
 
 def resume_from_create_class_id(state: State):
-    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"] and state.outputs.lastCompletedSubGraphNode:
-        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_CLASS_ID"].values():
-            LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
-            return state.outputs.lastCompletedSubGraphNode
-        else:
-            state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
-            LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
-            return "complete"
-    
-    LogUtil.add_info_log(state, "[CLASS_ID_SUBGRAPH] Starting class ID generation process")
-    return "prepare"
+    try :
 
+        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"] and state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_CLASS_ID"].values():
+                LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
+                return state.outputs.lastCompletedSubGraphNode
+            else:
+                state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+                LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
+                return "complete"
+        
+        LogUtil.add_info_log(state, "[CLASS_ID_SUBGRAPH] Starting class ID generation process")
+        return "prepare"
+    
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[CLASS_ID_SUBGRAPH] Failed during resume_from_create_class_id", e)
+        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+        return "complete"
 
 # 노드 정의: 클래스 ID 생성 준비
 def prepare_class_id_generation(state: State) -> State:
@@ -31,9 +37,11 @@ def prepare_class_id_generation(state: State) -> State:
     - 참조 관계 식별
     - 처리할 참조 목록 초기화
     """
-    LogUtil.add_info_log(state, "[CLASS_ID_SUBGRAPH] Starting class ID generation preparation")
     
     try:
+
+        LogUtil.add_info_log(state, "[CLASS_ID_SUBGRAPH] Starting class ID generation preparation")
+
         # 이미 처리 중이면 상태 유지
         if state.subgraphs.createAggregateClassIdByDraftsModel.is_processing:
             LogUtil.add_info_log(state, "[CLASS_ID_SUBGRAPH] Class ID generation already in progress, maintaining state")
@@ -114,8 +122,8 @@ def select_next_class_id(state: State) -> State:
     다음에 생성할 클래스 ID를 선택하고 현재 처리 상태로 설정
     """
 
-    
     try:
+
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_CLASS_ID"]["SELECT_NEXT"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
@@ -167,6 +175,7 @@ def preprocess_class_id_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Starting preprocessing for class ID generation. References: {', '.join(current_gen.target_references)}")
     
     try:
+
         es_value = state.outputs.esValue.model_dump()        
   
         # 요약된 ES 값 생성
@@ -180,8 +189,7 @@ def preprocess_class_id_generation(state: State) -> State:
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[CLASS_ID_SUBGRAPH] Preprocessing failed for references: {', '.join(current_gen.target_references) if current_gen else 'Unknown'}", e)
-        if state.subgraphs.createAggregateClassIdByDraftsModel.current_generation:
-            state.subgraphs.createAggregateClassIdByDraftsModel.current_generation.retry_count += 1
+        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
     
     return state
 
@@ -201,6 +209,7 @@ def generate_class_id(state: State) -> State:
     LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Generating class ID actions for references: {', '.join(current_gen.target_references)}{retry_info}")
     
     try:
+
         es_value = state.outputs.esValue.model_dump()
         
         # 요약 서브그래프에서 처리 결과를 받아온 경우
@@ -330,6 +339,7 @@ def postprocess_class_id_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Starting postprocessing for class ID generation. References: {', '.join(current_gen.target_references)}")
     
     try:
+
         es_value = state.outputs.esValue.model_dump()
         
         # 생성된 액션이 없으면 실패로 처리
@@ -383,6 +393,7 @@ def validate_class_id_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Validating class ID generation for references: {', '.join(current_gen.target_references)}")
     
     try:
+
         # 생성 완료 확인
         if current_gen.generation_complete and not state.subgraphs.createAggregateClassIdByDraftsModel.is_failed:
             LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation completed successfully for references: {', '.join(current_gen.target_references)}")
@@ -446,8 +457,8 @@ def complete_processing(state: State) -> State:
             subgraph_model.pending_generations = []
     
     except Exception as e:
-        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[CLASS_ID_SUBGRAPH] Failed during process completion", e)
+        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
 
     return state
 
@@ -456,47 +467,55 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
-    # 작업 실패시에 강제로 완료 상태로 이동
-    if state.subgraphs.createAggregateClassIdByDraftsModel.is_failed:
-        return "complete"
 
-    # 모든 작업이 완료되었으면 완료 상태로 이동
-    if state.subgraphs.createAggregateClassIdByDraftsModel.all_complete:
-        return "complete"
-    
-    # 현재 처리 중인 작업이 없으면 다음 작업 선택
-    if not state.subgraphs.createAggregateClassIdByDraftsModel.current_generation:
-        return "select_next"
-    
-    current_gen = state.subgraphs.createAggregateClassIdByDraftsModel.current_generation
-    if current_gen.retry_count >= state.subgraphs.createAggregateClassIdByDraftsModel.max_retry_count:
-        # ClassID 생성인 경우에는 실패를 해도, 다음 진행에 영향이 없기 때문에 그대로 진행
-        # state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
-        LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Max retry count exceeded for class ID generation. References: {', '.join(current_gen.target_references)} But, it will be completed. (retries: {current_gen.retry_count})")
-        current_gen.generation_complete = True
-        return "validate"
-    
-    # 현재 작업이 완료되었으면 검증 단계로 이동
-    if current_gen.generation_complete:
-        return "validate"
-    
-    # 토큰 초과로 인한 요약이 필요한 경우 요약 서브그래프로 이동
-    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
-        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+    try :
+
+        # 작업 실패시에 강제로 완료 상태로 이동
+        if state.subgraphs.createAggregateClassIdByDraftsModel.is_failed:
+            return "complete"
+
+        # 모든 작업이 완료되었으면 완료 상태로 이동
+        if state.subgraphs.createAggregateClassIdByDraftsModel.all_complete:
+            return "complete"
+        
+        # 현재 처리 중인 작업이 없으면 다음 작업 선택
+        if not state.subgraphs.createAggregateClassIdByDraftsModel.current_generation:
+            return "select_next"
+        
+        current_gen = state.subgraphs.createAggregateClassIdByDraftsModel.current_generation
+        if current_gen.retry_count >= state.subgraphs.createAggregateClassIdByDraftsModel.max_retry_count:
+            # ClassID 생성인 경우에는 실패를 해도, 다음 진행에 영향이 없기 때문에 그대로 진행
+            # state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+            LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Max retry count exceeded for class ID generation. References: {', '.join(current_gen.target_references)} But, it will be completed. (retries: {current_gen.retry_count})")
+            current_gen.generation_complete = True
+            return "validate"
+        
+        # 현재 작업이 완료되었으면 검증 단계로 이동
+        if current_gen.generation_complete:
+            return "validate"
+        
+        # 토큰 초과로 인한 요약이 필요한 경우 요약 서브그래프로 이동
+        if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+            if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+                return "generate"
+            else:
+                return "es_value_summary_generator"
+        
+        # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
+        if not current_gen.summarized_es_value:
+            return "preprocess"
+        
+        # 기본적으로 생성 실행 단계로 이동
+        if not current_gen.created_actions:
             return "generate"
-        else:
-            return "es_value_summary_generator"
+        
+        # 생성된 액션이 있으면 후처리 단계로 이동
+        return "postprocess"
     
-    # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
-    if not current_gen.summarized_es_value:
-        return "preprocess"
-    
-    # 기본적으로 생성 실행 단계로 이동
-    if not current_gen.created_actions:
-        return "generate"
-    
-    # 생성된 액션이 있으면 후처리 단계로 이동
-    return "postprocess"
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[CLASS_ID_SUBGRAPH] Failed during decide_next_step", e)
+        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+        return "complete"
 
 # 서브그래프 생성 함수
 def create_aggregate_class_id_by_drafts_subgraph() -> Callable:

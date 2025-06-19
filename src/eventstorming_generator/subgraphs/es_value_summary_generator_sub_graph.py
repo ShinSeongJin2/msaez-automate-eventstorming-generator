@@ -14,9 +14,11 @@ def prepare_es_value_summary_generation(state: State) -> State:
     ES 값 요약 생성을 위한 준비 작업 수행
     - 입력 데이터 설정 및 초기화
     """
-    LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Starting ES value summary generation preparation")
     
     try:
+
+        LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Starting ES value summary generation preparation")
+
         # 이미 처리 중이거나 완료된 경우 상태 유지
         if state.subgraphs.esValueSummaryGeneratorModel.is_processing:
             LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] ES value summary generation already in progress, maintaining state")
@@ -45,9 +47,11 @@ def preprocess_es_value_summary_generation(state: State) -> State:
     - 요소 ID 추출
     - ES 별칭 변환 관리자 초기화
     """
-    LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Starting ES value summary preprocessing")
     
     try:
+
+        LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Starting ES value summary preprocessing")
+
         es_value = state.outputs.esValue.model_dump()
         
         # ES 별칭 변환 관리자 초기화
@@ -91,7 +95,7 @@ def preprocess_es_value_summary_generation(state: State) -> State:
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary preprocessing", e)
-        state.subgraphs.esValueSummaryGeneratorModel.retry_count += 1
+        state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
     
     return state
 
@@ -106,6 +110,7 @@ def generate_es_value_summary(state: State) -> State:
     LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Starting ES value summary generation{retry_info}")
     
     try:
+
         # 모델명 가져오기
         model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
         
@@ -150,6 +155,7 @@ def postprocess_es_value_summary_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Starting ES value summary postprocessing. Target token limit: {current_gen.max_tokens}")
     
     try:
+
         if not current_gen.sorted_element_ids:
             raise ValueError("Sorted element IDs not available for postprocessing")
         
@@ -177,6 +183,8 @@ def postprocess_es_value_summary_generation(state: State) -> State:
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary postprocessing", e)
+        current_gen.processed_summarized_es_value = {}
+        current_gen.sorted_element_ids = []
         current_gen.retry_count += 1
     
     return state
@@ -191,6 +199,7 @@ def validate_es_value_summary_generation(state: State) -> State:
     LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Validating ES value summary generation results")
     
     try:
+
         # 생성된 요약 값이 있으면 완료 처리
         if current_gen.processed_summarized_es_value:
             current_gen.is_complete = True
@@ -202,6 +211,8 @@ def validate_es_value_summary_generation(state: State) -> State:
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation validation", e)
+        current_gen.processed_summarized_es_value = {}
+        current_gen.sorted_element_ids = []
         current_gen.retry_count += 1
     
     return state
@@ -235,8 +246,8 @@ def complete_processing(state: State) -> State:
             subgraph_model.sorted_element_ids = []
 
     except Exception as e:
-        state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation completion", e)
+        state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
     
     return state
 
@@ -245,33 +256,40 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
-    if state.subgraphs.esValueSummaryGeneratorModel.is_failed:
-        return "complete"
 
-    # 완료된 경우 완료 상태로 이동
-    if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+    try :
+
+        if state.subgraphs.esValueSummaryGeneratorModel.is_failed:
+            return "complete"
+
+        # 완료된 경우 완료 상태로 이동
+        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+            return "complete"
+        
+        # 재시도 횟수 초과시 실패 처리
+        if state.subgraphs.esValueSummaryGeneratorModel.retry_count >= state.subgraphs.esValueSummaryGeneratorModel.max_retry_count:
+            state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
+            state.subgraphs.esValueSummaryGeneratorModel.is_complete = True
+            return "complete"
+        
+        # 요약된 ES 값이 없는 경우 전처리 단계로 이동
+        if not state.subgraphs.esValueSummaryGeneratorModel.summarized_es_value:
+            return "preprocess"
+        
+        # 정렬된 요소 ID가 없는 경우 생성 단계로 이동
+        if not state.subgraphs.esValueSummaryGeneratorModel.sorted_element_ids:
+            return "generate"
+        
+        # 요약된 결과가 없는 경우 후처리 단계로 이동
+        if not state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value:
+            return "postprocess"
+        
+        # 검증 단계로 이동
+        return "validate"
+    
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during decide_next_step", e)
         return "complete"
-    
-    # 재시도 횟수 초과시 실패 처리
-    if state.subgraphs.esValueSummaryGeneratorModel.retry_count >= state.subgraphs.esValueSummaryGeneratorModel.max_retry_count:
-        state.subgraphs.esValueSummaryGeneratorModel.is_failed = True
-        state.subgraphs.esValueSummaryGeneratorModel.is_complete = True
-        return "complete"
-    
-    # 요약된 ES 값이 없는 경우 전처리 단계로 이동
-    if not state.subgraphs.esValueSummaryGeneratorModel.summarized_es_value:
-        return "preprocess"
-    
-    # 정렬된 요소 ID가 없는 경우 생성 단계로 이동
-    if not state.subgraphs.esValueSummaryGeneratorModel.sorted_element_ids:
-        return "generate"
-    
-    # 요약된 결과가 없는 경우 후처리 단계로 이동
-    if not state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value:
-        return "postprocess"
-    
-    # 검증 단계로 이동
-    return "validate"
 
 # 서브그래프 생성 함수
 def create_es_value_summary_generator_subgraph() -> Callable:

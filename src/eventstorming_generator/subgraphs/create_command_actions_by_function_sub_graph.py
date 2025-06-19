@@ -4,33 +4,41 @@ from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreateCommandActionsByFunction
-from ..utils import ESFakeActionsUtil, JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
+from ..utils import ESFakeActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
 
 def resume_from_create_command_actions(state: State):
-    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
-        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_COMMAND_ACTIONS"].values():
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
-            return state.outputs.lastCompletedSubGraphNode
-        else:
-            state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
-            LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
-            return "complete"
+    try :
+        
+        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_COMMAND_ACTIONS"].values():
+                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
+                return state.outputs.lastCompletedSubGraphNode
+            else:
+                state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
+                LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
+                return "complete"
+        
+        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting command actions generation process")
+        return "prepare"
     
-    LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting command actions generation process")
-    return "prepare"
-
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during resume_from_create_command_actions", e)
+        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
+        return "complete"
 
 def prepare_command_actions_generation(state: State) -> State:
     """
     Command 액션 생성을 위한 초기 준비 작업 수행
     - 처리할 애그리거트 목록을 구성하고 상태 초기화
     """
-    LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting command actions generation preparation")
     
     try:
+
+        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting command actions generation preparation")
+
         # 입력값이 있는지 확인
         if not state.inputs.selectedDraftOptions:
             LogUtil.add_error_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No selectedDraftOptions found in input data")
@@ -83,6 +91,7 @@ def select_next_command_actions(state: State) -> State:
     """
 
     try:
+
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["SELECT_NEXT"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
@@ -132,6 +141,7 @@ def preprocess_command_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Starting preprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
+
         # 요약된 ES Value 생성
         summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
             state.outputs.esValue.model_dump(), [], EsAliasTransManager(state.outputs.esValue.model_dump())
@@ -142,7 +152,7 @@ def preprocess_command_actions_generation(state: State) -> State:
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Preprocessing failed for aggregate '{aggregate_name}' in context '{bc_name}'", e)
-        current.retry_count += 1
+        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
     
     return state
 
@@ -163,6 +173,7 @@ def generate_command_actions(state: State) -> State:
     LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Generating command actions for aggregate '{aggregate_name}' in context '{bc_name}'{retry_info}")
     
     try:
+
         # 요약 서브그래프에서 처리 결과를 받아온 경우
         if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
             state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
@@ -297,6 +308,7 @@ def postprocess_command_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Starting postprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
+
         initial_action_count = len(current.created_actions)
         
         # 유효한 액션만 필터링
@@ -366,6 +378,7 @@ def validate_command_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Validating command actions generation for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
+
         # 생성 완료 확인
         if current_gen.generation_complete and not state.subgraphs.createCommandActionsByFunctionModel.is_failed:
             # 변수 정리
@@ -423,8 +436,8 @@ def complete_processing(state: State) -> State:
             subgraph_model.pending_generations = []
         
     except Exception as e:
-        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during command actions processing completion", e)
+        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
     
     return state
 
@@ -432,43 +445,50 @@ def decide_next_step(state: State) -> str:
     """
     다음 단계 결정을 위한 라우팅 함수
     """
-    if state.subgraphs.createCommandActionsByFunctionModel.is_failed:
-        return "complete"
+    try :
 
-    # 모든 작업이 완료되었으면 완료 상태로 이동
-    if state.subgraphs.createCommandActionsByFunctionModel.all_complete:
-        return "complete"
-    
-    # 현재 처리 중인 작업이 없으면 다음 작업 선택
-    if not state.subgraphs.createCommandActionsByFunctionModel.current_generation:
-        return "select_next"
-    
-    current_gen = state.subgraphs.createCommandActionsByFunctionModel.current_generation
-    if current_gen.retry_count > state.subgraphs.createCommandActionsByFunctionModel.max_retry_count:
+        if state.subgraphs.createCommandActionsByFunctionModel.is_failed:
+            return "complete"
+
+        # 모든 작업이 완료되었으면 완료 상태로 이동
+        if state.subgraphs.createCommandActionsByFunctionModel.all_complete:
+            return "complete"
+        
+        # 현재 처리 중인 작업이 없으면 다음 작업 선택
+        if not state.subgraphs.createCommandActionsByFunctionModel.current_generation:
+            return "select_next"
+        
+        current_gen = state.subgraphs.createCommandActionsByFunctionModel.current_generation
+        if current_gen.retry_count > state.subgraphs.createCommandActionsByFunctionModel.max_retry_count:
+            state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
+            return "complete"
+        
+        # 토큰 초과시 요약 서브그래프로 이동
+        if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+            if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+                return "generate"
+            else:
+                return "es_value_summary_generator"
+
+        # 현재 작업이 완료되었으면 검증 단계로 이동
+        if current_gen.generation_complete:
+            return "validate"
+        
+        # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
+        if not current_gen.summarized_es_value:
+            return "preprocess"
+        
+        # 기본적으로 생성 실행 단계로 이동
+        if not current_gen.created_actions:
+            return "generate"
+        
+        # 생성된 액션이 있으면 후처리 단계로 이동
+        return "postprocess"
+
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during decide_next_step", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
         return "complete"
-    
-    # 토큰 초과시 요약 서브그래프로 이동
-    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
-        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
-            return "generate"
-        else:
-            return "es_value_summary_generator"
-
-    # 현재 작업이 완료되었으면 검증 단계로 이동
-    if current_gen.generation_complete:
-        return "validate"
-    
-    # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
-    if not current_gen.summarized_es_value:
-        return "preprocess"
-    
-    # 기본적으로 생성 실행 단계로 이동
-    if not current_gen.created_actions:
-        return "generate"
-    
-    # 생성된 액션이 있으면 후처리 단계로 이동
-    return "postprocess"
 
 # 서브그래프 생성 함수
 def create_command_actions_by_function_subgraph() -> Callable:

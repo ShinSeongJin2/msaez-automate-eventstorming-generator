@@ -391,6 +391,7 @@ class JobUtil:
             state (State): 처리할 상태 객체
         """
         try:
+            
             # esValue가 존재하는지 확인
             if not state['outputs'] or not state['outputs']['esValue']:
                 return state
@@ -428,6 +429,7 @@ class JobUtil:
             state (State): 처리할 상태 객체
         """
         try:
+
             # esValue가 존재하는지 확인
             if not hasattr(state.outputs, 'esValue') or not state.outputs.esValue:
                 return state
@@ -448,17 +450,17 @@ class JobUtil:
             # 각 relation에 대해 sourceElement, targetElement 복구
             for relation_id, relation in relations.items():
                 # from ID로 sourceElement 찾기
-                if hasattr(relation, 'from') and getattr(relation, 'from'):
-                    source_element = elements.get(getattr(relation, 'from'))
+                if relation['from']:
+                    source_element = elements.get(relation['from'])
                     if source_element:
-                        relation.sourceElement = source_element
+                        relation['sourceElement'] = source_element
                         restored_count += 1
                 
                 # to ID로 targetElement 찾기
-                if hasattr(relation, 'to') and getattr(relation, 'to'):
-                    target_element = elements.get(getattr(relation, 'to'))
+                if relation['to']:
+                    target_element = elements.get(relation['to'])
                     if target_element:
-                        relation.targetElement = target_element
+                        relation['targetElement'] = target_element
                         restored_count += 1
 
             return state

@@ -5,24 +5,30 @@ import os
 
 from ..models import AggregateGenerationState, State, ActionModel, EsValueModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateActionsByFunction
-from ..utils import EsActionsUtil, ESFakeActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JsonUtil, JobUtil, LogUtil
+from ..utils import EsActionsUtil, ESFakeActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
 
 def resume_from_create_aggregates(state: State):
-    if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"] and state.outputs.lastCompletedSubGraphNode:
-        if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_AGGREGATES"].values():
-            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
-            return state.outputs.lastCompletedSubGraphNode
-        else:
-            state.subgraphs.createAggregateByFunctionsModel.is_failed = True
-            LogUtil.add_error_log(state, f"[AGGREGATE_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
-            return "complete"
-    
-    LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Starting aggregate generation process")
-    return "prepare"
+    try :
 
+        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"] and state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_AGGREGATES"].values():
+                LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
+                return state.outputs.lastCompletedSubGraphNode
+            else:
+                state.subgraphs.createAggregateByFunctionsModel.is_failed = True
+                LogUtil.add_error_log(state, f"[AGGREGATE_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
+                return "complete"
+        
+        LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Starting aggregate generation process")
+        return "prepare"
+
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed during resume_from_create_aggregates", e)
+        state.subgraphs.createAggregateByFunctionsModel.is_failed = True
+        return "complete"
 
 # 노드 정의: 초안으로부터 Aggregate 생성 준비
 def prepare_aggregate_generation(state: State) -> State:
@@ -31,9 +37,11 @@ def prepare_aggregate_generation(state: State) -> State:
     - 초안 데이터 설정
     - 처리할 Aggregate 목록 초기화
     """
-    LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Starting aggregate generation preparation")
     
     try:
+
+        LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Starting aggregate generation preparation")
+
         # 이미 처리 중이면 상태 유지
         if state.subgraphs.createAggregateByFunctionsModel.is_processing:
             LogUtil.add_info_log(state, "[AGGREGATE_SUBGRAPH] Aggregate generation already in progress, maintaining state")
@@ -88,6 +96,7 @@ def select_next_aggregate(state: State) -> State:
     """
 
     try:
+        
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_AGGREGATES"]["SELECT_NEXT"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
@@ -174,8 +183,7 @@ def preprocess_aggregate_generation(state: State) -> State:
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Preprocessing failed for aggregate '{aggregate_name}'", e)
-        if state.subgraphs.createAggregateByFunctionsModel.current_generation:
-            state.subgraphs.createAggregateByFunctionsModel.current_generation.retry_count += 1
+        state.subgraphs.createAggregateByFunctionsModel.is_failed = True
     
     return state
 
@@ -426,6 +434,7 @@ def validate_aggregate_generation(state: State) -> State:
 
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Validation failed for aggregate '{aggregate_name}'", e)
+        state.subgraphs.createAggregateByFunctionsModel.is_failed = True
 
     return state
 
@@ -457,8 +466,8 @@ def complete_processing(state: State) -> State:
             subgraph_model.pending_generations = []
         
     except Exception as e:
-        state.subgraphs.createAggregateByFunctionsModel.is_failed = True
         LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed during process completion", e)
+        state.subgraphs.createAggregateByFunctionsModel.is_failed = True
     
     return state
 
@@ -467,43 +476,50 @@ def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
     """
-    # 작업 실패시에 강제로 완료 상태로 이동
-    if state.subgraphs.createAggregateByFunctionsModel.is_failed:
-        return "complete"
+    try :
 
-    # 모든 작업이 완료되었으면 완료 상태로 이동
-    if state.subgraphs.createAggregateByFunctionsModel.all_complete:
-        return "complete"
-    
-    # 현재 처리 중인 작업이 없으면 다음 작업 선택
-    if not state.subgraphs.createAggregateByFunctionsModel.current_generation:
-        return "select_next"
-    
-    current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
-    if current_gen.retry_count > state.subgraphs.createAggregateByFunctionsModel.max_retry_count:
+        # 작업 실패시에 강제로 완료 상태로 이동
+        if state.subgraphs.createAggregateByFunctionsModel.is_failed:
+            return "complete"
+
+        # 모든 작업이 완료되었으면 완료 상태로 이동
+        if state.subgraphs.createAggregateByFunctionsModel.all_complete:
+            return "complete"
+        
+        # 현재 처리 중인 작업이 없으면 다음 작업 선택
+        if not state.subgraphs.createAggregateByFunctionsModel.current_generation:
+            return "select_next"
+        
+        current_gen = state.subgraphs.createAggregateByFunctionsModel.current_generation
+        if current_gen.retry_count > state.subgraphs.createAggregateByFunctionsModel.max_retry_count:
+            state.subgraphs.createAggregateByFunctionsModel.is_failed = True
+            return "complete"
+
+        # 현재 작업이 완료되었으면 검증 단계로 이동
+        if current_gen.generation_complete:
+            return "validate"
+        
+        if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
+            if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
+                return "generate"
+            else:
+                return "es_value_summary_generator"
+        
+        # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
+        if not current_gen.summarized_es_value:
+            return "preprocess"
+        
+        # 기본적으로 생성 실행 단계로 이동
+        if not current_gen.created_actions:
+            return "generate"
+        
+        # 생성된 액션이 있으면 후처리 단계로 이동
+        return "postprocess"
+
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed during decide_next_step", e)
         state.subgraphs.createAggregateByFunctionsModel.is_failed = True
         return "complete"
-
-    # 현재 작업이 완료되었으면 검증 단계로 이동
-    if current_gen.generation_complete:
-        return "validate"
-    
-    if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
-        if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
-            return "generate"
-        else:
-            return "es_value_summary_generator"
-    
-    # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
-    if not current_gen.summarized_es_value:
-        return "preprocess"
-    
-    # 기본적으로 생성 실행 단계로 이동
-    if not current_gen.created_actions:
-        return "generate"
-    
-    # 생성된 액션이 있으면 후처리 단계로 이동
-    return "postprocess"
 
 # 서브그래프 생성 함수
 def create_aggregate_by_functions_subgraph() -> Callable:
