@@ -1,6 +1,8 @@
 import logging
 import sys
 from typing import Optional
+import traceback
+
 from ..config import Config
 
 class LoggingUtil:
@@ -78,6 +80,16 @@ class LoggingUtil:
             message = f"[{pod_id}] {message}"
         logger.error(message)
     
+    @classmethod
+    def exception(cls, logger_name: str, message: str, exception: Exception, pod_id: Optional[str] = None):
+        """예외 로그"""
+        logger = cls.get_logger(logger_name)
+        if pod_id:
+            message = f"[{pod_id}] {message} {exception} {traceback.format_exc()}"
+        else:
+            message = f"{message}, {exception}, {traceback.format_exc()}"
+        logger.error(message)
+
     @classmethod
     def monitoring(cls, logger_name: str, message: str, pod_id: Optional[str] = None):
         """모니터링 로그 (환경별 출력 제어)"""
