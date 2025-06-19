@@ -9,6 +9,7 @@ from .convert_case_util import CaseConvertUtil
 from .job_util import JobUtil
 from .log_util import LogUtil
 from .decentralized_job_manager import DecentralizedJobManager
+from .logging_util import LoggingUtil
 
 __all__ = [
     "EsUtils",
@@ -21,5 +22,6 @@ __all__ = [
     "CaseConvertUtil",
     "JobUtil",
     "LogUtil",
-    "DecentralizedJobManager"
+    "DecentralizedJobManager",
+    "LoggingUtil"
 ]
