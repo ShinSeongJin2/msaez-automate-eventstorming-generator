@@ -172,7 +172,7 @@ class DecentralizedJobManager:
             
             # 각 대기 중인 작업의 waitingJobCount 계산 및 업데이트
             for index, (job_id, job_data) in enumerate(waiting_jobs):
-                waiting_count = index  # 앞에 있는 대기 작업의 개수
+                waiting_count = index + 1  # 앞에 있는 대기 작업의 개수(대기중인 상태이기 때문에 기본적으로 1개 추가)
                 current_waiting_count = job_data.get('waitingJobCount')
                 
                 # waitingJobCount가 없거나 기존 값과 다를 경우에만 업데이트
