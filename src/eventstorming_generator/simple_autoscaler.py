@@ -171,7 +171,7 @@ class SimpleAutoScaler:
                 LoggingUtil.exception("simple_autoscaler", f"자동 스케일링 오류: {e}", e)
                 await asyncio.sleep(self.scale_check_interval)
 
-    async def get_waiting_jobs_count_async():
+    async def get_waiting_jobs_count_async(self):
         """대기 중인 작업 수를 비동기로 계산"""
         try:
             # Firebase에서 현재 작업 데이터 조회
