@@ -1,7 +1,9 @@
+import os
+
 from ..test_utils import TestUtils
 from ...generators import ESValueSummaryGenerator
 from ..mocks import es_value_summary_generator_inputs
-import os
+from ...utils import LoggingUtil
 
 def test_es_value_summary_generator():
     try:
@@ -16,7 +18,7 @@ def test_es_value_summary_generator():
         TestUtils.save_dict_to_temp_file(result, "test_es_value_summary_generator")
 
     except Exception as e:
-        print(f"테스트 실패: {str(e)}")
+        LoggingUtil.exception("test_es_value_summary_generator", f"테스트 실패", e)
         TestUtils.save_dict_to_temp_file({
             "error": str(e)
         }, "test_es_value_summary_generator_error")

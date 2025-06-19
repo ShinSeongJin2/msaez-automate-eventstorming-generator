@@ -1,7 +1,9 @@
+import os
+
 from ..test_utils import TestUtils
 from ...generators import CreateAggregateClassIdByDrafts
 from ..mocks import create_aggregate_class_id_by_drafts_inputs
-import os
+from ...utils import LoggingUtil
 
 def test_create_aggregate_class_id_by_drafts():
     try:
@@ -17,7 +19,7 @@ def test_create_aggregate_class_id_by_drafts():
         TestUtils.save_dict_to_temp_file(result, "test_create_aggregate_class_id_by_drafts")
 
     except Exception as e:
-        print(f"테스트 실패: {str(e)}")
+        LoggingUtil.exception("test_create_aggregate_class_id_by_drafts", f"테스트 실패", e)
         TestUtils.save_dict_to_temp_file({
             "error": str(e)
         }, "test_create_aggregate_class_id_by_drafts_error")

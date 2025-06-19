@@ -4,6 +4,7 @@ from typing import Optional, List, Tuple
 
 from ..systems import FirebaseSystem
 from ..config import Config
+from .logging_util import LoggingUtil
 
 class DecentralizedJobManager:
     def __init__(self, pod_id: str, job_processing_func: callable):
@@ -16,11 +17,11 @@ class DecentralizedJobManager:
 
     async def start_job_monitoring(self):
         """각 Pod가 독립적으로 작업 모니터링 - 순차 처리"""
-        print(f"[{self.pod_id}] Job 모니터링 시작 (순차 처리 모드)")
+        LoggingUtil.info("decentralized_job_manager", f"Job 모니터링 시작 (순차 처리 모드)")
         
         while True:
             try:
-                print(f"[{self.pod_id}] Job 모니터링 중...")
+                LoggingUtil.debug("decentralized_job_manager", f"Job 모니터링 중...")
 
                 requested_jobs = await FirebaseSystem.instance().get_children_data_async(Config.get_requested_job_root_path())
                 
@@ -45,7 +46,7 @@ class DecentralizedJobManager:
                 await asyncio.sleep(15)  # 15초마다 체크
                 
             except Exception as e:
-                print(f"[{self.pod_id}] 작업 모니터링 오류: {e}")
+                LoggingUtil.exception("decentralized_job_manager", f"작업 모니터링 오류", e)
                 await asyncio.sleep(15)
 
 
@@ -56,7 +57,7 @@ class DecentralizedJobManager:
                 # 태스크에서 예외가 발생했는지 확인
                 await self.current_task
             except Exception as e:
-                print(f"[{self.pod_id}] Job {self.current_job_id} 처리 중 오류: {e}")
+                LoggingUtil.exception("decentralized_job_manager", f"Job {self.current_job_id} 처리 중 오류", e)
             finally:
                 self.current_task = None
 
@@ -104,11 +105,11 @@ class DecentralizedJobManager:
             )
             
             if result is not None:
-                print(f"[{self.pod_id}] 작업 {job_id} 클레임 성공")
+                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 성공")
                 return True
             
         except Exception as e:
-            print(f"[{self.pod_id}] 작업 클레임 실패: {e}")
+            LoggingUtil.exception("decentralized_job_manager", f"작업 클레임 실패", e)
         
         return False
     
@@ -117,14 +118,14 @@ class DecentralizedJobManager:
         self.current_job_id = job_id
         self.is_processing = True
         
-        print(f"[{self.pod_id}] Job {job_id} 처리 시작")
+        LoggingUtil.debug("decentralized_job_manager", f"Job {job_id} 처리 시작")
         
         # 실제 작업 수행
         await self.execute_job_logic(job_id)
     
     async def execute_job_logic(self, job_id: str):
         """실제 Job 로직 실행 - 비동기로 백그라운드에서 실행"""
-        print(f"[{self.pod_id}] Job {job_id} 로직 실행 중...")
+        LoggingUtil.debug("decentralized_job_manager", f"Job {job_id} 로직 실행 중...")
         
         # 작업을 백그라운드 태스크로 실행하여 heartbeat가 블록되지 않도록 함
         self.current_task = asyncio.create_task(
@@ -133,7 +134,7 @@ class DecentralizedJobManager:
 
     def complete_job(self):
         """Job 완료 처리"""
-        print(f"[{self.pod_id}] Job {self.current_job_id} 처리 완료")
+        LoggingUtil.debug("decentralized_job_manager", f"Job {self.current_job_id} 처리 완료")
 
         self.current_job_id = None
         self.is_processing = False
@@ -151,7 +152,7 @@ class DecentralizedJobManager:
                 {'lastHeartbeat': time.time()}
             )
         except Exception as e:
-            print(f"[{self.pod_id}] Heartbeat 실패: {e}")
+            LoggingUtil.exception("decentralized_job_manager", f"Heartbeat 실패", e)
     
 
     async def update_waiting_job_counts(self, requested_jobs: dict):
@@ -180,10 +181,10 @@ class DecentralizedJobManager:
                         Config.get_requested_job_path(job_id),
                         {'waitingJobCount': waiting_count}
                     )
-                    print(f"[{self.pod_id}] Job {job_id} waitingJobCount 업데이트: {waiting_count}")
+                    LoggingUtil.debug("decentralized_job_manager", f"Job {job_id} waitingJobCount 업데이트: {waiting_count}")
                     
         except Exception as e:
-            print(f"[{self.pod_id}] waitingJobCount 업데이트 오류: {e}")
+            LoggingUtil.exception("decentralized_job_manager", f"waitingJobCount 업데이트 오류", e)
     
 
     async def recover_failed_jobs(self, requested_jobs: dict):
@@ -202,11 +203,10 @@ class DecentralizedJobManager:
                     current_time - last_heartbeat > 300 and
                     job_data.get('status') == 'processing'):
                     
-                    print(f"[{self.pod_id}] 실패한 작업 감지: {job_id} (Pod: {assigned_pod})")
+                    LoggingUtil.warning("decentralized_job_manager", f"실패한 작업 감지: {job_id} (Pod: {assigned_pod})")
                     await self.reset_failed_job(job_id)
-        
         except Exception as e:
-            print(f"[{self.pod_id}] 실패 작업 복구 오류: {e}")
+            LoggingUtil.exception("decentralized_job_manager", f"실패 작업 복구 오류", e)
     
     async def reset_failed_job(self, job_id: str):
         """실패한 작업 초기화"""
@@ -219,9 +219,9 @@ class DecentralizedJobManager:
                     'lastHeartbeat': None,
                 }
             )
-            print(f"[{self.pod_id}] 실패 작업 {job_id} 초기화 완료")
+            LoggingUtil.debug("decentralized_job_manager", f"실패 작업 {job_id} 초기화 완료")
         except Exception as e:
-            print(f"[{self.pod_id}] 실패 작업 초기화 오류: {e}")
+            LoggingUtil.exception("decentralized_job_manager", f"실패 작업 초기화 오류", e)
     
     
     def _sort_jobs_by_created_at(self, jobs_dict: dict) -> List[Tuple[str, dict]]:

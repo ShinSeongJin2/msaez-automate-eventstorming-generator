@@ -1,10 +1,12 @@
 import firebase_admin
 from firebase_admin import credentials, db
-from typing import Dict, Any, Optional, Callable, Union
+from typing import Dict, Any, Optional, Callable
 import os
 import asyncio
 import concurrent.futures
-from functools import partial, wraps
+from functools import partial
+
+from ..utils.logging_util import LoggingUtil
 
 class FirebaseSystem:
     _instance: Optional['FirebaseSystem'] = None
@@ -98,7 +100,7 @@ class FirebaseSystem:
         try:
             return operation_func(*args, **kwargs)
         except Exception as e:
-            print(f"{operation_name} 실패: {str(e)}")
+            LoggingUtil.exception("firebase_system", f"{operation_name} 실패", e)
             return False if operation_name.endswith(('업로드', '업데이트', '삭제', '시작', '중단')) else None
 
     async def _execute_async_with_error_handling(self, operation_name: str, sync_func: Callable, *args, **kwargs) -> Any:
@@ -121,7 +123,7 @@ class FirebaseSystem:
             )
             return result
         except Exception as e:
-            print(f"비동기 {operation_name} 실패: {str(e)}")
+            LoggingUtil.exception("firebase_system", f"비동기 {operation_name} 실패", e)
             return False if operation_name.endswith(('업로드', '업데이트', '삭제', '시작', '중단')) else None
 
     def _execute_fire_and_forget(self, async_func: Callable, *args, **kwargs) -> None:
@@ -142,7 +144,7 @@ class FirebaseSystem:
             except RuntimeError:
                 asyncio.run(async_func(*args, **kwargs))
         except Exception as e:
-            print(f"Fire and Forget 실행 실패: {str(e)}")
+            LoggingUtil.exception("firebase_system", f"Fire and Forget 실행 실패", e)
 
     def _get_firebase_reference(self, path: str = None):
         """
@@ -517,7 +519,7 @@ class FirebaseSystem:
                     else:
                         callback(data)
                 except Exception as e:
-                    print(f"콜백 함수 실행 실패: {str(e)}")
+                    LoggingUtil.exception("firebase_system", f"콜백 함수 실행 실패", e)
             
             # 리스너 등록
             ref.listen(listener)
@@ -560,7 +562,7 @@ class FirebaseSystem:
                 del self._listeners[path]
                 return True
             else:
-                print(f"경로 '{path}'에 대한 활성 리스너가 없습니다.")
+                LoggingUtil.warning("firebase_system", f"경로 '{path}'에 대한 활성 리스너가 없습니다.")
                 return False
 
         return self._execute_with_error_handling("데이터 감시 중단", _unwatch_operation)

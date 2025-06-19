@@ -1,11 +1,14 @@
 import json
 
+from .logging_util import LoggingUtil
+
 class JsonUtil:
     @staticmethod
     def convert_to_json(data: any, indent: int = 4) -> str:
         # 데이터 변환 함수
         def convert_data(item):
             try :
+                
                 if hasattr(item, 'model_dump_json'):
                     return json.loads(item.model_dump_json())
                 elif isinstance(item, dict):
@@ -14,8 +17,9 @@ class JsonUtil:
                     return [convert_data(i) for i in item]
                 else:
                     return item if isinstance(item, (str, int, float, bool, type(None))) else str(item)
+                
             except Exception as e:
-                print(f"Error converting to json: {e}")
+                LoggingUtil.exception("json_util", f"Error converting to json", e)
                 return item
         
         # 데이터 타입에 따른 처리
@@ -37,11 +41,17 @@ class JsonUtil:
 
     @staticmethod
     def convert_to_dict(json_str: str) -> dict:
-        if "```json" in json_str:
-            import re
-            match = re.search(r'```json\s*([\s\S]*?)\s*```', json_str)
-            if match:
-                json_str = match.group(1).strip()
+        try :
+
+            if "```json" in json_str:
+                import re
+                match = re.search(r'```json\s*([\s\S]*?)\s*```', json_str)
+                if match:
+                    json_str = match.group(1).strip()
+            
+            return json.loads(json_str)
         
-        return json.loads(json_str)
+        except Exception as e:
+            LoggingUtil.exception("json_util", f"Error converting to dict", e)
+            return {}
 

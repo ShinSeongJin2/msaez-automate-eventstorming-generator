@@ -2,6 +2,7 @@ from ...models import EsValueModel
 from ...utils import EsActionsUtil, EsAliasTransManager
 from ..mocks import actionsCollection, user_info, information
 from ..test_utils import TestUtils
+from ...utils import LoggingUtil
 
 def test_es_value_creation():
     try:
@@ -18,7 +19,7 @@ def test_es_value_creation():
         TestUtils.save_es_summarize_result_to_temp_file(result, "test_es_value_creation")
 
     except Exception as e:
-        print(f"테스트 실패: {str(e)}")
+        LoggingUtil.exception("test_es_value_creation", f"테스트 실패", e)
         TestUtils.save_dict_to_temp_file({
             "error": str(e),
             "actions": actions,

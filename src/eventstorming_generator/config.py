@@ -56,3 +56,12 @@ class Config:
     @staticmethod
     def autoscaler_target_jobs_per_pod() -> int:
         return int(os.getenv('AUTO_SCALE_TARGET_JOBS_PER_POD', '1'))
+    
+
+    @staticmethod
+    def get_log_level() -> str:
+        """환경별 로그 레벨 반환 (DEBUG, INFO, WARNING, ERROR)"""
+        if Config.is_local_run():
+            return os.getenv('LOG_LEVEL', 'DEBUG')  # 로컬에서는 DEBUG 기본
+        else:
+            return os.getenv('LOG_LEVEL', 'INFO')   # Pod에서는 INFO 기본

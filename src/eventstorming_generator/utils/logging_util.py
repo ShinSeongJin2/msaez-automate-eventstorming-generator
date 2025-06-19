@@ -89,9 +89,3 @@ class LoggingUtil:
         else:
             message = f"{message}, {exception}, {traceback.format_exc()}"
         logger.error(message)
-
-    @classmethod
-    def monitoring(cls, logger_name: str, message: str, pod_id: Optional[str] = None):
-        """모니터링 로그 (환경별 출력 제어)"""
-        if Config.should_log_monitoring():
-            cls.debug(logger_name, message, pod_id)

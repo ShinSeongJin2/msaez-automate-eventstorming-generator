@@ -1,18 +1,16 @@
 import re
 import threading
-from typing import Callable
-import asyncio
 import queue
 import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 import atexit
-import traceback
 
 from ..systems.firebase_system import FirebaseSystem
 from ..models import State
 from ..utils import JsonUtil
 from ..config import Config
+from .logging_util import LoggingUtil
 
 @dataclass
 class UpdateRequest:
@@ -132,7 +130,7 @@ class JobUtil:
                 worker_thread.start()
                 JobUtil._worker_threads[job_id] = worker_thread
                 
-                print(f"[Job Queue] Job ID {job_id}에 대한 업데이트 큐 및 작업자 스레드 생성됨")
+                LoggingUtil.debug("job_util", f"[Job Queue] Job ID {job_id}에 대한 업데이트 큐 및 작업자 스레드 생성됨")
 
     @staticmethod
     def _update_worker(job_id: str):
@@ -142,7 +140,7 @@ class JobUtil:
         Args:
             job_id (str): 처리할 Job ID
         """
-        print(f"[Job Worker] Job ID {job_id} 업데이트 작업자 스레드 시작")
+        LoggingUtil.debug("job_util", f"[Job Worker] Job ID {job_id} 업데이트 작업자 스레드 시작")
         
         update_queue = JobUtil._update_queues[job_id]
         shutdown_event = JobUtil._shutdown_events[job_id]
@@ -156,7 +154,7 @@ class JobUtil:
                     update_request = update_queue.get(timeout=1.0)
                     
                     if update_request is None:  # 종료 신호
-                        print(f"[Job Worker] Job ID {job_id} 종료 신호 수신")
+                        LoggingUtil.debug("job_util", f"[Job Worker] Job ID {job_id} 종료 신호 수신")
                         break
                     
                     # Firebase 업데이트 실행
@@ -173,7 +171,7 @@ class JobUtil:
                             # 마지막으로 0.1초 더 기다려서 혹시 남은 요청이 있는지 확인
                             update_request = update_queue.get(timeout=0.1)
                             if update_request is None:
-                                print(f"[Job Worker] Job ID {job_id} 최종 종료 신호 수신")
+                                LoggingUtil.debug("job_util", f"[Job Worker] Job ID {job_id} 최종 종료 신호 수신")
                                 break
                             
                             # 마지막 요청 처리
@@ -183,19 +181,19 @@ class JobUtil:
                             
                         except queue.Empty:
                             # 정말로 큐가 비어있음 - 종료
-                            print(f"[Job Worker] Job ID {job_id} 큐 비어있음 확인, 종료")
+                            LoggingUtil.debug("job_util", f"[Job Worker] Job ID {job_id} 큐 비어있음 확인, 종료")
                             break
                     # shutdown_event가 설정되지 않았으면 계속 대기
                     continue
                     
                 except Exception as e:
-                    print(f"[Job Worker Error] Job ID {job_id} 업데이트 처리 중 오류: {str(e)}")
+                    LoggingUtil.exception("job_util", f"[Job Worker Error] Job ID {job_id} 업데이트 처리 중 오류", e)
                     
         except Exception as e:
-            print(f"[Job Worker Fatal] Job ID {job_id} 작업자 스레드 치명적 오류: {str(e)}")
+            LoggingUtil.exception("job_util", f"[Job Worker Fatal] Job ID {job_id} 작업자 스레드 치명적 오류", e)
         
         finally:
-            print(f"[Job Worker] Job ID {job_id} 업데이트 작업자 스레드 종료 (처리된 요청: {processed_count}개)")
+            LoggingUtil.debug("job_util", f"[Job Worker] Job ID {job_id} 업데이트 작업자 스레드 종료 (처리된 요청: {processed_count}개)")
 
     @staticmethod
     def _execute_firebase_update(update_request: UpdateRequest):
@@ -241,12 +239,9 @@ class JobUtil:
         
             elif update_request.operation_type == "delete":
                 firebase_system.delete_data(path)
-            
-            # 성공 로그는 상세 디버깅이 필요한 경우에만 출력
-            # print(f"[Firebase Update] Job ID {job_id} {update_request.operation_type} 성공")
-            
+
         except Exception as e:
-            print(f"[Firebase Update Error] Job ID {update_request.state.inputs.jobId} 업데이트 실행 실패: {str(e)}")
+            LoggingUtil.exception("job_util", f"[Firebase Update Error] Job ID {update_request.state.inputs.jobId} 업데이트 실행 실패", e)
 
     @staticmethod
     def _add_update_to_queue(state: State, operation_type: str, path_suffix: Optional[str] = None):
@@ -261,13 +256,13 @@ class JobUtil:
         job_id = state.inputs.jobId
         
         if not JobUtil.is_valid_job_id(job_id):
-            print(f"[Job Queue Error] 유효하지 않은 Job ID: {job_id}")
+            LoggingUtil.warning("job_util", f"[Job Queue Error] 유효하지 않은 Job ID: {job_id}")
             return
         
         # 이미 종료 신호가 설정된 Job에 대해서는 업데이트 요청 거부
         with JobUtil._queue_lock:
             if job_id in JobUtil._shutdown_events and JobUtil._shutdown_events[job_id].is_set():
-                print(f"[Job Queue Warning] Job ID {job_id}는 이미 종료 중입니다 - 업데이트 요청 무시됨")
+                LoggingUtil.warning("job_util", f"[Job Queue Warning] Job ID {job_id}는 이미 종료 중입니다 - 업데이트 요청 무시됨")
                 return
         
         # 작업자가 없으면 생성
@@ -285,11 +280,11 @@ class JobUtil:
         try:
             JobUtil._update_queues[job_id].put(update_request, timeout=2.0)
         except queue.Full:
-            print(f"[Job Queue Warning] Job ID {job_id} 큐가 가득참 - 업데이트 요청 무시됨")
+            LoggingUtil.warning("job_util", f"[Job Queue Warning] Job ID {job_id} 큐가 가득참 - 업데이트 요청 무시됨")
         except KeyError:
-            print(f"[Job Queue Error] Job ID {job_id} 큐가 존재하지 않음")
+            LoggingUtil.warning("job_util", f"[Job Queue Error] Job ID {job_id} 큐가 존재하지 않음")
         except Exception as e:
-            print(f"[Job Queue Error] 큐 추가 실패: {str(e)}")
+            LoggingUtil.warning("job_util", f"[Job Queue Error] 큐 추가 실패: {str(e)}")
 
     @staticmethod
     def get_queue_status(job_id: str) -> Dict[str, any]:
@@ -332,7 +327,7 @@ class JobUtil:
         """
         with JobUtil._queue_lock:
             if job_id in JobUtil._shutdown_events:
-                print(f"[Job Cleanup] Job ID {job_id} 리소스 정리 시작")
+                LoggingUtil.debug("job_util", f"[Job Cleanup] Job ID {job_id} 리소스 정리 시작")
                 
                 # 1단계: 새로운 요청 추가 방지 (아직 종료 신호는 보내지 않음)
                 if job_id in JobUtil._update_queues:
@@ -343,41 +338,41 @@ class JobUtil:
                 
                 # 2단계: 종료 신호 설정
                 JobUtil._shutdown_events[job_id].set()
-                print(f"[Job Cleanup] Job ID {job_id} 종료 신호 설정")
+                LoggingUtil.debug("job_util", f"[Job Cleanup] Job ID {job_id} 종료 신호 설정")
                 
                 # 3단계: 종료 신호(None)를 큐에 추가
                 if job_id in JobUtil._update_queues:
                     try:
                         JobUtil._update_queues[job_id].put(None, timeout=1.0)
-                        print(f"[Job Cleanup] Job ID {job_id} 최종 종료 신호 전송")
+                        LoggingUtil.debug("job_util", f"[Job Cleanup] Job ID {job_id} 최종 종료 신호 전송")
                     except queue.Full:
-                        print(f"[Job Cleanup Warning] Job ID {job_id} 큐가 가득참 - 강제 종료")
+                        LoggingUtil.warning("job_util", f"[Job Cleanup Warning] Job ID {job_id} 큐가 가득참 - 강제 종료")
                     except Exception as e:
-                        print(f"[Job Cleanup Error] Job ID {job_id} 종료 신호 전송 실패: {str(e)}")
+                        LoggingUtil.exception("job_util", f"[Job Cleanup Error] Job ID {job_id} 종료 신호 전송 실패", e)
                 
                 # 4단계: 스레드 종료 대기
                 if job_id in JobUtil._worker_threads:
                     worker_thread = JobUtil._worker_threads[job_id]
-                    print(f"[Job Cleanup] Job ID {job_id} 작업자 스레드 종료 대기...")
+                    LoggingUtil.debug("job_util", f"[Job Cleanup] Job ID {job_id} 작업자 스레드 종료 대기...")
                     worker_thread.join(timeout=JobUtil.WORKER_TIMEOUT)
                     if worker_thread.is_alive():
-                        print(f"[Job Cleanup Warning] Job ID {job_id} 작업자 스레드가 {JobUtil.WORKER_TIMEOUT}초 내에 종료되지 않음")
+                        LoggingUtil.warning("job_util", f"[Job Cleanup Warning] Job ID {job_id} 작업자 스레드가 {JobUtil.WORKER_TIMEOUT}초 내에 종료되지 않음")
                     else:
-                        print(f"[Job Cleanup] Job ID {job_id} 작업자 스레드 정상 종료")
+                        LoggingUtil.debug("job_util", f"[Job Cleanup] Job ID {job_id} 작업자 스레드 정상 종료")
                 
                 # 5단계: 리소스 정리
                 JobUtil._update_queues.pop(job_id, None)
                 JobUtil._worker_threads.pop(job_id, None)
                 JobUtil._shutdown_events.pop(job_id, None)
                 
-                print(f"[Job Cleanup] Job ID {job_id} 리소스 정리 완료")
+                LoggingUtil.debug("job_util", f"[Job Cleanup] Job ID {job_id} 리소스 정리 완료")
 
     @staticmethod
     def cleanup_all_job_resources():
         """
         모든 Job의 리소스 정리
         """
-        print("[Job Cleanup] 모든 Job 리소스 정리 시작")
+        LoggingUtil.debug("job_util", "[Job Cleanup] 모든 Job 리소스 정리 시작")
         
         with JobUtil._queue_lock:
             job_ids = list(JobUtil._shutdown_events.keys())
@@ -386,9 +381,9 @@ class JobUtil:
             try:
                 JobUtil.cleanup_job_resources(job_id)
             except Exception as e:
-                print(f"[Job Cleanup Error] Job ID {job_id} 정리 중 오류: {str(e)}")
+                LoggingUtil.exception("job_util", f"[Job Cleanup Error] Job ID {job_id} 정리 중 오류", e)
         
-        print("[Job Cleanup] 모든 Job 리소스 정리 완료")
+        LoggingUtil.debug("job_util", "[Job Cleanup] 모든 Job 리소스 정리 완료")
 
     @staticmethod
     def get_all_job_status() -> Dict[str, Dict[str, any]]:
@@ -510,7 +505,7 @@ class JobUtil:
             return state
         
         except Exception as e:
-            print(f"[State Optimization Error] delete_element_ref_from_state 실행 중 오류: {str(e)} {traceback.format_exc()}")
+            LoggingUtil.exception("job_util", f"[State Optimization Error] delete_element_ref_from_state 실행 중 오류", e)
             return state
 
     @staticmethod
@@ -559,5 +554,5 @@ class JobUtil:
             return state
         
         except Exception as e:
-            print(f"[State Restoration Error] add_element_ref_to_state 실행 중 오류: {str(e)} {traceback.format_exc()}")
+            LoggingUtil.exception("job_util", f"[State Restoration Error] add_element_ref_to_state 실행 중 오류", e)
             return state

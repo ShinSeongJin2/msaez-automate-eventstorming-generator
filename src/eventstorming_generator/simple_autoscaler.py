@@ -1,12 +1,11 @@
 import asyncio
 import time
 import os
-import requests
-import json
 from kubernetes import client, config
-from typing import Optional
-from .config import Config
 
+from .systems import FirebaseSystem
+from .config import Config
+from .utils.logging_util import LoggingUtil
 class SimpleAutoScaler:
     def __init__(self):
         self.namespace = Config.autoscaler_namespace()
@@ -31,19 +30,6 @@ class SimpleAutoScaler:
         
         self.apps_v1 = client.AppsV1Api()
         self.core_v1 = client.CoreV1Api()
-        
-    async def get_waiting_jobs_count(self) -> int:
-        """로컬 메트릭 엔드포인트에서 대기 작업 수 조회"""
-        try:
-            response = requests.get("http://localhost:2024/metrics/waiting-jobs", timeout=10)
-            if response.status_code == 200:
-                content = response.text.strip()
-                if "waiting_jobs_count" in content:
-                    return int(content.split()[1])
-            return 0
-        except Exception as e:
-            print(f"[AutoScaler] 대기 작업 수 조회 실패: {e}")
-            return 0
     
     def get_current_replicas(self) -> int:
         """현재 Deployment의 replicas 수 조회"""
@@ -54,7 +40,7 @@ class SimpleAutoScaler:
             )
             return deployment.spec.replicas
         except Exception as e:
-            print(f"[AutoScaler] 현재 replicas 조회 실패: {e}")
+            LoggingUtil.exception("simple_autoscaler", f"현재 replicas 조회 실패: {e}", e)
             return 1
     
     def set_replicas(self, target_replicas: int) -> bool:
@@ -76,11 +62,11 @@ class SimpleAutoScaler:
                 body=deployment
             )
             
-            print(f"[AutoScaler] Deployment replicas를 {target_replicas}개로 변경")
+            LoggingUtil.debug("simple_autoscaler", f"Deployment replicas를 {target_replicas}개로 변경")
             return True
             
         except Exception as e:
-            print(f"[AutoScaler] replicas 변경 실패: {e}")
+            LoggingUtil.exception("simple_autoscaler", f"replicas 변경 실패: {e}", e)
             return False
     
     def calculate_desired_replicas(self, waiting_jobs: int) -> int:
@@ -105,13 +91,13 @@ class SimpleAutoScaler:
         # 스케일 업의 경우
         if desired_replicas > current_replicas:
             if self.last_scale_action == 'up' and time_since_last_scale < self.scale_up_cooldown:
-                print(f"[AutoScaler] 스케일 업 쿨다운 중 (남은 시간: {self.scale_up_cooldown - time_since_last_scale:.0f}초)")
+                LoggingUtil.debug("simple_autoscaler", f"스케일 업 쿨다운 중 (남은 시간: {self.scale_up_cooldown - time_since_last_scale:.0f}초)")
                 return False
         
         # 스케일 다운의 경우
         elif desired_replicas < current_replicas:
             if self.last_scale_action == 'down' and time_since_last_scale < self.scale_down_cooldown:
-                print(f"[AutoScaler] 스케일 다운 쿨다운 중 (남은 시간: {self.scale_down_cooldown - time_since_last_scale:.0f}초)")
+                LoggingUtil.debug("simple_autoscaler", f"스케일 다운 쿨다운 중 (남은 시간: {self.scale_down_cooldown - time_since_last_scale:.0f}초)")
                 return False
         
         return True
@@ -136,17 +122,17 @@ class SimpleAutoScaler:
             
             is_leader = pod_name == leader_pod_name
             if is_leader:
-                print(f"[AutoScaler] 현재 Pod({pod_name})가 리더입니다")
+                LoggingUtil.debug("simple_autoscaler", f"현재 Pod({pod_name})가 리더입니다")
             
             return is_leader
             
         except Exception as e:
-            print(f"[AutoScaler] 리더 확인 실패: {e}")
+            LoggingUtil.exception("simple_autoscaler", f"리더 확인 실패: {e}", e)
             return False
     
     async def run_autoscaling_loop(self):
         """자동 스케일링 메인 루프"""
-        print("[AutoScaler] 자동 스케일링 시작")
+        LoggingUtil.info("simple_autoscaler", "자동 스케일링 시작")
         
         while True:
             try:
@@ -156,7 +142,7 @@ class SimpleAutoScaler:
                     continue
                 
                 # 대기 작업 수 조회
-                waiting_jobs = await self.get_waiting_jobs_count()
+                waiting_jobs = await self.get_waiting_jobs_count_async()
                 
                 # 현재 replicas 수 조회
                 current_replicas = self.get_current_replicas()
@@ -164,7 +150,7 @@ class SimpleAutoScaler:
                 # 목표 replicas 계산
                 desired_replicas = self.calculate_desired_replicas(waiting_jobs)
                 
-                print(f"[AutoScaler] 대기 작업: {waiting_jobs}개, 현재 Pod: {current_replicas}개, 목표 Pod: {desired_replicas}개")
+                LoggingUtil.debug("simple_autoscaler", f"대기 작업: {waiting_jobs}개, 현재 Pod: {current_replicas}개, 목표 Pod: {desired_replicas}개")
                 
                 # 스케일링 필요성 확인
                 if self.should_scale(current_replicas, desired_replicas):
@@ -173,17 +159,41 @@ class SimpleAutoScaler:
                     if success:
                         self.last_scale_time = time.time()
                         self.last_scale_action = 'up' if desired_replicas > current_replicas else 'down'
-                        print(f"[AutoScaler] 스케일링 완료: {current_replicas} -> {desired_replicas}")
+                        LoggingUtil.debug("simple_autoscaler", f"스케일링 완료: {current_replicas} -> {desired_replicas}")
                     else:
-                        print(f"[AutoScaler] 스케일링 실패")
+                        LoggingUtil.warning("simple_autoscaler", f"스케일링 실패")
                 else:
-                    print(f"[AutoScaler] 스케일링 불필요 또는 쿨다운 중")
+                    LoggingUtil.debug("simple_autoscaler", f"스케일링 불필요 또는 쿨다운 중")
                 
                 await asyncio.sleep(self.scale_check_interval)
                 
             except Exception as e:
-                print(f"[AutoScaler] 자동 스케일링 오류: {e}")
+                LoggingUtil.exception("simple_autoscaler", f"자동 스케일링 오류: {e}", e)
                 await asyncio.sleep(self.scale_check_interval)
+
+    async def get_waiting_jobs_count_async():
+        """대기 중인 작업 수를 비동기로 계산"""
+        try:
+            # Firebase에서 현재 작업 데이터 조회
+            requested_jobs = await FirebaseSystem.instance().get_children_data_async(
+                Config.get_requested_job_root_path()
+            )
+            
+            if not requested_jobs:
+                return 0
+            
+            # DecentralizedJobManager와 동일한 로직으로 대기 작업 계산
+            waiting_count = 0
+            for job_id, job_data in requested_jobs.items():
+                # assignedPodId가 없는 작업들이 대기 중인 작업
+                if job_data.get('assignedPodId') is None:
+                    waiting_count += 1
+            
+            return waiting_count
+            
+        except Exception as e:
+            LoggingUtil.exception("simple_autoscaler", "대기 작업 수 계산 오류", e)
+            return 0
 
 # 전역 AutoScaler 인스턴스
 autoscaler = SimpleAutoScaler()
