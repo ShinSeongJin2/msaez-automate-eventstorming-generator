@@ -1,7 +1,6 @@
 import asyncio
 import concurrent.futures
 import threading
-import traceback
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -16,25 +15,53 @@ from eventstorming_generator.utils.logging_util import LoggingUtil
 
 async def main():
     """메인 함수 - Flask 서버, Job 모니터링, 자동 스케일러 동시 시작"""
-
-    flask_thread = threading.Thread(target=run_healcheck_server, daemon=True)
-    flask_thread.start()
-
-    LoggingUtil.info("main", "Flask 서버가 포트 2024에서 시작되었습니다.")
-    LoggingUtil.info("main", "헬스체크 엔드포인트: http://localhost:2024/ok")
-
-    pod_id = Config.get_pod_id()
-    job_manager = DecentralizedJobManager(pod_id, process_job_async)
     
-    tasks = []
-    if Config.is_local_run():
-        tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
-        LoggingUtil.info("main", "작업 모니터링이 시작되었습니다.")
-    else:
-        tasks.append(asyncio.create_task(start_autoscaler()))
-        tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
-        LoggingUtil.info("main", "자동 스케일러 및 작업 모니터링이 시작되었습니다.")
-    await asyncio.wait(tasks)
+    flask_thread = None
+    restart_count = 0
+    
+    while True:
+        tasks = []
+        try:
+            # Flask 서버 시작 (첫 실행시에만)
+            if flask_thread is None:
+                flask_thread = threading.Thread(target=run_healcheck_server, daemon=True)
+                flask_thread.start()
+                LoggingUtil.info("main", "Flask 서버가 포트 2024에서 시작되었습니다.")
+                LoggingUtil.info("main", "헬스체크 엔드포인트: http://localhost:2024/ok")
+
+            if restart_count > 0:
+                LoggingUtil.info("main", f"메인 함수 재시작 중... (재시작 횟수: {restart_count})")
+
+            pod_id = Config.get_pod_id()
+            job_manager = DecentralizedJobManager(pod_id, process_job_async)
+            
+            if Config.is_local_run():
+                tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
+                LoggingUtil.info("main", "작업 모니터링이 시작되었습니다.")
+            else:
+                tasks.append(asyncio.create_task(start_autoscaler()))
+                tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
+                LoggingUtil.info("main", "자동 스케일러 및 작업 모니터링이 시작되었습니다.")
+            
+            await asyncio.wait(tasks)
+            
+        except Exception as e:
+            restart_count += 1
+            LoggingUtil.exception("main", f"메인 함수에서 예외 발생 (재시작 횟수: {restart_count})", e)
+            
+            # 실행 중인 태스크들 정리
+            for task in tasks:
+                if not task.done():
+                    LoggingUtil.debug("main", f"태스크 취소 중: {task}")
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        LoggingUtil.debug("main", "태스크가 정상적으로 취소되었습니다.")
+                    except Exception as cleanup_error:
+                        LoggingUtil.exception("main", "태스크 정리 중 예외 발생", cleanup_error)
+
+            continue
 
 async def process_job_async(job_id: str, complete_job_func: callable):
     """비동기 Job 처리 함수"""
