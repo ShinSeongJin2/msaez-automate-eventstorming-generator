@@ -286,14 +286,14 @@ class FirebaseSystem:
         """
         def _conditional_update_operation():
             # 데이터 차이점 찾기
-            updates = self._find_data_differences(data_to_update, previous_data)
+            sanitized_updates = self._find_data_differences(
+                self.sanitize_data_for_firebase(data_to_update), 
+                self.sanitize_data_for_firebase(previous_data)
+            )
             
             # 변경사항이 없으면 업데이트하지 않음
-            if not updates:
+            if not sanitized_updates:
                 return True
-            
-            # Firebase 업데이트용 데이터 정리
-            sanitized_updates = self._prepare_data_for_firebase(updates)
             
             # 기본 경로를 기준으로 업데이트 경로 조정
             final_updates = {}
@@ -638,11 +638,11 @@ class FirebaseSystem:
         """
         def process_value(value):
             if value is None:
-                return ""  # null → 빈 문자열
+                return "@"  # null → 빈 문자열
             elif isinstance(value, list) and len(value) == 0:
-                return ["__EMPTY_ARRAY__"]  # 빈 배열 → 마커가 포함된 배열
+                return ["@"]  # 빈 배열 → 마커가 포함된 배열
             elif isinstance(value, dict) and len(value) == 0:
-                return {"__EMPTY_OBJECT__": True}  # 빈 객체 → 마커 객체
+                return {"@": True}  # 빈 객체 → 마커 객체
             elif isinstance(value, dict):
                 return {k: process_value(v) for k, v in value.items()}
             elif isinstance(value, list):
@@ -663,11 +663,11 @@ class FirebaseSystem:
             Dict[str, Any]: 복원된 데이터
         """
         def process_value(value):
-            if value == "":
+            if value == "@":
                 return None  # 빈 문자열 → null
-            elif isinstance(value, list) and value == ["__EMPTY_ARRAY__"]:
+            elif isinstance(value, list) and value == ["@"]:
                 return []  # 마커 → 빈 배열
-            elif isinstance(value, dict) and value == {"__EMPTY_OBJECT__": True}:
+            elif isinstance(value, dict) and value == {"@": True}:
                 return {}  # 마커 객체 → 빈 객체
             elif isinstance(value, dict):
                 return {k: process_value(v) for k, v in value.items()}

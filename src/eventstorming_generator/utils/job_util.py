@@ -15,7 +15,7 @@ from .logging_util import LoggingUtil
 @dataclass
 class UpdateRequest:
     """Firebase 업데이트 요청 데이터 클래스"""
-    state: State
+    state: Dict[str, any]
     timestamp: float
     operation_type: str  # 'update', 'set', 'delete'
     path_suffix: Optional[str] = None  # 추가 경로가 필요한 경우
@@ -205,7 +205,7 @@ class JobUtil:
         """
         try:
             firebase_system = FirebaseSystem.instance()
-            job_id = update_request.state.inputs.jobId
+            job_id = update_request.state["inputs"]["jobId"]
             
             # 기본 경로 구성
             base_path = Config.get_job_path(job_id)
@@ -216,11 +216,7 @@ class JobUtil:
             
             # 업데이트 데이터 준비
             data = {
-                "state": JobUtil.delete_element_ref_from_state(
-                    JsonUtil.convert_to_dict(JsonUtil.convert_to_json(
-                        update_request.state
-                    ))
-                ),
+                "state": update_request.state,
                 "lastUpdated": update_request.timestamp
             }
             
@@ -241,19 +237,19 @@ class JobUtil:
                 firebase_system.delete_data(path)
 
         except Exception as e:
-            LoggingUtil.exception("job_util", f"[Firebase Update Error] Job ID {update_request.state.inputs.jobId} 업데이트 실행 실패", e)
+            LoggingUtil.exception("job_util", f"[Firebase Update Error] Job ID {update_request.state['inputs']['jobId']} 업데이트 실행 실패", e)
 
     @staticmethod
-    def _add_update_to_queue(state: State, operation_type: str, path_suffix: Optional[str] = None):
+    def _add_update_to_queue(state: Dict[str, any], operation_type: str, path_suffix: Optional[str] = None):
         """
         업데이트 요청을 큐에 추가
         
         Args:
-            state (State): 상태 객체
+            state (Dict[str, any]): 상태 딕셔너리
             operation_type (str): 업데이트 타입 ('set', 'update', 'delete')
             path_suffix (str, optional): 추가 경로
         """
-        job_id = state.inputs.jobId
+        job_id = state["inputs"]["jobId"]
         
         if not JobUtil.is_valid_job_id(job_id):
             LoggingUtil.warning("job_util", f"[Job Queue Error] 유효하지 않은 Job ID: {job_id}")
@@ -285,36 +281,6 @@ class JobUtil:
             LoggingUtil.warning("job_util", f"[Job Queue Error] Job ID {job_id} 큐가 존재하지 않음")
         except Exception as e:
             LoggingUtil.warning("job_util", f"[Job Queue Error] 큐 추가 실패: {str(e)}")
-
-    @staticmethod
-    def get_queue_status(job_id: str) -> Dict[str, any]:
-        """
-        특정 Job의 큐 상태 조회
-        
-        Args:
-            job_id (str): Job ID
-            
-        Returns:
-            Dict[str, any]: 큐 상태 정보
-        """
-        with JobUtil._queue_lock:
-            status = {
-                "exists": job_id in JobUtil._update_queues,
-                "queue_size": 0,
-                "worker_alive": False,
-                "shutdown_requested": False
-            }
-            
-            if job_id in JobUtil._update_queues:
-                status["queue_size"] = JobUtil._update_queues[job_id].qsize()
-            
-            if job_id in JobUtil._worker_threads:
-                status["worker_alive"] = JobUtil._worker_threads[job_id].is_alive()
-            
-            if job_id in JobUtil._shutdown_events:
-                status["shutdown_requested"] = JobUtil._shutdown_events[job_id].is_set()
-            
-            return status
 
     @staticmethod
     def cleanup_job_resources(job_id: str):
@@ -385,46 +351,7 @@ class JobUtil:
         
         LoggingUtil.debug("job_util", "[Job Cleanup] 모든 Job 리소스 정리 완료")
 
-    @staticmethod
-    def get_all_job_status() -> Dict[str, Dict[str, any]]:
-        """
-        모든 활성 Job의 상태 조회
-        
-        Returns:
-            Dict[str, Dict[str, any]]: 모든 Job의 상태 정보
-        """
-        with JobUtil._queue_lock:
-            job_ids = list(JobUtil._update_queues.keys())
-        
-        return {job_id: JobUtil.get_queue_status(job_id) for job_id in job_ids}
 
-    @staticmethod
-    def new_job_to_firebase(state: State):
-        FirebaseSystem.instance().set_data(
-            Config.get_job_path(state.inputs.jobId),
-            {
-                "state": JsonUtil.convert_to_json(state)
-            }
-        )
-
-    @staticmethod
-    async def new_job_to_firebase_async(state: State) -> bool:
-        """
-        새로운 작업을 Firebase에 비동기로 업로드
-        
-        Args:
-            state (State): 업로드할 상태 객체
-            
-        Returns:
-            bool: 성공 여부
-        """
-        return await FirebaseSystem.instance().set_data_async(
-            Config.get_job_path(state.inputs.jobId),
-            {
-                "state": JsonUtil.convert_to_json(state)
-            }
-        )
-    
     @staticmethod
     def new_job_to_firebase_fire_and_forget(state: State):
         """
@@ -433,35 +360,8 @@ class JobUtil:
         Args:
             state (State): 업로드할 상태 객체
         """
-        JobUtil._add_update_to_queue(state, "set")
+        JobUtil._add_update_to_queue(JobUtil.convert_state_to_firebase_data(state), "set")
 
-    @staticmethod
-    def update_job_to_firebase(state: State):
-        FirebaseSystem.instance().update_data(
-            Config.get_job_path(state.inputs.jobId),
-            {
-                "state": JsonUtil.convert_to_json(state)
-            }
-        )
-
-    @staticmethod
-    async def update_job_to_firebase_async(state: State) -> bool:
-        """
-        작업 상태를 Firebase에 비동기로 업데이트
-        
-        Args:
-            state (State): 업데이트할 상태 객체
-            
-        Returns:
-            bool: 성공 여부
-        """
-        return await FirebaseSystem.instance().update_data_async(
-            Config.get_job_path(state.inputs.jobId),
-            {
-                "state": JsonUtil.convert_to_json(state)
-            }
-        )
-    
     @staticmethod
     def update_job_to_firebase_fire_and_forget(state: State):
         """
@@ -470,8 +370,18 @@ class JobUtil:
         Args:
             state (State): 업데이트할 상태 객체
         """
-        JobUtil._add_update_to_queue(state, "update")
+        JobUtil._add_update_to_queue(JobUtil.convert_state_to_firebase_data(state), "update")
     
+
+    @staticmethod
+    def convert_state_to_firebase_data(state: State):
+        """
+        상태 객체를 Firebase에 업로드 가능한 객체 데이터로 변환 및 복제
+        """
+        return JobUtil.delete_element_ref_from_state(
+            JsonUtil.convert_to_dict(JsonUtil.convert_to_json(state))
+        )
+
     @staticmethod
     def delete_element_ref_from_state(state):
         """
