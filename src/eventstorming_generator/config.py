@@ -20,6 +20,15 @@ class Config:
 
 
     @staticmethod
+    def get_job_state_root_path() -> str:
+        return f"jobStates/{Config.get_namespace()}"
+    
+    @staticmethod
+    def get_job_state_path(job_id: str) -> str:
+        return f"{Config.get_job_state_root_path()}/{job_id}"
+
+
+    @staticmethod
     def get_namespace() -> str:
         return os.getenv('NAMESPACE')
 

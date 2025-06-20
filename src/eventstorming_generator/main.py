@@ -117,11 +117,23 @@ async def process_job_async(job_id: str, complete_job_func: callable):
         # 동기 함수를 스레드에서 실행
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            await loop.run_in_executor(
+            # 작업 실행을 태스크로 래핑하여 취소 가능하게 만듦
+            graph_task = loop.run_in_executor(
                 executor, 
                 lambda: graph.invoke(state, {"recursion_limit": 2147483647})
             )
+            
+            # 작업 완료 대기 (취소 가능)
+            await graph_task
+            
         LoggingUtil.debug("main", f"Job 완료: {job_id}")
+        
+    except asyncio.CancelledError:
+        # 작업이 취소된 경우 (삭제 요청 등)
+        LoggingUtil.info("main", f"Job {job_id} 취소됨 (삭제 요청 또는 shutdown)")
+        
+        # 취소된 경우에는 complete_job_func를 호출하지 않음 (DecentralizedJobManager에서 처리)
+        return
         
     except Exception as e:
         LoggingUtil.exception("main", f"Job 처리 오류: {job_id}", e)
@@ -137,11 +149,16 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             LoggingUtil.debug("main", f"Job 정리: {job_id} 리소스 정리 중...")
             JobUtil.cleanup_job_resources(job_id)
             
-            job_request_path = Config.get_requested_job_path(job_id)
-            FirebaseSystem.instance().delete_data_fire_and_forget(job_request_path)
-
-            LoggingUtil.debug("main", f"Job 정리 완료: {job_id}")
-            complete_job_func()
+            # 정상 완료된 경우에만 requestedJob 삭제 및 complete_job_func 호출
+            # 취소된 경우에는 DecentralizedJobManager에서 처리하므로 여기서는 하지 않음
+            current_task = asyncio.current_task()
+            if current_task and not current_task.cancelled():
+                job_request_path = Config.get_requested_job_path(job_id)
+                FirebaseSystem.instance().delete_data_fire_and_forget(job_request_path)
+                LoggingUtil.debug("main", f"Job 정리 완료: {job_id}")
+                complete_job_func()
+            else:
+                LoggingUtil.debug("main", f"Job {job_id} 취소로 인한 정리 - complete_job_func 호출하지 않음")
 
         except Exception as cleanup_error:
             LoggingUtil.exception("main", f"Job 정리 오류: {job_id}", cleanup_error)
