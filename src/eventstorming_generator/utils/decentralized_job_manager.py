@@ -408,7 +408,7 @@ class DecentralizedJobManager:
             self.current_task = None
             self.job_removal_requested = False
             
-            LoggingUtil.info("decentralized_job_manager", f"작업 {job_id} 삭제 완료")
+            LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 삭제 완료")
             
         except Exception as e:
             LoggingUtil.exception("decentralized_job_manager", f"현재 작업 {job_id} 삭제 처리 오류", e)
