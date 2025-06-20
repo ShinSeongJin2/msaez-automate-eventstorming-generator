@@ -382,20 +382,20 @@ class DecentralizedJobManager:
     async def handle_current_job_removal(self, job_id: str):
         """현재 진행 중인 작업 삭제 처리"""
         try:
-            LoggingUtil.info("decentralized_job_manager", f"현재 진행 중인 작업 {job_id} 삭제 요청 처리 시작")
+            LoggingUtil.debug("decentralized_job_manager", f"현재 진행 중인 작업 {job_id} 삭제 요청 처리 시작")
             
             # 작업 중단 플래그 설정
             self.job_removal_requested = True
             
             # 현재 실행 중인 태스크가 있으면 취소
             if self.current_task and not self.current_task.done():
-                LoggingUtil.info("decentralized_job_manager", f"작업 {job_id} 태스크 취소 중...")
+                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 태스크 취소 중...")
                 self.current_task.cancel()
                 
                 try:
                     await self.current_task
                 except asyncio.CancelledError:
-                    LoggingUtil.info("decentralized_job_manager", f"작업 {job_id} 태스크가 정상적으로 취소됨")
+                    LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 태스크가 정상적으로 취소됨")
                 except Exception as e:
                     LoggingUtil.exception("decentralized_job_manager", f"작업 {job_id} 태스크 취소 중 오류", e)
             
@@ -416,12 +416,12 @@ class DecentralizedJobManager:
     async def handle_unassigned_job_removal(self, job_id: str):
         """할당되지 않은 요청 작업 삭제 처리"""
         try:
-            LoggingUtil.info("decentralized_job_manager", f"할당되지 않은 요청 작업 {job_id} 삭제 처리")
+            LoggingUtil.debug("decentralized_job_manager", f"할당되지 않은 요청 작업 {job_id} 삭제 처리")
             
             # requestedJobs → jobs → jobStates 순차 삭제
             await self.delete_job_data_sequentially(job_id, include_requested=True)
             
-            LoggingUtil.info("decentralized_job_manager", f"할당되지 않은 작업 {job_id} 삭제 완료")
+            LoggingUtil.debug("decentralized_job_manager", f"할당되지 않은 작업 {job_id} 삭제 완료")
             
         except Exception as e:
             LoggingUtil.exception("decentralized_job_manager", f"할당되지 않은 작업 {job_id} 삭제 처리 오류", e)
@@ -429,12 +429,12 @@ class DecentralizedJobManager:
     async def handle_completed_job_removal(self, job_id: str):
         """완료된 작업 삭제 처리"""
         try:
-            LoggingUtil.info("decentralized_job_manager", f"완료된 작업 {job_id} 삭제 처리")
+            LoggingUtil.debug("decentralized_job_manager", f"완료된 작업 {job_id} 삭제 처리")
             
             # jobs → jobStates 순차 삭제
             await self.delete_job_data_sequentially(job_id, include_requested=False)
             
-            LoggingUtil.info("decentralized_job_manager", f"완료된 작업 {job_id} 삭제 완료")
+            LoggingUtil.debug("decentralized_job_manager", f"완료된 작업 {job_id} 삭제 완료")
             
         except Exception as e:
             LoggingUtil.exception("decentralized_job_manager", f"완료된 작업 {job_id} 삭제 처리 오류", e)
@@ -442,14 +442,14 @@ class DecentralizedJobManager:
     async def handle_orphan_job_state_removal(self, job_id: str):
         """orphan jobState 삭제 처리"""
         try:
-            LoggingUtil.info("decentralized_job_manager", f"orphan jobState {job_id} 삭제 처리")
+            LoggingUtil.debug("decentralized_job_manager", f"orphan jobState {job_id} 삭제 처리")
             
             # jobStates만 삭제
             job_state_path = Config.get_job_state_path(job_id)
             success = await FirebaseSystem.instance().delete_data_async(job_state_path)
             
             if success:
-                LoggingUtil.info("decentralized_job_manager", f"orphan jobState {job_id} 삭제 완료")
+                LoggingUtil.debug("decentralized_job_manager", f"orphan jobState {job_id} 삭제 완료")
             else:
                 LoggingUtil.warning("decentralized_job_manager", f"orphan jobState {job_id} 삭제 실패")
                 
