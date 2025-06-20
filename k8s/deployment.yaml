@@ -15,6 +15,7 @@ spec:
         app: eventstorming-generator
     spec:
       serviceAccountName: eventstorming-generator
+      terminationGracePeriodSeconds: 7200  # 2시간 (작업 완료를 위한 충분한 시간)
       containers:
       - name: eventstorming-generator
         image: asia-northeast3-docker.pkg.dev/eventstorming-tool-db/eventstorming-repo/eventstorming-generator:latest

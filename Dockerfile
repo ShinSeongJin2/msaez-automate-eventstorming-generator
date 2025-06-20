@@ -25,5 +25,9 @@ ENV PYTHONPATH=/app/src
 # 포트 노출 (헬스체크용)
 EXPOSE 2024
 
+# 시간 맞추기
+ENV TZ=Asia/Seoul
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
 # 애플리케이션 실행
 CMD ["uv", "run", "python", "-m", "eventstorming_generator.main"] 

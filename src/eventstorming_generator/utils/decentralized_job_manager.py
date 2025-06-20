@@ -1,5 +1,6 @@
 import asyncio
 import time
+import signal
 from typing import Optional, List, Tuple
 
 from ..systems import FirebaseSystem
@@ -13,13 +14,24 @@ class DecentralizedJobManager:
         self.current_job_id: Optional[str] = None  # 단일 Job 처리
         self.is_processing = False
         self.current_task: Optional[asyncio.Task] = None  # 현재 실행 중인 작업 태스크
+        self.shutdown_requested = False  # Graceful shutdown 플래그
+        self.setup_signal_handlers()  # 신호 핸들러 설정
     
+    def setup_signal_handlers(self):
+        """Graceful shutdown을 위한 신호 핸들러 설정"""
+        def signal_handler(signum, frame):
+            LoggingUtil.info("decentralized_job_manager", f"종료 신호 수신 ({signum}). Graceful shutdown 시작...")
+            self.shutdown_requested = True
+        
+        # SIGTERM (Kubernetes가 Pod 종료 시 보내는 신호)과 SIGINT 처리
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
 
     async def start_job_monitoring(self):
-        """각 Pod가 독립적으로 작업 모니터링 - 순차 처리"""
-        LoggingUtil.info("decentralized_job_manager", f"Job 모니터링 시작 (순차 처리 모드)")
+        """각 Pod가 독립적으로 작업 모니터링 - 순차 처리 (Graceful Shutdown 지원)"""
+        LoggingUtil.info("decentralized_job_manager", f"Job 모니터링 시작 (순차 처리 모드, Graceful Shutdown 지원)")
         
-        while True:
+        while not self.shutdown_requested:
             try:
                 LoggingUtil.debug("decentralized_job_manager", f"Job 모니터링 중...")
 
@@ -29,7 +41,13 @@ class DecentralizedJobManager:
                 if self.current_task and self.current_task.done():
                     await self._handle_completed_task()
                 
-                if not self.is_processing:
+                # Graceful shutdown 요청이 있고 현재 작업이 없으면 종료
+                if self.shutdown_requested and not self.is_processing:
+                    LoggingUtil.info("decentralized_job_manager", "Graceful shutdown: 현재 처리 중인 작업이 없어 즉시 종료")
+                    break
+                
+                # Graceful shutdown 요청이 없을 때만 새 작업 수락
+                if not self.shutdown_requested and not self.is_processing:
                     # 현재 처리 중인 Job이 없을 때만 새 Job 검색
                     await self.find_and_process_next_job(requested_jobs)
                 
@@ -48,7 +66,27 @@ class DecentralizedJobManager:
             except Exception as e:
                 LoggingUtil.exception("decentralized_job_manager", f"작업 모니터링 오류", e)
                 await asyncio.sleep(15)
+        
+        # Graceful shutdown 처리
+        await self._handle_graceful_shutdown()
 
+    async def _handle_graceful_shutdown(self):
+        """Graceful shutdown 처리 - 현재 작업 완료를 기다림"""
+        if self.is_processing and self.current_task:
+            LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 현재 작업 {self.current_job_id} 완료를 기다리는 중...")
+            
+            # 현재 작업이 완료될 때까지 기다림
+            while self.is_processing and not self.current_task.done():
+                await self.send_heartbeat()  # 작업이 살아있음을 알림
+                await asyncio.sleep(30)  # 30초마다 확인
+            
+            # 작업이 완료되면 정리
+            if self.current_task and self.current_task.done():
+                await self._handle_completed_task()
+            
+            LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 모든 작업 완료. 안전하게 종료합니다.")
+        else:
+            LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 처리 중인 작업이 없어 즉시 종료합니다.")
 
     async def _handle_completed_task(self):
         """완료된 작업 태스크 처리"""
@@ -147,9 +185,16 @@ class DecentralizedJobManager:
             return
         
         try:
+            heartbeat_data = {'lastHeartbeat': time.time()}
+            
+            # Graceful shutdown 중이면 상태 정보 추가
+            if self.shutdown_requested:
+                heartbeat_data['shutdownRequested'] = True
+                heartbeat_data['acceptingNewJobs'] = False
+            
             await FirebaseSystem.instance().update_data_async(
                 Config.get_requested_job_path(self.current_job_id),
-                {'lastHeartbeat': time.time()}
+                heartbeat_data
             )
         except Exception as e:
             LoggingUtil.exception("decentralized_job_manager", f"Heartbeat 실패", e)
