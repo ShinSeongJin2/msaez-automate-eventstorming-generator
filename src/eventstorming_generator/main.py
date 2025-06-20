@@ -21,6 +21,8 @@ async def main():
     
     while True:
         tasks = []
+        job_manager = None
+        
         try:
             
             # Flask 서버 시작 (첫 실행시에만)
@@ -44,7 +46,32 @@ async def main():
                 tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
                 LoggingUtil.info("main", "자동 스케일러 및 작업 모니터링이 시작되었습니다.")
             
-            await asyncio.wait(tasks)
+            
+            # shutdown_event 모니터링 태스크 추가
+            shutdown_monitor_task = asyncio.create_task(job_manager.shutdown_event.wait())
+            tasks.append(shutdown_monitor_task)
+            
+            # 태스크들 중 하나라도 완료되면 종료 (shutdown_event 포함)
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            
+            # shutdown_event가 설정되었는지 확인
+            if shutdown_monitor_task in done:
+                LoggingUtil.info("main", "Graceful shutdown 신호 수신. 메인 루프를 종료합니다.")
+                
+                # 나머지 실행 중인 태스크들 취소
+                for task in pending:
+                    if not task.done():
+                        LoggingUtil.debug("main", f"태스크 취소 중: {task}")
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            LoggingUtil.debug("main", "태스크가 정상적으로 취소되었습니다.")
+                        except Exception as cleanup_error:
+                            LoggingUtil.exception("main", "태스크 정리 중 예외 발생", cleanup_error)
+                
+                LoggingUtil.info("main", "메인 함수 정상 종료")
+                break  # while 루프 종료
             
         except Exception as e:
             restart_count += 1

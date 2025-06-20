@@ -1,6 +1,8 @@
 import asyncio
 import time
 import signal
+import os
+import sys
 from typing import Optional, List, Tuple
 
 from ..systems import FirebaseSystem
@@ -15,6 +17,7 @@ class DecentralizedJobManager:
         self.is_processing = False
         self.current_task: Optional[asyncio.Task] = None  # 현재 실행 중인 작업 태스크
         self.shutdown_requested = False  # Graceful shutdown 플래그
+        self.shutdown_event = asyncio.Event()  # Graceful shutdown 완료 이벤트
         self.setup_signal_handlers()  # 신호 핸들러 설정
     
     def setup_signal_handlers(self):
@@ -87,6 +90,33 @@ class DecentralizedJobManager:
             LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 모든 작업 완료. 안전하게 종료합니다.")
         else:
             LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 처리 중인 작업이 없어 즉시 종료합니다.")
+        
+        
+        # Graceful shutdown 완료 이벤트 설정
+        self.shutdown_event.set()
+        
+        # 프로세스 강제 종료를 위한 추가 로직
+        LoggingUtil.info("decentralized_job_manager", "프로세스를 안전하게 종료합니다.")
+        
+        # 짧은 지연 후 프로세스 종료
+        await asyncio.sleep(1)
+        
+        # 현재 이벤트 루프의 모든 태스크 취소
+        try:
+            tasks = [task for task in asyncio.all_tasks() if not task.done()]
+            if tasks:
+                LoggingUtil.info("decentralized_job_manager", f"{len(tasks)}개의 실행 중인 태스크를 취소합니다.")
+                for task in tasks:
+                    task.cancel()
+                
+                # 취소된 태스크들이 완료될 때까지 잠시 대기
+                await asyncio.sleep(0.5)
+        except Exception as e:
+            LoggingUtil.exception("decentralized_job_manager", "태스크 취소 중 오류", e)
+        
+        # 프로세스 종료
+        LoggingUtil.info("decentralized_job_manager", "프로세스를 종료합니다.")
+        os._exit(0)
 
     async def _handle_completed_task(self):
         """완료된 작업 태스크 처리"""
