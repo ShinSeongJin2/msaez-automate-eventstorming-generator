@@ -157,28 +157,36 @@ class DecentralizedJobManager:
         
         def update_function(current_data):
             if current_data is None:
-                return None
-            
-            current_data = FirebaseSystem.instance().restore_data_from_firebase(current_data)
-            if current_data.get('assignedPodId') is None:
-                current_data['assignedPodId'] = self.pod_id
-                current_data['claimedAt'] = time.time()
-                current_data['status'] = 'processing'
-                current_data['lastHeartbeat'] = time.time()
                 return current_data
-            else:
-                # 이미 할당됨
-                return None
+
+            restored_data = FirebaseSystem.instance().restore_data_from_firebase(current_data)
+            
+            if restored_data.get('assignedPodId') is not None:
+                return current_data
+
+            restored_data['assignedPodId'] = self.pod_id
+            restored_data['claimedAt'] = time.time()
+            restored_data['status'] = 'processing'
+            restored_data['lastHeartbeat'] = time.time()
+            return FirebaseSystem.instance().sanitize_data_for_firebase(restored_data)
         
         try:
             ref = FirebaseSystem.instance().database.reference(Config.get_requested_job_path(job_id))
-            result = await asyncio.get_event_loop().run_in_executor(
+            transaction_result = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: ref.transaction(update_function)
             )
             
-            if result is not None:
+            if transaction_result is None:
+                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 시도했으나, 해당 경로에 데이터가 없음.")
+                return False
+
+            final_data = FirebaseSystem.instance().restore_data_from_firebase(transaction_result)
+            if final_data.get('assignedPodId') == self.pod_id:
                 LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 성공")
                 return True
+            else:
+                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id}은 다른 Pod에 의해 선점되었거나 이미 처리 중입니다.")
+                return False
             
         except Exception as e:
             LoggingUtil.exception("decentralized_job_manager", f"작업 클레임 실패", e)
