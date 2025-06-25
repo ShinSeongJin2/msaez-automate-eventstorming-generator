@@ -41,16 +41,8 @@ class JsonUtil:
 
     @staticmethod
     def convert_to_dict(json_str: str) -> dict:
-        try :
-
-            if "```json" in json_str:
-                import re
-                match = re.search(r'```json\s*([\s\S]*?)\s*```', json_str)
-                if match:
-                    json_str = match.group(1).strip()
-            
+        try :     
             return json.loads(json_str)
-        
         except Exception as e:
             LoggingUtil.exception("json_util", f"Error converting to dict", e)
             return {}
