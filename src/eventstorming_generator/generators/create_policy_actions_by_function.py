@@ -222,74 +222,43 @@ Inference Guidelines:
                     }
                 ]
             },
-            "Functional Requirements": {
-                "userStories": [
-                    {
-                        "title": "Restaurant Reservation Process",
-                        "description": "As a customer, I want to make a restaurant reservation and receive confirmation",
-                        "acceptance": [
-                            "Reservation should be created with customer details and party size",
-                            "System should automatically assign appropriate table",
-                            "Kitchen should be notified for preparation",
-                            "Customer should receive confirmation"
-                        ]
-                    }
-                ],
-                "entities": {
-                    "Reservation": {
-                        "properties": [
-                            {"name": "reservationId", "type": "String", "required": True, "isPrimaryKey": True},
-                            {"name": "customerId", "type": "String", "required": True},
-                            {"name": "partySize", "type": "Integer", "required": True},
-                            {"name": "dateTime", "type": "Date", "required": True},
-                            {"name": "status", "type": "enum", "required": True, "values": ["Pending", "Confirmed", "Cancelled"]},
-                            {"name": "specialRequests", "type": "String", "required": False}
-                        ]
-                    }
-                },
-                "businessRules": [
-                    {
-                        "name": "TableAssignment",
-                        "description": "Tables must be assigned based on party size and availability"
-                    },
-                    {
-                        "name": "KitchenPreparation",
-                        "description": "Kitchen must be notified 2 hours before reservation time"
-                    }
-                ],
-                "events": [
-                    {
-                        "name": "ReservationCreated",
-                        "description": "A new reservation has been created by the customer",
-                        "displayName": "Reservation Created"
-                    },
-                    {
-                        "name": "TableAssigned",
-                        "description": "A table has been assigned to the reservation",
-                        "displayName": "Table Assigned"
-                    },
-                    {
-                        "name": "KitchenNotified",
-                        "description": "Kitchen has been notified for preparation",
-                        "displayName": "Kitchen Notified"
-                    }
-                ],
-                "contextRelations": [
-                    {
-                        "name": "ReservationToKitchen",
-                        "type": "Pub/Sub",
-                        "direction": "sends to",
-                        "targetContext": "Kitchen Service",
-                        "reason": "Kitchen needs to be notified of confirmed reservations for preparation",
-                        "interactionPattern": "Reservation service publishes ReservationConfirmed events that kitchen service subscribes to"
-                    }
-                ]
-            }
+            "Functional Requirements": """# Functional Requirements: Restaurant Reservation System
+
+## User Story
+As a customer, I want to make a restaurant reservation and receive confirmation.
+- Acceptance Criteria:
+  - Reservation should be created with customer details and party size.
+  - System should automatically assign an appropriate table.
+  - Kitchen should be notified for preparation.
+  - Customer should receive a confirmation.
+
+## Key Domain Events
+- `ReservationCreated`: A new reservation is created by the customer.
+- `TableAssigned`: A table has been assigned to the reservation.
+- `KitchenNotified`: The kitchen has been notified for preparation.
+- `ReservationConfirmed`: The reservation is fully confirmed.
+
+## DDL Snippet
+```sql
+CREATE TABLE reservations (
+    reservation_id INT PRIMARY KEY,
+    customer_id INT,
+    party_size INT,
+    status VARCHAR(50) -- 'PENDING', 'CONFIRMED'
+);
+```
+
+## Context Relations
+- **Name**: ReservationToKitchen
+- **Type**: Pub/Sub
+- **Interaction**: Reservation Service publishes `ReservationConfirmed` events. The Kitchen Service subscribes to trigger preparation.
+- **Reason**: The kitchen needs to prepare for confirmed reservations.
+"""
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": """Based on the comprehensive analysis of the event storming model, functional requirements, domain events, and context relationships, three distinct policies have been derived. The analysis considers the defined domain events (ReservationCreated, TableAssigned, KitchenNotified) and the Pub/Sub interaction pattern between Reservation and Kitchen contexts. The "TableAssignmentPolicy" connects the "ReservationCreated" event to the "AssignTable" command, ensuring automatic table assignment upon reservation creation. The "KitchenPreparationPolicy" leverages the defined context relationship to link the "ReservationConfirmed" event to the "PrepareKitchen" command, following the specified Pub/Sub pattern for cross-context communication. The "ReservationConfirmationPolicy" ties the "TableAssigned" event to the "ConfirmReservation" command, completing the reservation workflow. Each policy respects bounded context boundaries and aligns with the defined interaction patterns while avoiding circular dependencies.""",
+            "inference": """Based on the comprehensive analysis of the event storming model and the functional requirements document, three distinct policies have been derived. The requirements document outlined a user story for reservations, key domain events (e.g., ReservationCreated, TableAssigned), and a Pub/Sub interaction pattern between the Reservation and Kitchen contexts. The "TableAssignmentPolicy" connects the "ReservationCreated" event to the "AssignTable" command, automating table assignment as per the user story. The "KitchenPreparationPolicy" connects the "ReservationConfirmed" event to the "PrepareKitchen" command, directly implementing the defined Pub/Sub context relationship. Finally, the "ReservationConfirmationPolicy" links the "TableAssigned" event to the "ConfirmReservation" command, completing the reservation workflow. Each policy respects bounded context boundaries and aligns with the interaction patterns described in the requirements.""",
             "result": {
                 "extractedPolicies": [
                     {

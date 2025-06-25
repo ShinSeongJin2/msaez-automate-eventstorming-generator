@@ -247,288 +247,161 @@ Inference Guidelines:
                 "deletedProperties": ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
                 "boundedContexts": [
                     {
-                        "id": "bc-order",
-                        "name": "orderservice",
+                        "id": "bc-course",
+                        "name": "CourseManagement",
                         "actors": [
-                            { "id": "act-customer", "name": "Customer" },
-                            { "id": "act-admin", "name": "Admin" }
+                            { "id": "act-instructor", "name": "Instructor" },
+                            { "id": "act-student", "name": "Student" }
                         ],
                         "aggregates": [
                             {
-                                "id": "agg-product",
-                                "name": "Product",
+                                "id": "agg-user",
+                                "name": "User",
                                 "properties": [
-                                    { "name": "productId", "type": "Long", "isKey": True },
+                                    { "name": "userId", "type": "Long", "isKey": True },
                                     { "name": "name" },
-                                    { "name": "price", "type": "Double" },
-                                    { "name": "category", "type": "ProductCategory" },
-                                    { "name": "stock", "type": "Integer" }
+                                    { "name": "email", "type": "String" }
                                 ],
                                 "entities": [],
-                                "enumerations": [
-                                    {
-                                        "id": "enum-product-category",
-                                        "name": "ProductCategory",
-                                        "items": ["ELECTRONICS", "FURNITURE", "CLOTHING", "FOOD"]
-                                    }
-                                ],
-                                "valueObjects": [
-                                    {
-                                        "id": "vo-product-dimensions",
-                                        "name": "ProductDimensions",
-                                        "properties": [
-                                            { "name": "length", "type": "Double" },
-                                            { "name": "width", "type": "Double" },
-                                            { "name": "height", "type": "Double" }
-                                        ]
-                                    }
-                                ]
+                                "enumerations": [],
+                                "valueObjects": []
                             }
                         ]
                     }
                 ],
             },
             
-            "Bounded Context to Generate Actions": "orderservice",
+            "Bounded Context to Generate Actions": "CourseManagement",
             
-            "Functional Requirements": {
-                "userStories": [
-                    {
-                        "title": "Place New Order",
-                        "description": "As a customer, I want to place a new order with my selected products to complete my purchase.",
-                        "acceptance": [
-                            "All selected products must be available in stock.",
-                            "Customer information must be valid.",
-                            "Payment should be processed successfully."
-                        ]
-                    },
-                    {
-                        "title": "View Order History",
-                        "description": "As a customer, I want to view my past orders and their statuses.",
-                        "acceptance": [
-                            "Orders must be sorted by order date.",
-                            "Order details are displayed correctly.",
-                            "Filtering by order status is available."
-                        ]
-                    }
-                ],
-                "entities": {
-                    "Customer": {
-                        "properties": [
-                            { "name": "customerId", "type": "Long", "required": True, "isPrimaryKey": True },
-                            { "name": "name", "type": "String", "required": True },
-                            { "name": "email", "type": "String", "required": True }
-                        ]
-                    },
-                    "Order": {
-                        "properties": [
-                            { "name": "orderId", "type": "Long", "required": True, "isPrimaryKey": True },
-                            { "name": "customerId", "type": "Long", "required": True, "isForeignKey": True, "foreignEntity": "Customer" },
-                            { "name": "orderDate", "type": "Date", "required": True },
-                            { "name": "totalAmount", "type": "Integer", "required": True }
-                        ]
-                    }
-                },
-                "businessRules": [
-                    { "name": "ValidOrderTotal", "description": "Order total must be a positive value." },
-                    { "name": "CustomerExists", "description": "Order must be associated with an existing customer." }
-                ],
-                "interfaces": {
-                    "NewOrder": {
-                        "sections": [
-                            {
-                                "name": "OrderDetails",
-                                "type": "form",
-                                "fields": [
-                                    { "name": "customerId", "type": "text", "required": True },
-                                    { "name": "orderDate", "type": "date", "required": True },
-                                    { "name": "totalAmount", "type": "number", "required": True }
-                                ]
-                            },
-                            {
-                                "name": "ProductSelection",
-                                "type": "table",
-                                "filters": [ "category", "priceRange" ],
-                                "resultTable": {
-                                    "columns": [ "productId", "name", "price", "stock" ],
-                                    "actions": [ "select", "viewDetails" ]
-                                }
-                            }
-                        ]
-                    },
-                    "OrderHistory": {
-                        "sections": [
-                            {
-                                "name": "PastOrders",
-                                "type": "table",
-                                "filters": [ "dateRange", "status" ],
-                                "resultTable": {
-                                    "columns": [ "orderId", "orderDate", "totalAmount", "status" ],
-                                    "actions": [ "viewDetails", "reorder" ]
-                                }
-                            }
-                        ]
-                    }
-                },
-                "events": [
-                    {
-                        "name": "OrderPlaced",
-                        "description": "Customer has successfully placed a new order.",
-                        "displayName": "Order Placed"
-                    },
-                    {
-                        "name": "OrderConfirmed",
-                        "description": "Order has been confirmed and payment processed.",
-                        "displayName": "Order Confirmed"
-                    },
-                    {
-                        "name": "OrderShipped",
-                        "description": "Order has been shipped to customer.",
-                        "displayName": "Order Shipped"
-                    },
-                    {
-                        "name": "OrderDelivered",
-                        "description": "Order has been delivered to customer.",
-                        "displayName": "Order Delivered"
-                    },
-                    {
-                        "name": "OrderCancelled",
-                        "description": "Order has been cancelled by customer or system.",
-                        "displayName": "Order Cancelled"
-                    }
-                ],
-                "contextRelations": [
-                    {
-                        "name": "OrderToPayment",
-                        "type": "API Call",
-                        "direction": "calls",
-                        "targetContext": "Payment Service",
-                        "reason": "Order service needs to process payments synchronously.",
-                        "interactionPattern": "REST API call to payment service for payment processing."
-                    },
-                    {
-                        "name": "OrderToInventory",
-                        "type": "Pub/Sub",
-                        "direction": "publishes to",
-                        "targetContext": "Inventory Service",
-                        "reason": "Order placement should trigger inventory updates asynchronously.",
-                        "interactionPattern": "Publish OrderPlaced event for inventory reservation."
-                    }
-                ]
-            },
+            "Functional Requirements": """
+# Bounded Context Overview: CourseManagement
+
+## Role
+This context is responsible for the entire lifecycle of a course, including its creation, management, and tracking. It handles course content, instructor assignments, pricing, and status changes (e.g., Draft, Published, Archived). The primary user is the Instructor.
+
+## User Story
+As an instructor, I want to create and manage my courses on the platform. When creating a course, I need to provide a title, description, and price. The course should initially be in a 'Draft' state. Once I'm ready, I can 'Publish' the course, making it available for students to enroll. If a course is outdated, I should be able to 'Archive' it, so it's no longer available for new enrollments but remains accessible to already enrolled students.
+
+## Key Events
+- CourseCreated
+- CoursePublished
+- CoursePriceUpdated
+- CourseArchived
+- StudentEnrolled
+
+## DDL
+```sql
+-- Courses Table
+CREATE TABLE courses (
+    course_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    instructor_id BIGINT NOT NULL,
+    status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL DEFAULT 'DRAFT',
+    price_amount DECIMAL(10, 2),
+    price_currency VARCHAR(3),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_instructor_id (instructor_id)
+);
+```
+
+## Context Relations
+### CourseToPayment
+- **Type**: API Call
+- **Direction**: calls
+- **Target Context**: PaymentService
+- **Reason**: When a student enrolls in a course, the CourseManagement context needs to initiate a payment process synchronously.
+- **Interaction Pattern**: Makes a REST API call to the PaymentService to process the course fee.
+""",
             
             "Suggested Structure": [
                 {
                     "aggregate": {
-                        "name": "Order",
-                        "alias": "Customer Order"
+                        "name": "Course",
+                        "alias": "Online Course"
                     },
                     "enumerations": [
                         {
-                            "name": "OrderStatus",
-                            "alias": "Order Status"
+                            "name": "CourseStatus",
+                            "alias": "Course Status"
                         }
                     ],
                     "valueObjects": [
                         {
-                            "name": "ShippingAddress",
-                            "alias": "Shipping Address"
-                        },
-                        {
-                            "name": "PaymentDetail",
-                            "alias": "Payment Detail"
+                            "name": "CoursePrice",
+                            "alias": "Course Price"
                         }
                     ]
                 }
             ],
             
             "Aggregate to create": {
-                "name": "Order",
-                "alias": "Customer Order"
+                "name": "Course",
+                "alias": "Online Course"
             }
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "The Customer Order aggregate has been created successfully. OrderStatus enumeration defines the order states, while ShippingAddress and PaymentDetail value objects encapsulate address and payment information respectively.",
+            "inference": "The Course aggregate is designed to manage educational content, encapsulating its core attributes and lifecycle. A `CourseStatus` enumeration is introduced to manage the state (Draft, Published, Archived), and a `CoursePrice` value object is created to handle monetary values consistently. This structure directly supports the functional requirements for creating, pricing, and managing online courses.",
             "result": {
                 "aggregateActions": [
                     {
-                        "actionName": "CreateOrderAggregate",
+                        "actionName": "CreateCourseAggregate",
                         "objectType": "Aggregate",
                         "ids": {
-                            "aggregateId": "agg-order"
+                            "aggregateId": "agg-course"
                         },
                         "args": {
-                            "aggregateName": "Order",
-                            "aggregateAlias": "Customer Order",
+                            "aggregateName": "Course",
+                            "aggregateAlias": "Online Course",
                             "properties": [
-                                { "name": "orderId", "type": "Long", "isKey": True },
-                                { "name": "customerId", "type": "Long" },
-                                { "name": "orderDate", "type": "Date" },
-                                { "name": "totalAmount", "type": "Integer" },
-                                { "name": "shippingAddress", "type": "ShippingAddress" },
-                                { "name": "paymentDetail", "type": "PaymentDetail" },
-                                { "name": "status", "type": "OrderStatus" }
+                                { "name": "courseId", "type": "Long", "isKey": True },
+                                { "name": "title" },
+                                { "name": "description", "type": "String" },
+                                { "name": "instructorId", "type": "Long" },
+                                { "name": "price", "type": "CoursePrice" },
+                                { "name": "status", "type": "CourseStatus" },
+                                { "name": "createdAt", "type": "Date" },
+                                { "name": "updatedAt", "type": "Date" }
                             ]
                         }
                     }
                 ],
                 "valueObjectActions": [
                     {
-                        "actionName": "CreateShippingAddressVO",
+                        "actionName": "CreateCoursePriceVO",
                         "objectType": "ValueObject",
                         "ids": {
-                            "aggregateId": "agg-order",
-                            "valueObjectId": "vo-shipping-address"
+                            "aggregateId": "agg-course",
+                            "valueObjectId": "vo-course-price"
                         },
                         "args": {
-                            "valueObjectName": "ShippingAddress",
-                            "valueObjectAlias": "Shipping Address",
+                            "valueObjectName": "CoursePrice",
+                            "valueObjectAlias": "Course Price",
                             "properties": [
-                                { "name": "street" },
-                                { "name": "city" },
-                                { "name": "state" },
-                                { "name": "zipCode" }
-                            ]
-                        }
-                    },
-                    {
-                        "actionName": "CreatePaymentDetailVO",
-                        "objectType": "ValueObject",
-                        "ids": {
-                            "aggregateId": "agg-order",
-                            "valueObjectId": "vo-payment-detail"
-                        },
-                        "args": {
-                            "valueObjectName": "PaymentDetail",
-                            "valueObjectAlias": "Payment Detail",
-                            "properties": [
-                                { "name": "cardNumber" },
-                                { "name": "cardHolder" },
-                                { "name": "expirationDate", "type": "Date" },
-                                { "name": "securityCode" }
+                                { "name": "amount", "type": "Double" },
+                                { "name": "currency" }
                             ]
                         }
                     }
                 ],
                 "enumerationActions": [
                     {
-                        "actionName": "CreateOrderStatusEnum",
+                        "actionName": "CreateCourseStatusEnum",
                         "objectType": "Enumeration",
                         "ids": {
-                            "aggregateId": "agg-order",
-                            "enumerationId": "enum-order-status"
+                            "aggregateId": "agg-course",
+                            "enumerationId": "enum-course-status"
                         },
                         "args": {
-                            "enumerationName": "OrderStatus",
-                            "enumerationAlias": "Order Status",
+                            "enumerationName": "CourseStatus",
+                            "enumerationAlias": "Course Status",
                             "properties": [
-                                { "name": "PENDING" },
-                                { "name": "CONFIRMED" },
-                                { "name": "SHIPPED" },
-                                { "name": "DELIVERED" },
-                                { "name": "CANCELLED" }
+                                { "name": "DRAFT" },
+                                { "name": "PUBLISHED" },
+                                { "name": "ARCHIVED" }
                             ]
                         }
                     }

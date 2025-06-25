@@ -288,67 +288,69 @@ Inference Guidelines:
                 ]
             },
             
-            "Functional Requirements": {
-                "userStories": [
-                    {
-                        "title": "Add Stock to Product",
-                        "description": "As an inventory manager, I want to add stock to existing products so that we can maintain accurate inventory levels",
-                        "acceptance": [
-                            "Stock quantity must be a positive number",
-                            "Product must exist in the system",
-                            "System should update total quantity after addition",
-                            "Stock addition should be logged for audit"
-                        ]
-                    },
-                    {
-                        "title": "Discontinue Product",
-                        "description": "As a product manager, I want to discontinue products that are no longer sold so that they are not available for future orders",
-                        "acceptance": [
-                            "Must provide reason for discontinuation",
-                            "Product status should be updated to DISCONTINUED",
-                            "Discontinuation date should be recorded",
-                            "Cannot discontinue already discontinued products"
-                        ]
-                    }
-                ],
-                "businessRules": [
-                    {
-                        "name": "StockQuantityValidation",
-                        "description": "Stock quantity must be greater than zero"
-                    },
-                    {
-                        "name": "DiscontinuationReason",
-                        "description": "Reason for discontinuation is mandatory and must be descriptive"
-                    }
-                ],
-                "events": [
-                    {
-                        "name": "StockAdded",
-                        "description": "재고가 추가되어 제품의 재고 수량이 증가함",
-                        "displayName": "재고가 추가됨"
-                    },
-                    {
-                        "name": "ProductDiscontinued",
-                        "description": "제품이 단종되어 더 이상 판매되지 않음",
-                        "displayName": "제품이 단종됨"
-                    },
-                    {
-                        "name": "StockBelowThreshold",
-                        "description": "재고 수준이 임계값 아래로 떨어짐",
-                        "displayName": "재고 부족 알림"
-                    }
-                ],
-                "contextRelations": [
-                    {
-                        "name": "InventoryToSales",
-                        "type": "Pub/Sub",
-                        "direction": "sends to",
-                        "targetContext": "Sales Management",
-                        "reason": "재고 변경 사항을 판매 시스템에 알려 가용 재고를 반영해야 함",
-                        "interactionPattern": "재고 추가/감소 이벤트를 발행하여 판매 시스템에서 구독"
-                    }
-                ]
-            },
+            "Functional Requirements": """# Bounded Context Overview: Inventory Management
+
+## Role
+Manages product stock levels, including additions, and discontinuations. The primary user is an inventory manager responsible for maintaining accurate inventory records.
+
+# Requirements
+
+## User Stories
+
+### Add Stock to Product
+As an inventory manager, I want to add stock to existing products so that we can maintain accurate inventory levels.
+**Acceptance Criteria:**
+- Stock quantity must be a positive number.
+- The product must exist in the system.
+- The system should update the total quantity after addition.
+- Stock addition should be logged for audit.
+
+### Discontinue Product
+As a product manager, I want to discontinue products that are no longer sold so that they are not available for future orders.
+**Acceptance Criteria:**
+- Must provide a reason for discontinuation.
+- The product status should be updated to DISCONTINUED.
+- The discontinuation date should be recorded.
+- Cannot discontinue already discontinued products.
+
+## Business Rules
+- **StockQuantityValidation:** Stock quantity must be greater than zero.
+- **DiscontinuationReason:** Reason for discontinuation is mandatory and must be descriptive.
+
+## Key Events
+- **StockAdded:** Triggered when stock is added to a product, increasing its quantity.
+- **ProductDiscontinued:** Occurs when a product is marked as discontinued and is no longer available for sale.
+- **StockBelowThreshold:** Fired when the stock level of a product drops below a predefined threshold.
+
+## DDL
+
+-- Products Table
+CREATE TABLE products (
+    product_id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    quantity INT NOT NULL DEFAULT 0,
+    status ENUM('AVAILABLE', 'OUT_OF_STOCK', 'DISCONTINUED') NOT NULL,
+    category_id VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES categories(category_id)
+);
+
+-- Categories Table
+CREATE TABLE categories (
+    category_id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT
+);
+
+## Context Relations
+
+### InventoryToSales
+- **Type:** Pub/Sub
+- **Direction:** sends to Sales Management
+- **Reason:** To inform the sales system about changes in stock levels to reflect available inventory.
+- **Interaction Pattern:** The inventory context publishes stock change events (e.g., stock added/decreased), which are subscribed to by the sales system.
+""",
             
             "Target Command Ids": "cmd-addStock, cmd-discontinueProduct"
         }

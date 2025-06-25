@@ -227,261 +227,71 @@ Inference Guidelines:
                 "deletedProperties": [],
                 "boundedContexts": [
                     {
-                        "id": "bc-hotel",
-                        "name": "hotelservice",
+                        "id": "bc-course",
+                        "name": "CourseManagement",
                         "actors": [
                             {
-                                "id": "act-guest",
-                                "name": "Guest"
+                                "id": "act-student",
+                                "name": "Student"
                             },
                             {
-                                "id": "act-system",
-                                "name": "System"
+                                "id": "act-instructor",
+                                "name": "Instructor"
                             }
                         ],
                         "aggregates": [
                             {
-                                "id": "agg-booking",
-                                "name": "Booking",
+                                "id": "agg-course",
+                                "name": "Course",
                                 "properties": [
                                     {
-                                        "name": "bookingId",
+                                        "name": "courseId",
                                         "type": "Long",
                                         "isKey": True
                                     },
                                     {
-                                        "name": "guestId",
-                                        "type": "Long",
-                                        "isForeignProperty": True
+                                        "name": "title"
                                     },
                                     {
-                                        "name": "roomId",
-                                        "type": "Long",
-                                        "isForeignProperty": True
+                                        "name": "instructorId",
+                                        "type": "Long"
                                     },
                                     {
-                                        "name": "checkInDate",
-                                        "type": "Date"
-                                    },
-                                    {
-                                        "name": "checkOutDate",
-                                        "type": "Date"
-                                    },
-                                    {
-                                        "name": "status",
-                                        "type": "BookingStatus"
-                                    },
-                                    {
-                                        "name": "totalAmount",
-                                        "type": "Integer"
-                                    }
-                                ],
-                                "enumerations": [
-                                    {
-                                        "id": "enum-booking-status",
-                                        "name": "BookingStatus",
-                                        "items": ["PENDING", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED"]
-                                    },
-                                    {
-                                        "id": "enum-meal-plan",
-                                        "name": "MealPlan",
-                                        "items": ["NO_MEAL", "BREAKFAST_ONLY", "HALF_BOARD", "FULL_BOARD"]
-                                    }
-                                ],
-                                "valueObjects": [
-                                    {
-                                        "id": "vo-guest-details",
-                                        "name": "GuestDetails",
-                                        "properties": [
-                                            {
-                                                "name": "name"
-                                            },
-                                            {
-                                                "name": "email"
-                                            },
-                                            {
-                                                "name": "phoneNumber"
-                                            },
-                                            {
-                                                "name": "membershipLevel"
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        "id": "vo-booking-preferences",
-                                        "name": "BookingPreferences",
-                                        "properties": [
-                                            {
-                                                "name": "numberOfGuests",
-                                                "type": "Integer"
-                                            },
-                                            {
-                                                "name": "mealPlan",
-                                                "type": "MealPlan"
-                                            },
-                                            {
-                                                "name": "specialRequests"
-                                            }
-                                        ]
-                                    }
-                                ],
-                                "commands": [
-                                    {
-                                        "id": "cmd-check-room-availability",
-                                        "name": "CheckRoomAvailability",
-                                        "api_verb": "GET",
-                                        "isRestRepository": False,
-                                        "properties": [
-                                            {
-                                                "name": "checkInDate",
-                                                "type": "Date"
-                                            },
-                                            {
-                                                "name": "checkOutDate",
-                                                "type": "Date"
-                                            }
-                                        ],
-                                        "outputEvents": [
-                                            {
-                                                "id": "evt-room-availability-checked",
-                                                "name": "RoomAvailabilityChecked"
-                                            }
-                                        ]
-                                    }
-                                ],
-                                "events": [
-                                    {
-                                        "id": "evt-room-availability-checked",
-                                        "name": "RoomAvailabilityChecked",
-                                        "outputCommands": [
-                                            {
-                                                "id": "cmd-calculate-room-price",
-                                                "name": "CalculateRoomPrice",
-                                                "policyId": "pol-roomPriceCalculation",
-                                                "policyName": "RoomPriceCalculation"
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        "id": "evt-room-price-calculated",
-                                        "name": "RoomPriceCalculated",
-                                        "outputCommands": []
-                                    }
-                                ],
-                                "readModels": []
-                            },
-                            {
-                                "id": "agg-room",
-                                "name": "Room",
-                                "properties": [
-                                    {
-                                        "name": "roomId",
-                                        "type": "Long",
-                                        "isKey": True
-                                    },
-                                    {
-                                        "name": "roomNumber"
-                                    },
-                                    {
-                                        "name": "roomType",
-                                        "type": "RoomType"
-                                    },
-                                    {
-                                        "name": "basePrice",
+                                        "name": "price",
                                         "type": "Double"
                                     },
                                     {
                                         "name": "status",
-                                        "type": "RoomStatus"
+                                        "type": "CourseStatus"
                                     }
                                 ],
                                 "enumerations": [
                                     {
-                                        "id": "enum-room-type",
-                                        "name": "RoomType",
-                                        "items": ["STANDARD", "DELUXE", "SUITE"]
-                                    },
-                                    {
-                                        "id": "enum-room-status",
-                                        "name": "RoomStatus",
-                                        "items": ["AVAILABLE", "OCCUPIED", "MAINTENANCE"]
+                                        "id": "enum-course-status",
+                                        "name": "CourseStatus",
+                                        "items": ["DRAFT", "PUBLISHED", "ARCHIVED"]
                                     }
                                 ],
                                 "commands": [
                                     {
-                                        "id": "cmd-calculate-room-price",
-                                        "name": "CalculateRoomPrice",
-                                        "api_verb": "POST",
-                                        "isRestRepository": False,
+                                        "id": "cmd-create-course",
+                                        "name": "CreateCourse",
                                         "properties": [
-                                            {
-                                                "name": "roomId",
-                                                "type": "Long",
-                                                "isKey": True
-                                            },
-                                            {
-                                                "name": "checkInDate",
-                                                "type": "Date"
-                                            },
-                                            {
-                                                "name": "checkOutDate",
-                                                "type": "Date"
-                                            },
-                                            {
-                                                "name": "numberOfGuests",
-                                                "type": "Integer"
-                                            },
-                                            {
-                                                "name": "roomType",
-                                                "type": "RoomType"
-                                            }
+                                            {"name": "title"},
+                                            {"name": "instructorId", "type": "Long"}
                                         ],
                                         "outputEvents": [
                                             {
-                                                "id": "evt-room-price-calculated",
-                                                "name": "RoomPriceCalculated"
-                                            }
-                                        ]
-                                    },
-                                    {
-                                        "id": "cmd-update-room-status",
-                                        "name": "UpdateRoomStatus",
-                                        "api_verb": "PATCH",
-                                        "isRestRepository": True,
-                                        "properties": [
-                                            {
-                                                "name": "roomId",
-                                                "type": "Long",
-                                                "isKey": True
-                                            },
-                                            {
-                                                "name": "status",
-                                                "type": "RoomStatus"
-                                            },
-                                            {
-                                                "name": "reason"
-                                            }
-                                        ],
-                                        "outputEvents": [
-                                            {
-                                                "id": "evt-room-status-updated",
-                                                "name": "RoomStatusUpdated"
+                                                "id": "evt-course-created",
+                                                "name": "CourseCreated"
                                             }
                                         ]
                                     }
                                 ],
                                 "events": [
                                     {
-                                        "id": "evt-room-status-updated",
-                                        "name": "RoomStatusUpdated",
-                                        "outputCommands": [
-                                            {
-                                                "id": "cmd-notify-housekeeping",
-                                                "name": "NotifyHousekeeping",
-                                                "policyId": "pol-notifyHousekeeping",
-                                                "policyName": "NotifyHousekeeping"
-                                            }
-                                        ]
+                                        "id": "evt-course-created",
+                                        "name": "CourseCreated"
                                     }
                                 ]
                             }
@@ -489,310 +299,112 @@ Inference Guidelines:
                     }
                 ]
             },
+            "description": """
+# Functional Requirements for Course Enrollment
 
-            "Functional Requirements": {
-                "userStories": [
-                    {
-                        "title": "Create New Room Booking",
-                        "description": "As a guest, I want to book a hotel room with my preferences so that I can secure my stay",
-                        "acceptance": [
-                            "All required guest information must be provided",
-                            "Room type must be selected through search popup",
-                            "Valid check-in and check-out dates must be selected",
-                            "Meal plan must be chosen from available options"
-                        ]
-                    }
-                ],
-                "entities": {
-                    "Booking": {
-                        "properties": [
-                            {"name": "bookingNumber", "type": "String", "required": True, "isPrimaryKey": True},
-                            {"name": "guestId", "type": "String", "required": True, "isForeignKey": True, "foreignEntity": "Guest"},
-                            {"name": "roomType", "type": "String", "required": True},
-                            {"name": "checkInDate", "type": "Date", "required": True},
-                            {"name": "checkOutDate", "type": "Date", "required": True},
-                            {"name": "numberOfGuests", "type": "Integer", "required": True},
-                            {"name": "mealPlan", "type": "enum", "required": True, "values": ["No Meal", "Breakfast Only", "Half Board", "Full Board"]},
-                            {"name": "specialRequests", "type": "String", "required": False},
-                            {"name": "status", "type": "enum", "required": True, "values": ["Active", "Completed", "Cancelled"]},
-                            {"name": "totalAmount", "type": "Integer", "required": True}
-                        ]
-                    }
-                },
-                "businessRules": [
-                    {
-                        "name": "ValidBookingDates",
-                        "description": "Check-out date must be after check-in date"
-                    },
-                    {
-                        "name": "RequiredFields", 
-                        "description": "All fields except special requests are mandatory for booking"
-                    }
-                ],
-                "interfaces": {
-                    "RoomBooking": {
-                        "sections": [
-                            {
-                                "name": "BookingDetails",
-                                "type": "form",
-                                "fields": [
-                                    {"name": "roomType", "type": "search", "required": True},
-                                    {"name": "checkInDate", "type": "date", "required": True},
-                                    {"name": "checkOutDate", "type": "date", "required": True},
-                                    {"name": "numberOfGuests", "type": "number", "required": True},
-                                    {"name": "mealPlan", "type": "select", "required": True},
-                                    {"name": "specialRequests", "type": "textarea", "required": False}
-                                ],
-                                "actions": ["Submit", "Clear"]
-                            }
-                        ]
-                    }
-                },
-                "events": [
-                    {
-                        "name": "GuestVerified",
-                        "description": "Guest information is verified with ID and name",
-                        "displayName": "Guest Verified"
-                    },
-                    {
-                        "name": "BookingRequested",
-                        "description": "Guest requests a room booking with preferences",
-                        "displayName": "Booking Requested"
-                    },
-                    {
-                        "name": "BookingConfirmed",
-                        "description": "Room booking is confirmed and payment processed",
-                        "displayName": "Booking Confirmed"
-                    },
-                    {
-                        "name": "BookingCancelled",
-                        "description": "Guest or system cancels the booking",
-                        "displayName": "Booking Cancelled"
-                    }
-                ],
-                "contextRelations": [
-                    {
-                        "name": "HotelToPaymentIntegration",
-                        "type": "API",
-                        "direction": "calls",
-                        "targetContext": "Payment Service",
-                        "reason": "Hotel booking needs to process payments and handle refunds",
-                        "interactionPattern": "Synchronous API calls for payment processing, asynchronous events for payment confirmations"
-                    }
-                ]
-            },
+## User Story
+As a student, I want to enroll in a course so I can start learning. The system must verify my eligibility and process my payment if the course is not free. Upon successful enrollment, my status should be updated, and I should receive a confirmation.
 
-            "Target Aggregate To Generate Actions": "Booking"
+## Key Events
+- `StudentEnrolled`: Triggered when a student successfully enrolls in a course.
+- `EnrollmentFailed`: Triggered if enrollment cannot be completed due to reasons like course full, payment failure, or prerequisites not met.
+- `CoursePublished`: A course must be in 'Published' state to allow enrollment.
+
+## DDL
+```sql
+-- Courses Table
+CREATE TABLE courses (
+    course_id INT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    instructor_id INT NOT NULL,
+    price DECIMAL(10, 2) NOT NULL,
+    status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL,
+    max_students INT,
+    current_students INT DEFAULT 0
+);
+
+-- Enrollments Table
+CREATE TABLE enrollments (
+    enrollment_id INT PRIMARY KEY,
+    course_id INT NOT NULL,
+    student_id INT NOT NULL,
+    enrollment_date DATETIME NOT NULL,
+    status ENUM('ACTIVE', 'COMPLETED', 'CANCELLED') NOT NULL,
+    FOREIGN KEY (course_id) REFERENCES courses(course_id)
+);
+```
+
+## Context Relations
+### CourseToPaymentIntegration
+- **Type**: API
+- **Direction**: calls
+- **Target Context**: PaymentService
+- **Reason**: To process enrollment fees for paid courses.
+- **Interaction Pattern**: Synchronous API call to process payment. The enrollment is confirmed only after successful payment confirmation.
+""",
+            "targetAggregate": "Course"
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "In this solution, we analyzed the summarized event storming model and the functional requirements to identify 'Booking' as the critical aggregate. The analysis revealed that the business scenario mandates distinct actions for creating, confirming, and canceling a booking. Accordingly, each action is mapped to a specific command—CreateBooking, ConfirmBooking, and CancelBooking—with corresponding events (BookingCreated, BookingConfirmed, BookingCancelled) ensuring every command triggers a consistent state transition. The design further incorporates read models to support query operations, applying precise data types (e.g., Long, Date, and Enum) and enforcing strict validation rules such as valid booking dates and mandatory field presence. By aligning with domain-driven design, CQRS, and event sourcing principles, this approach minimizes duplication, assigns roles (e.g., Guest and System) appropriately, and maintains overall architectural consistency.",
+            "inference": "Based on the functional requirements, the primary user action is for a student to enroll in a course. This translates to an `EnrollStudent` command within the `Course` aggregate. This command requires `courseId` and `studentId` as inputs. It must check if the course is published and not full. Upon successful validation and external payment processing, it triggers a `StudentEnrolled` event. The event contains all necessary data to reflect the state change, including enrollment details. A `CourseDetails` read model is also proposed to allow users to view course information before enrolling.",
             "result": {
                 "commandActions": [
                     {
-                        "actionName": "CreateBookingCommand",
+                        "actionName": "EnrollStudentInCourse",
                         "objectType": "Command",
                         "ids": {
-                            "aggregateId": "agg-booking",
-                            "commandId": "cmd-create-booking"
+                            "aggregateId": "agg-course",
+                            "commandId": "cmd-enroll-student"
                         },
                         "args": {
-                            "commandName": "CreateBooking",
-                            "commandAlias": "Create New Booking",
+                            "commandName": "EnrollStudent",
+                            "commandAlias": "Enroll in Course",
                             "api_verb": "POST",
                             "properties": [
                                 {
-                                    "name": "guestId",
-                                    "type": "Long"
-                                },
-                                {
-                                    "name": "roomId",
-                                    "type": "Long"
-                                },
-                                {
-                                    "name": "checkInDate",
-                                    "type": "Date"
-                                },
-                                {
-                                    "name": "checkOutDate",
-                                    "type": "Date"
-                                },
-                                {
-                                    "name": "numberOfGuests",
-                                    "type": "Integer"
-                                },
-                                {
-                                    "name": "mealPlan",
-                                    "type": "MealPlan"
-                                },
-                                {
-                                    "name": "specialRequests",
-                                    "type": "String"
-                                }
-                            ],
-                            "outputEventIds": ["evt-booking-created"],
-                            "actor": "Guest"
-                        }
-                    },
-                    {
-                        "actionName": "ConfirmBookingCommand",
-                        "objectType": "Command",
-                        "ids": {
-                            "aggregateId": "agg-booking",
-                            "commandId": "cmd-confirm-booking"
-                        },
-                        "args": {
-                            "commandName": "ConfirmBooking",
-                            "commandAlias": "Confirm Booking",
-                            "api_verb": "PATCH",
-                            "properties": [
-                                {
-                                    "name": "bookingId",
+                                    "name": "courseId",
                                     "type": "Long",
                                     "isKey": True
                                 },
                                 {
-                                    "name": "paymentId",
-                                    "type": "String"
+                                    "name": "studentId",
+                                    "type": "Long"
                                 }
                             ],
-                            "outputEventIds": ["evt-booking-confirmed"]
-                        }
-                    },
-                    {
-                        "actionName": "CancelBookingCommand",
-                        "objectType": "Command",
-                        "ids": {
-                            "aggregateId": "agg-booking",
-                            "commandId": "cmd-cancel-booking"
-                        },
-                        "args": {
-                            "commandName": "CancelBooking",
-                            "commandAlias": "Cancel Booking",
-                            "api_verb": "PATCH",
-                            "properties": [
-                                {
-                                    "name": "bookingId",
-                                    "type": "Long",
-                                    "isKey": True
-                                },
-                                {
-                                    "name": "cancellationReason",
-                                    "type": "String"
-                                }
-                            ],
-                            "outputEventIds": ["evt-booking-cancelled"],
-                            "actor": "Guest"
+                            "outputEventIds": ["evt-student-enrolled"],
+                            "actor": "Student"
                         }
                     }
                 ],
                 "eventActions": [
                     {
-                        "actionName": "BookingCreatedEvent",
+                        "actionName": "StudentEnrolledEvent",
                         "objectType": "Event",
                         "ids": {
-                            "aggregateId": "agg-booking",
-                            "eventId": "evt-booking-created"
+                            "aggregateId": "agg-course",
+                            "eventId": "evt-student-enrolled"
                         },
                         "args": {
-                            "eventName": "BookingCreated",
-                            "eventAlias": "Booking Created",
+                            "eventName": "StudentEnrolled",
+                            "eventAlias": "Student Enrolled in Course",
                             "properties": [
                                 {
-                                    "name": "bookingId",
+                                    "name": "enrollmentId",
                                     "type": "Long",
                                     "isKey": True
                                 },
                                 {
-                                    "name": "guestId",
+                                    "name": "courseId",
                                     "type": "Long"
                                 },
                                 {
-                                    "name": "roomId",
+                                    "name": "studentId",
                                     "type": "Long"
                                 },
                                 {
-                                    "name": "checkInDate",
+                                    "name": "enrollmentDate",
                                     "type": "Date"
-                                },
-                                {
-                                    "name": "checkOutDate",
-                                    "type": "Date"
-                                },
-                                {
-                                    "name": "numberOfGuests",
-                                    "type": "Integer"
-                                },
-                                {
-                                    "name": "mealPlan",
-                                    "type": "MealPlan"
-                                },
-                                {
-                                    "name": "status",
-                                    "type": "BookingStatus"
-                                },
-                                {
-                                    "name": "totalAmount",
-                                    "type": "Integer"
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "actionName": "BookingConfirmedEvent",
-                        "objectType": "Event",
-                        "ids": {
-                            "aggregateId": "agg-booking",
-                            "eventId": "evt-booking-confirmed"
-                        },
-                        "args": {
-                            "eventName": "BookingConfirmed",
-                            "eventAlias": "Booking Confirmed",
-                            "properties": [
-                                {
-                                    "name": "bookingId",
-                                    "type": "Long",
-                                    "isKey": True
-                                },
-                                {
-                                    "name": "paymentId",
-                                    "type": "String"
-                                },
-                                {
-                                    "name": "confirmedAt",
-                                    "type": "Date"
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "actionName": "BookingCancelledEvent",
-                        "objectType": "Event",
-                        "ids": {
-                            "aggregateId": "agg-booking",
-                            "eventId": "evt-booking-cancelled"
-                        },
-                        "args": {
-                            "eventName": "BookingCancelled",
-                            "eventAlias": "Booking Cancelled",
-                            "properties": [
-                                {
-                                    "name": "bookingId",
-                                    "type": "Long",
-                                    "isKey": True
-                                },
-                                {
-                                    "name": "cancellationReason",
-                                    "type": "String"
-                                },
-                                {
-                                    "name": "cancelledAt",
-                                    "type": "Date"
-                                },
-                                {
-                                    "name": "refundAmount",
-                                    "type": "Integer"
                                 }
                             ]
                         }
@@ -800,97 +412,24 @@ Inference Guidelines:
                 ],
                 "readModelActions": [
                     {
-                        "actionName": "BookingSummaryReadModel",
+                        "actionName": "CourseDetailsReadModel",
                         "objectType": "ReadModel",
                         "ids": {
-                            "aggregateId": "agg-booking",
-                            "readModelId": "read-booking-summary"
+                            "aggregateId": "agg-course",
+                            "readModelId": "read-course-details"
                         },
                         "args": {
-                            "readModelName": "BookingSummary",
-                            "readModelAlias": "Booking Summary",
-                            "isMultipleResult": True,
-                            "queryParameters": [
-                                {
-                                    "name": "bookingId",
-                                    "type": "Long",
-                                    "isKey": True
-                                },
-                                {
-                                    "name": "guestName",
-                                    "type": "String"
-                                },
-                                {
-                                    "name": "roomNumber",
-                                    "type": "String"
-                                },
-                                {
-                                    "name": "checkInDate",
-                                    "type": "Date"
-                                },
-                                {
-                                    "name": "checkOutDate",
-                                    "type": "Date"
-                                },
-                                {
-                                    "name": "status",
-                                    "type": "BookingStatus"
-                                },
-                                {
-                                    "name": "totalAmount",
-                                    "type": "Integer"
-                                }
-                            ],
-                            "actor": "Guest"
-                        }
-                    },
-                    {
-                        "actionName": "BookingDetailsReadModel",
-                        "objectType": "ReadModel",
-                        "ids": {
-                            "aggregateId": "agg-booking",
-                            "readModelId": "read-booking-details"
-                        },
-                        "args": {
-                            "readModelName": "BookingDetails",
-                            "readModelAlias": "Booking Details",
+                            "readModelName": "CourseDetails",
+                            "readModelAlias": "View Course Details",
                             "isMultipleResult": False,
                             "queryParameters": [
                                 {
-                                    "name": "bookingId",
+                                    "name": "courseId",
                                     "type": "Long",
                                     "isKey": True
-                                },
-                                {
-                                    "name": "guestDetails",
-                                    "type": "GuestDetails"
-                                },
-                                {
-                                    "name": "roomDetails",
-                                    "type": "RoomDetails"
-                                },
-                                {
-                                    "name": "bookingPreferences",
-                                    "type": "BookingPreferences"
-                                },
-                                {
-                                    "name": "paymentHistory",
-                                    "type": "List<PaymentRecord>"
-                                },
-                                {
-                                    "name": "status",
-                                    "type": "BookingStatus"
-                                },
-                                {
-                                    "name": "createdAt",
-                                    "type": "Date"
-                                },
-                                {
-                                    "name": "lastModifiedAt",
-                                    "type": "Date"
                                 }
                             ],
-                            "actor": "Guest"
+                            "actor": "Student"
                         }
                     }
                 ]
