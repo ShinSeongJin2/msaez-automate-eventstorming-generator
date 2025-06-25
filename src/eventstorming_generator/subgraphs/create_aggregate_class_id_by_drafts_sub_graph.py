@@ -298,8 +298,9 @@ def generate_class_id(state: State) -> State:
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Generated {len(actions)} initial actions for references: {', '.join(current_gen.target_references)}")
         
         # 유효한 액션만 필터링
-        filtered_actions = _filter_invalid_actions(actions, current_gen.target_references)
-        filtered_actions = _filter_bidirectional_actions(filtered_actions, es_value, EsAliasTransManager(es_value))
+        es_alias_trans_manager = EsAliasTransManager(es_value)
+        filtered_actions = _filter_invalid_actions(actions, current_gen.target_references, es_value, es_alias_trans_manager)
+        filtered_actions = _filter_bidirectional_actions(filtered_actions, es_value, es_alias_trans_manager)
         if len(filtered_actions) == 0:
             LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] No valid actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
             current_gen.retry_count += 1
@@ -668,7 +669,7 @@ Key considerations:
 4. Related commands and events that might use these references"""
 
 # 유틸리티 함수
-def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: List[str]) -> List[Dict[str, Any]]:
+def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: List[str], es_value: Dict[str, Any], es_alias_trans_manager: EsAliasTransManager) -> List[Dict[str, Any]]:
     """
     유효하지 않은 액션 필터링
     """
@@ -687,7 +688,29 @@ def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: Li
             for target in target_references
         )
         
-        if is_valid_reference:
+        if not is_valid_reference:
+            continue
+
+        # esValue에 이미 존재하는 참조인지 확인하여 중복 필터링
+        is_duplicate = False
+        aggregate_id = es_alias_trans_manager.get_uuid_safely(action["ids"].get("aggregateId"))
+        aggregate_element = es_value["elements"].get(aggregate_id)
+        
+        action_ref_class = action["args"].get("referenceClass")
+
+        if aggregate_element and action_ref_class:
+            entities = aggregate_element.get("aggregateRoot", {}).get("entities", {}).get("elements", {})
+            for entity in entities.values():
+                if entity.get("_type") == "org.uengine.uml.model.vo.Class":
+                    field_descriptors = entity.get("fieldDescriptors", [])
+                    for field in field_descriptors:
+                        if field.get("referenceClass") == action_ref_class:
+                            is_duplicate = True
+                            break
+                if is_duplicate:
+                    break
+        
+        if not is_duplicate:
             filtered_actions.append(action)
     
     return filtered_actions
