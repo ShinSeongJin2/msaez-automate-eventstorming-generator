@@ -130,7 +130,7 @@ async def process_job_async(job_id: str, complete_job_func: callable):
         
     except asyncio.CancelledError:
         # 작업이 취소된 경우 (삭제 요청 등)
-        LoggingUtil.info("main", f"Job {job_id} 취소됨 (삭제 요청 또는 shutdown)")
+        LoggingUtil.debug("main", f"Job {job_id} 취소됨 (삭제 요청 또는 shutdown)")
         
         # 취소된 경우에는 complete_job_func를 호출하지 않음 (DecentralizedJobManager에서 처리)
         return
