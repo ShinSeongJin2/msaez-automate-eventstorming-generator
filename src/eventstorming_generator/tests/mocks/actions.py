@@ -137,7 +137,6 @@ actionsCollection = [
             objectType="Policy",
             type="create",
             ids={
-                "boundedContextId": "bc-notificationManagement",
                 "policyId": "pol-notifyOnOrderPlacement",
             },
             args={
@@ -145,6 +144,7 @@ actionsCollection = [
                 "policyAlias": "Notify on Order Placement",
                 "inputEventIds": ["evt-orderPlaced"],
                 "outputEventIds": ["evt-notificationDispatchRequested"],
+                "reason": "Automatically notify users when an order is placed."
             },
         ),
         # 10. Event: NotificationDispatchRequested
@@ -161,6 +161,68 @@ actionsCollection = [
                 "eventAlias": "Notification Dispatch Requested",
                 "properties": [
                     {"name": "orderId", "type": "String"},
+                    {"name": "userId", "type": "String"},
+                ],
+            },
+        )
+    ],
+    [
+        # 11. ReadModel: Notify
+        ActionModel(
+            objectType="ReadModel",
+            type="create",
+            ids={
+                "boundedContextId": "bc-notificationManagement",
+                "aggregateId": "agg-notification",
+                "readModelId": "rm-notify",
+            },
+            args={
+                "readModelName": "Notify",
+                "readModelAlias": "Notify",
+                "isMultipleResult": False,
+                "queryParameters": [
+                    {"name": "orderId", "type": "String"},
+                    {"name": "userId", "type": "String"},
+                ],
+                "actor": "User"
+            },
+        ),
+        # 12. Command: Notify -> triggers NotificationSent event
+        ActionModel(
+            objectType="Command",
+            type="create",
+            ids={
+                "boundedContextId": "bc-notificationManagement",
+                "aggregateId": "agg-notification",
+                "commandId": "cmd-notify",
+            },
+            args={
+                "commandName": "Notify",
+                "commandAlias": "Notify",
+                "api_verb": "POST",
+                "properties": [
+                    {"name": "notificationId", "type": "String", "isKey": True},
+                    {"name": "orderId", "type": "String"},
+                    {"name": "userId", "type": "String"},
+                ],
+                "outputEventIds": ["evt-notificationSent"],
+                "actor": "User",
+            },
+        ),
+        # 13. Event: NotificationSent
+        ActionModel(
+            objectType="Event",
+            type="create",
+            ids={
+                "boundedContextId": "bc-notificationManagement",
+                "aggregateId": "agg-notification",
+                "eventId": "evt-notificationSent",
+            },
+            args={
+                "eventName": "NotificationSent",
+                "eventAlias": "Notification Sent",
+                "properties": [
+                    {"name": "notificationId", "type": "String", "isKey": True},
                     {"name": "userId", "type": "String"},
                 ],
             },

@@ -161,32 +161,7 @@ class CommandProcessor:
                            command_object: Dict[str, Any]) -> Dict[str, int]:
         """Command의 적절한 위치를 계산합니다"""
         aggregate_id = action.ids.get("aggregateId", "")
-        commands = EsUtils.get_aggregate_commands(es_value, aggregate_id)
-        read_models = EsUtils.get_aggregate_read_models(es_value, aggregate_id)
-        all_models = commands + read_models
-        
-        if len(all_models) <= 0:
-            current_aggregate = es_value["elements"].get(aggregate_id, {})
-            if not current_aggregate:
-                return {"x": 0, "y": 0}
-                
-            return {
-                "x": current_aggregate["elementView"]["x"] - int(current_aggregate["elementView"]["width"]/2) - 29,
-                "y": current_aggregate["elementView"]["y"] - int(current_aggregate["elementView"]["height"]/2)
-            }
-        else:
-            min_x = min(model["elementView"]["x"] for model in all_models)
-            max_y = max(model["elementView"]["y"] for model in all_models)
-            
-            max_y_models = [model for model in all_models if model["elementView"]["y"] == max_y]
-            if not max_y_models:
-                return {"x": min_x, "y": max_y + 150}
-                
-            max_y_model = max_y_models[0]
-            return {
-                "x": min_x,
-                "y": max_y + int(max_y_model["elementView"]["height"]/2) + int(command_object["elementView"]["height"]/2) + 14
-            }
+        return EsUtils.get_valid_position_for_left_side_element(es_value, aggregate_id, command_object)
     
     @staticmethod
     def _get_field_descriptors(es_value: Dict[str, Any], action: Dict[str, Any]) -> List[Dict[str, Any]]:

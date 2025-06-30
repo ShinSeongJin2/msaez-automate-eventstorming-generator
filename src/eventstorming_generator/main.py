@@ -138,7 +138,7 @@ async def process_job_async(job_id: str, complete_job_func: callable):
     except Exception as e:
         LoggingUtil.exception("main", f"Job 처리 오류: {job_id}", e)
 
-        state.outputs.is_failed = True
+        state.outputs.isFailed = True
         LogUtil.add_exception_object_log(state, f"Job 처리 오류: {job_id}", e)
         JobUtil.update_job_to_firebase_fire_and_forget(state)
         

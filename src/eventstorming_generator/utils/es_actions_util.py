@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, EventProcessor, ReadModelProcessor
+from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, EventProcessor, ReadModelProcessor, PolicyProcessor
 from .es_restore_actions_util import EsRestoreActionsUtil
 
 class EsActionsUtil:
@@ -59,7 +59,8 @@ class EsActionsUtil:
             'Enumeration': 5,
             'Event': 6,
             'Command': 7,
-            'ReadModel': 8
+            'ReadModel': 8,
+            'Policy': 9
         }
         
         return sorted(actions, key=lambda a: priority_map.get(a.objectType, 999))
@@ -74,18 +75,17 @@ class EsActionsUtil:
                 action_id = action.ids[id_key]
                 action.ids[id_key] = EsActionsUtil._get_or_create_uuid(action_id, id_to_uuid_dic, es_value)
       
+            if "inputEventIds" in action.args:
+                action.args["inputEventIds"] = [
+                    EsActionsUtil._get_or_create_uuid(event_id, id_to_uuid_dic, es_value)
+                    for event_id in action.args["inputEventIds"]
+                ]
+            
             if "outputEventIds" in action.args:
                 action.args["outputEventIds"] = [
                     EsActionsUtil._get_or_create_uuid(event_id, id_to_uuid_dic, es_value)
                     for event_id in action.args["outputEventIds"]
                 ]
-            
-            if "outputCommandIds" in action.args:
-                for cmd_obj in action.args["outputCommandIds"]:
-                    if "commandId" in cmd_obj:
-                        cmd_obj["commandId"] = EsActionsUtil._get_or_create_uuid(
-                            cmd_obj["commandId"], id_to_uuid_dic, es_value
-                        )
     
     @staticmethod
     def _get_or_create_uuid(id_value: str, id_to_uuid_dic: Dict[str, str], es_value: Dict[str, Any]) -> str:
@@ -131,6 +131,10 @@ class EsActionsUtil:
             )
         elif action.objectType == "Event":
             EventProcessor.get_action_applied_es_value(
+                action, user_info, information, es_value, callbacks
+            )
+        elif action.objectType == "Policy":
+            PolicyProcessor.get_action_applied_es_value(
                 action, user_info, information, es_value, callbacks
             )
         elif action.objectType == "ReadModel":

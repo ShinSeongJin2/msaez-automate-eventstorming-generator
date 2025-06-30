@@ -9018,18 +9018,15 @@ create_policy_actions_by_function_inputs = {
                         "events": [
                             {
                                 "id": "evt-bookRegistered",
-                                "name": "BookRegistered",
-                                "outputCommands": []
+                                "name": "BookRegistered"
                             },
                             {
                                 "id": "evt-bookStatusChanged",
-                                "name": "BookStatusChanged",
-                                "outputCommands": []
+                                "name": "BookStatusChanged"
                             },
                             {
                                 "id": "evt-bookDiscarded",
-                                "name": "BookDiscarded",
-                                "outputCommands": []
+                                "name": "BookDiscarded"
                             }
                         ],
                         "readModels": [
@@ -9101,18 +9098,15 @@ create_policy_actions_by_function_inputs = {
                         "events": [
                             {
                                 "id": "evt-loaned",
-                                "name": "Loaned",
-                                "outputCommands": []
+                                "name": "Loaned"
                             },
                             {
                                 "id": "evt-returned",
-                                "name": "Returned",
-                                "outputCommands": []
+                                "name": "Returned"
                             },
                             {
                                 "id": "evt-reserved",
-                                "name": "Reserved",
-                                "outputCommands": []
+                                "name": "Reserved"
                             }
                         ],
                         "readModels": [

@@ -26,17 +26,17 @@ Operational Guidelines:
 * Optimize cross-context communication with appropriate policy propagation strategies and message delivery guarantees"""
 
     def _build_task_guidelines_prompt(self) -> str:
-        return f"""You need to analyse a given event stemming model to derive a policy (where events lead to commands).
+        return f"""You need to analyse a given event storming model to derive a policy (where events trigger other events).
 
 Please follow these rules:
-1. By analysing the given requirements and the generated event streams, we need to derive possible business logic and create relevant policies.
+1. By analysing the given requirements and the generated event streams, we need to derive possible business logic and create relevant policies that connect events to subsequent events.
 2. The name of policy should be written in English, and the rest of the content (alias, etc.) should be written in {self.client.get("preferredLanguage")} language so that it is easily understood by the user.
 3. Do not write comments in the output JSON object.
 4. Each policy should follow these guidelines:
-   - Policy names should be clear and action-oriented
-   - Reasons should explain the business value and purpose
-   - Consider the temporal aspects of event-command relationships
-   - Ensure policies don't create circular dependencies
+   - Policy names should be clear and action-oriented.
+   - Reasons should explain the business value and purpose.
+   - Consider the temporal aspects of event-to-event relationships.
+   - Ensure policies don't create circular dependencies.
 5. When creating policies, consider:
    - Business rules and constraints from requirements
    - Domain events and their business implications
@@ -53,11 +53,12 @@ Please follow these rules:
    - Align with defined interaction patterns (Pub/Sub, API calls, etc.)
    - Ensure policies support the specified context relationships
 8. Validation criteria for each policy:
-   - Must have clear trigger conditions
-   - Should respect bounded context boundaries
-   - Must be idempotent where possible
-   - Should handle failure scenarios gracefully
-   - Should align with defined context interaction patterns
+   - Must have clear trigger conditions (input events).
+   - Must produce clear outcomes (output events).
+   - Should respect bounded context boundaries.
+   - Must be idempotent where possible.
+   - Should handle failure scenarios gracefully.
+   - Should align with defined context interaction patterns.
 9. Avoid:
    - Tightly coupled policies across multiple contexts
    - Policies that could cause deadlocks
@@ -72,7 +73,7 @@ Inference Guidelines:
 2. Context Analysis: Thoroughly analyze the provided event storming model and functional requirements to understand the business objectives, domain boundaries, and integration points.
 3. Domain Events Analysis: Examine the provided domain events to understand business workflows, event sequences, and cross-context interactions.
 4. Context Relations Analysis: Review context relationships to understand interaction patterns, data flow directions, and integration constraints.
-5. Policy Design: Derive clear and distinct policies that connect related events with appropriate commands, ensuring each policy delivers unique business value while respecting context boundaries.
+5. Policy Design: Derive clear and distinct policies that connect related source events with appropriate target events, ensuring each policy delivers unique business value while respecting context boundaries.
 6. Cross-Context Validation: Ensure policies align with defined context interaction patterns and don't violate bounded context principles.
 7. Validation: Verify that policies avoid duplication, circular dependencies, and only span across aggregates or bounded contexts when necessary and supported by context relations.
 """
@@ -90,8 +91,8 @@ Inference Guidelines:
                 "name": "<name>",
                 "alias": "<alias>",
                 "reason": "<reason>",
-                "fromEventId": "<fromEventId>",
-                "toCommandId": "<toCommandId>"
+                "fromEventIds": ["<fromEventId1>", "<fromEventId2>"],
+                "toEventIds": ["<toEventId1>", "<toEventId2>"]
             }
         ]
     }
@@ -121,6 +122,7 @@ Inference Guidelines:
                             {
                                 "id": "agg-reservation",
                                 "name": "Reservation",
+                                "policies": [],
                                 "commands": [
                                     {
                                         "id": "cmd-create-reservation",
@@ -149,12 +151,10 @@ Inference Guidelines:
                                     {
                                         "id": "evt-reservation-created",
                                         "name": "ReservationCreated",
-                                        "outputCommands": []
                                     },
                                     {
                                         "id": "evt-reservation-confirmed",
                                         "name": "ReservationConfirmed",
-                                        "outputCommands": []
                                     }
                                 ]
                             }
@@ -167,6 +167,7 @@ Inference Guidelines:
                             {
                                 "id": "agg-kitchen",
                                 "name": "Kitchen",
+                                "policies": [],
                                 "commands": [
                                     {
                                         "id": "cmd-prepare-kitchen",
@@ -184,7 +185,6 @@ Inference Guidelines:
                                     {
                                         "id": "evt-kitchen-prepared",
                                         "name": "KitchenPrepared",
-                                        "outputCommands": []
                                     }
                                 ]
                             }
@@ -197,6 +197,7 @@ Inference Guidelines:
                             {
                                 "id": "agg-table",
                                 "name": "Table",
+                                "policies": [],
                                 "commands": [
                                     {
                                         "id": "cmd-assign-table",
@@ -214,7 +215,6 @@ Inference Guidelines:
                                     {
                                         "id": "evt-table-assigned",
                                         "name": "TableAssigned",
-                                        "outputCommands": []
                                     }
                                 ]
                             }
@@ -258,29 +258,26 @@ CREATE TABLE reservations (
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": """Based on the comprehensive analysis of the event storming model and the functional requirements document, three distinct policies have been derived. The requirements document outlined a user story for reservations, key domain events (e.g., ReservationCreated, TableAssigned), and a Pub/Sub interaction pattern between the Reservation and Kitchen contexts. The "TableAssignmentPolicy" connects the "ReservationCreated" event to the "AssignTable" command, automating table assignment as per the user story. The "KitchenPreparationPolicy" connects the "ReservationConfirmed" event to the "PrepareKitchen" command, directly implementing the defined Pub/Sub context relationship. Finally, the "ReservationConfirmationPolicy" links the "TableAssigned" event to the "ConfirmReservation" command, completing the reservation workflow. Each policy respects bounded context boundaries and aligns with the interaction patterns described in the requirements.""",
+            "inference": """Based on the functional requirements and event storming model, two policies are derived to automate the reservation workflow. The user story requires automatic table assignment and kitchen notification. The 'ReservationToKitchen' context relation explicitly defines a Pub/Sub pattern where the Kitchen Service subscribes to `ReservationConfirmed` events.
+
+1.  **AutoTableAssignmentPolicy**: The requirement "System should automatically assign an appropriate table" implies that after a `ReservationCreated` event, a `TableAssigned` event should follow without manual intervention. This policy connects `evt-reservation-created` to `evt-table-assigned`, automating the process across the Reservation and Table bounded contexts.
+
+2.  **KitchenPreparationPolicy**: The requirement "Kitchen should be notified for preparation" and the `ReservationToKitchen` context relation guide this policy. It listens for the `ReservationConfirmed` event and triggers the `KitchenPrepared` event in the Kitchen context. This directly implements the specified Pub/Sub interaction, ensuring the kitchen is notified to prepare for the confirmed reservation.""",
             "result": {
                 "extractedPolicies": [
                     {
-                        "name": "TableAssignmentPolicy",
-                        "alias": "Table Assignment Automation",
-                        "reason": "Automatically assign appropriate table upon reservation creation, following business rule requirements",
-                        "fromEventId": "evt-reservation-created",
-                        "toCommandId": "cmd-assign-table"
+                        "name": "AutoTableAssignment",
+                        "alias": "Automatic Table Assignment",
+                        "reason": "Fulfills the requirement that when a customer creates a reservation, the system must automatically assign an appropriate table.",
+                        "fromEventIds": ["evt-reservation-created"],
+                        "toEventIds": ["evt-table-assigned"]
                     },
                     {
-                        "name": "KitchenPreparationPolicy",
-                        "alias": "Kitchen Preparation Trigger",
-                        "reason": "Initiate kitchen preparation process when reservation is confirmed, leveraging Pub/Sub context relationship",
-                        "fromEventId": "evt-reservation-confirmed",
-                        "toCommandId": "cmd-prepare-kitchen"
-                    },
-                    {
-                        "name": "ReservationConfirmationPolicy",
-                        "alias": "Reservation Status Update",
-                        "reason": "Update reservation status after successful table assignment to complete the workflow",
-                        "fromEventId": "evt-table-assigned",
-                        "toCommandId": "cmd-confirm-reservation"
+                        "name": "KitchenPreparation",
+                        "alias": "Kitchen Preparation Notification",
+                        "reason": "Implements a Pub/Sub pattern to notify the kitchen for preparation once a reservation is confirmed. This is defined in the relationship between the Reservation and Kitchen contexts.",
+                        "fromEventIds": ["evt-reservation-confirmed"],
+                        "toEventIds": ["evt-kitchen-prepared"]
                     }
                 ]
             }
@@ -294,9 +291,9 @@ CREATE TABLE reservations (
             "Functional Requirements": inputs.get("description"),
 
             "Final Check": """
-* Do not create a duplicate policy if there is already any existing policy connecting the same Event to the same Command
-* Do not create a policy where an Event triggers a Command within the same Aggregate
-* Ensure all policies cross Aggregate or Bounded Context boundaries
-* Verify that each policy serves a distinct business purpose and is not redundant
+* Do not create a duplicate policy if there is already an existing policy connecting the same set of input and output events.
+* Do not create a policy where an Event triggers another Event within the same Aggregate, unless it's a clear state transition.
+* Ensure all policies that cross Aggregate or Bounded Context boundaries are justified by the requirements.
+* Verify that each policy serves a distinct business purpose and is not redundant.
 """
         }

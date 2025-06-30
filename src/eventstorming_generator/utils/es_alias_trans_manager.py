@@ -153,8 +153,10 @@ class EsAliasTransManager:
             if action.get("objectType") == "Command" and action.get("args") and "outputEventIds" in action["args"]:
                 action["args"]["outputEventIds"] = [trans_func(id_val) for id_val in action["args"]["outputEventIds"]]
             
-            if action.get("objectType") == "Event" and action.get("args") and "outputCommandIds" in action["args"]:
-                for output_command in action["args"]["outputCommandIds"]:
-                    output_command["commandId"] = trans_func(output_command["commandId"])
+            if action.get("objectType") == "Policy" and action.get("args") and "inputEventIds" in action["args"]:
+                action["args"]["inputEventIds"] = [trans_func(id_val) for id_val in action["args"]["inputEventIds"]]
+
+            if action.get("objectType") == "Policy" and action.get("args") and "outputEventIds" in action["args"]:
+                action["args"]["outputEventIds"] = [trans_func(id_val) for id_val in action["args"]["outputEventIds"]]
         
         return actions

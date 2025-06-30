@@ -2,7 +2,6 @@ from typing import Dict, Any, List
 
 from ..convert_case_util import CaseConvertUtil
 from ..es_utils import EsUtils
-from .policy_processor import PolicyProcessor
 
 class EventProcessor:
     @staticmethod
@@ -36,25 +35,11 @@ class EventProcessor:
         event_object["elementView"]["x"] = valid_position["x"]
         event_object["elementView"]["y"] = valid_position["y"]
         
-        # 객체 추가
+        # es_value에 추가
         es_value["elements"][event_object["id"]] = event_object
         
         # Aggregate 크기 조정
         EsUtils.resize_aggregate_vertically(es_value, event_object)
-        
-        # Policy 생성을 위한 콜백 등록 (outputCommandIds가 있는 경우)
-        if action.get("args", {}).get("outputCommandIds"):
-            def create_policies_callback(es_value_cb: Dict[str, Any], user_info_cb: Dict[str, Any], 
-                                       information_cb: Dict[str, Any]) -> None:
-                for output_command_id in action["args"]["outputCommandIds"]:
-                    PolicyProcessor.create_new_policy(
-                        es_value_cb, user_info_cb,
-                        event_object, 
-                        output_command_id.get("commandId", ""), 
-                        output_command_id.get("reason", "")
-                    )
-            
-            callbacks["afterAllObjectAppliedCallBacks"].append(create_policies_callback)
         
         # 필드 생성을 위한 콜백 등록
         def set_field_descriptors_callback(es_value_cb: Dict[str, Any], user_info_cb: Dict[str, Any], 
@@ -78,22 +63,6 @@ class EventProcessor:
         if not event_object:
             return
             
-        # Policy 생성을 위한 콜백 등록 (outputCommandIds가 있는 경우)
-        if action.get("args", {}).get("outputCommandIds"):
-            def create_policies_callback(es_value_cb: Dict[str, Any], user_info_cb: Dict[str, Any], 
-                                       information_cb: Dict[str, Any]) -> None:
-                for output_command_id in action["args"]["outputCommandIds"]:
-                    PolicyProcessor.create_new_policy(
-                        es_value_cb, user_info_cb,
-                        event_object, 
-                        output_command_id.get("commandId", ""), 
-                        output_command_id.get("reason", ""),
-                        output_command_id.get("name", ""),
-                        output_command_id.get("alias", "")
-                    )
-            
-            callbacks["afterAllObjectAppliedCallBacks"].append(create_policies_callback)
-    
     @staticmethod
     def _get_event_base(user_info: Dict[str, Any], name: str, display_name: str, 
                        bounded_context_id: str, aggregate_id: str, 

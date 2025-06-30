@@ -6,6 +6,7 @@ from .command_processor import CommandProcessor
 from .event_processor import EventProcessor
 from .actor_processor import ActorProcessor
 from .read_model_processor import ReadModelProcessor
+from .policy_processor import PolicyProcessor
 
 __all__ = [
     'BoundedContextProcessor',
@@ -16,4 +17,5 @@ __all__ = [
     'EventProcessor',
     'ActorProcessor',
     'ReadModelProcessor',
+    'PolicyProcessor',
 ]

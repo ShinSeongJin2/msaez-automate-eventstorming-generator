@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreateCommandActionsByFunction
-from ..utils import ESFakeActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -325,15 +325,6 @@ def postprocess_command_actions_generation(state: State) -> State:
         actions = filter_actions(actions, state.outputs.esValue.model_dump())
         LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Actions after duplicate filtering for aggregate '{aggregate_name}': {len(actions)}")
         
-        # Event의 outputCommandIds 속성 제거 (정책은 별도 처리)
-        remove_event_output_command_ids(actions)
-        
-        # 부분 결과에 대한 가짜 액션 추가 (안정성을 위해)
-        actions = ESFakeActionsUtil.add_fake_actions(actions, state.outputs.esValue)
-        
-        # 기본 속성 추가
-        actions = add_default_properties(actions)
-        
         # 처리된 액션 저장
         current.created_actions = actions
 
@@ -642,26 +633,6 @@ def restore_actions(actions: List[ActionModel], es_value: Dict[str, Any], target
                 action.args = {}
             action.args["properties"] = action.args.get("queryParameters", [])
     
-    # Output Event/Command 관계 복원
-    for action in actions:
-        if action.objectType == "Command" and action.args and action.args.get("outputEventNames"):
-            action.args["outputEventIds"] = [
-                get_id_by_name(name, actions, es_value) 
-                for name in action.args["outputEventNames"]
-            ]
-            action.args["outputEventIds"] = [id for id in action.args["outputEventIds"] if id]
-        
-        if action.objectType == "Event" and action.args and action.args.get("outputCommandNames"):
-            action.args["outputCommandIds"] = [
-                {
-                    "commandId": get_id_by_name(name, actions, es_value),
-                    "relatedAttribute": "",
-                    "reason": ""
-                }
-                for name in action.args["outputCommandNames"]
-            ]
-            action.args["outputCommandIds"] = [cmd for cmd in action.args["outputCommandIds"] if cmd.get("commandId")]
-    
     return actions
 
 def get_id_by_name(name: str, actions: List[ActionModel], es_value: Dict[str, Any]) -> str:
@@ -713,25 +684,46 @@ def filter_actions(actions: List[ActionModel], es_value: Dict[str, Any]) -> List
                 action.args.get("readModelAlias").replace(" ", "") not in display_names):
                 filtered_actions.append(action)
     
-    # 호출되지 않는 이벤트 제외
-    output_event_ids = []
+    # 유효하지 않은 커맨드 액션 제거
+    # 1. 모든 유효한 이벤트 ID 수집 (기존 es_value + 새로 생성된 action)
+    all_event_ids = {
+        element['id']
+        for element in es_value.get("elements", {}).values()
+        if element and element.get("_type") == "org.uengine.modeling.model.Event" and element.get('id')
+    }
+    all_event_ids.update({
+        action.ids['eventId']
+        for action in filtered_actions
+        if action.objectType == "Event" and action.ids and action.ids.get('eventId')
+    })
+
+    # 2. Command의 outputEventIds를 검증하고, 유효한 이벤트가 없는 커맨드는 제거
+    valid_commands_and_other_actions = []
     for action in filtered_actions:
+        if action.objectType == "Command":
+            if action.args and "outputEventIds" in action.args:
+                valid_ids = [eid for eid in action.args.get("outputEventIds", []) if eid in all_event_ids]
+                if valid_ids:
+                    action.args["outputEventIds"] = valid_ids
+                    valid_commands_and_other_actions.append(action)
+                # else: 유효한 outputEventId가 하나도 없으면 커맨드 액션을 버립니다.
+            else:
+                # outputEventIds가 없는 커맨드는 그대로 유지합니다.
+                valid_commands_and_other_actions.append(action)
+        else:
+            # Command가 아닌 다른 액션들은 그대로 유지합니다.
+            valid_commands_and_other_actions.append(action)
+
+    # 호출되지 않는 이벤트 제외
+    output_event_ids = set()
+    for action in valid_commands_and_other_actions:
         if action.objectType == "Command" and action.args and action.args.get("outputEventIds"):
-            output_event_ids.extend(action.args["outputEventIds"])
+            output_event_ids.update(action.args["outputEventIds"])
     
-    return [action for action in filtered_actions if
-            action.objectType != "Event" or action.ids.get("eventId") in output_event_ids]
-
-def remove_event_output_command_ids(actions: List[ActionModel]) -> None:
-    """Event의 outputCommandIds 속성 제거"""
-    for action in actions:
-        if action.objectType == "Event" and action.args and "outputCommandIds" in action.args:
-            del action.args["outputCommandIds"]
-
-def add_default_properties(actions: List[ActionModel]) -> List[ActionModel]:
-    """기본 속성 추가"""
-    # 여기서는 간단히 구현하고 필요시 확장
-    return actions
+    return [
+        action for action in valid_commands_and_other_actions
+        if action.objectType != "Event" or (action.ids and action.ids.get("eventId") in output_event_ids)
+    ]
 
 def _build_request_context(current_gen) -> str:
     """

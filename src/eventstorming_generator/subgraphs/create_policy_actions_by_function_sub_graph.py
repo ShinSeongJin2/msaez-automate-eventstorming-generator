@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreatePolicyActionsByFunction
-from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -273,7 +273,7 @@ def generate_policy_actions(state: State) -> State:
             policies = result["result"].get("extractedPolicies", [])
         
         # Policy를 액션으로 변환
-        actions = _to_event_update_actions(
+        actions = _to_policy_creation_actions(
             policies, 
             EsAliasTransManager(es_value), 
             es_value
@@ -543,6 +543,7 @@ def create_policy_actions_by_function_subgraph() -> Callable:
         decide_next_step,
         {
             "postprocess": "postprocess",
+            "generate": "generate",
             "validate": "validate",
             "es_value_summary_generator": "es_value_summary_generator",
             "complete": "complete"
@@ -593,87 +594,111 @@ def create_policy_actions_by_function_subgraph() -> Callable:
     return run_subgraph
 
 
-# 유틸리티 함수: 이벤트 업데이트 액션으로 변환
-def _to_event_update_actions(policies: List[Dict[str, Any]], 
-                           es_alias_trans_manager: Any, 
-                           es_value: Dict[str, Any]) -> List[Dict[str, Any]]:
+# 유틸리티 함수: Policy 생성 액션으로 변환
+def _to_policy_creation_actions(policies: List[Dict[str, Any]], 
+                                es_alias_trans_manager: Any, 
+                                es_value: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    정책을 이벤트 업데이트 액션으로 변환
+    AI가 생성한 정책 정의를 새로운 Policy 생성 액션으로 변환합니다.
+    - 중복 정책 생성을 방지하는 로직을 포함합니다.
     """
     actions = []
     
-    for policy in policies:
-        # 이벤트 ID 획득
-        event_id = es_alias_trans_manager.alias_to_uuid_dic.get(policy["fromEventId"])
-        if not event_id:
+    # 1. 기존 정책과 이벤트 연결 관계 수집
+    existing_policies = {}  # { policy_id: {"inputs": {uuid, ...}, "outputs": {uuid, ...}} }
+    all_elements = es_value.get("elements", {})
+    all_relations = es_value.get("relations", {}).values()
+
+    for element_id, element in all_elements.items():
+        if element and element.get("_type") == "org.uengine.modeling.model.Policy":
+            existing_policies[element_id] = {"inputs": set(), "outputs": set()}
+
+    for relation in all_relations:
+        if not relation:
             continue
         
-        # 이벤트 객체 획득
-        event_object = es_value["elements"].get(event_id)
-        if not event_object:
-            continue
+        source_el = relation.get("sourceElement", {})
+        target_el = relation.get("targetElement", {})
         
-        # 커맨드 ID 획득
-        command_id = es_alias_trans_manager.alias_to_uuid_dic.get(policy["toCommandId"])
-        if not command_id:
-            continue
-        
-        # 커맨드 객체 획득
-        command_object = es_value["elements"].get(command_id)
-        if not command_object:
-            continue
-        
-        # 이미 연결되어 있는지 확인
-        is_already_connected = False
-        target_policies = []
-        
-        # 이벤트에서 정책으로의 관계 찾기
-        for relation in es_value["relations"].values():
-            if not relation or not relation.get("sourceElement") or not relation.get("targetElement"):
-                continue
+        source_id = source_el.get("id")
+        target_id = target_el.get("id")
+
+        # 정책 입력: Event -> Policy
+        if target_id in existing_policies and source_el.get("_type") == "org.uengine.modeling.model.Event":
+            existing_policies[target_id]["inputs"].add(source_id)
+
+        # 정책 출력: Policy -> Event
+        if source_id in existing_policies and target_el.get("_type") == "org.uengine.modeling.model.Event":
+            existing_policies[source_id]["outputs"].add(target_id)
             
-            if (relation["sourceElement"].get("id") == event_object["id"] and 
-                relation["targetElement"].get("_type") == "org.uengine.modeling.model.Policy"):
-                target_policies.append(relation["targetElement"])
-        
-        # 정책에서 커맨드로의 관계 찾기
-        if target_policies:
-            for target_policy in target_policies:
-                for relation in es_value["relations"].values():
-                    if not relation or not relation.get("sourceElement") or not relation.get("targetElement"):
-                        continue
-                    
-                    if (relation["sourceElement"].get("id") == target_policy["id"] and 
-                        relation["targetElement"].get("id") == command_object["id"]):
-                        is_already_connected = True
-                        break
-                
-                if is_already_connected:
-                    break
-        
-        # 이미 연결되어 있으면 스킵
-        if is_already_connected:
+    # 2. 생성된 정책을 순회하며 중복이 아닌 경우 액션 생성
+    for policy in policies:
+        from_event_ids_aliases = policy.get("fromEventIds", [])
+        to_event_ids_aliases = policy.get("toEventIds", [])
+
+        if not from_event_ids_aliases or not to_event_ids_aliases:
             continue
+
+        # 비교를 위해 별칭을 UUID로 변환
+        from_event_uuids = {es_alias_trans_manager.alias_to_uuid_dic.get(alias) for alias in from_event_ids_aliases}
+        to_event_uuids = {es_alias_trans_manager.alias_to_uuid_dic.get(alias) for alias in to_event_ids_aliases}
         
-        # 이벤트 업데이트 액션 생성
+        from_event_uuids.discard(None)
+        to_event_uuids.discard(None)
+
+        # 중복 확인
+        is_duplicate = False
+        for existing_policy_data in existing_policies.values():
+            if (existing_policy_data["inputs"] == from_event_uuids and 
+                existing_policy_data["outputs"] == to_event_uuids):
+                is_duplicate = True
+                break
+        
+        if is_duplicate:
+            continue
+
+
+        valid_from_event_uuids = []
+        valid_to_event_uuids = []
+
+        to_event_aggregate_ids = set()
+        for to_event_uuid in to_event_uuids:
+            if to_event_uuid in es_value["elements"]:
+                valid_to_event_uuids.append(to_event_uuid)
+                to_event_aggregate_ids.add(es_value["elements"][to_event_uuid].get("aggregate", {}).get("id"))
+        
+        for from_event_uuid in from_event_uuids:
+            if from_event_uuid in es_value["elements"]:
+                from_event_aggregate_id = es_value["elements"][from_event_uuid].get("aggregate", {}).get("id")
+                if from_event_aggregate_id not in to_event_aggregate_ids:
+                    valid_from_event_uuids.append(from_event_uuid)
+        
+        if not valid_from_event_uuids or not valid_to_event_uuids:
+            continue
+
+
+        # 3. 새로운 Policy 생성 액션 생성
+        policy_name = policy.get("name")
+        policy_id = f"pol-{CaseConvertUtil.camel_case(policy_name)}"
+
         actions.append({
-            "objectType": "Event",
-            "type": "update",
+            "objectType": "Policy",
+            "type": "create",
             "ids": {
-                "boundedContextId": event_object["boundedContext"]["id"],
-                "aggregateId": event_object["aggregate"]["id"],
-                "eventId": event_object["id"]
+                "policyId": policy_id
             },
             "args": {
-                "outputCommandIds": [{
-                    "commandId": command_object["id"],
-                    "reason": policy["reason"],
-                    "name": policy["name"],
-                    "alias": policy["alias"]
-                }]
+                "policyName": policy_name,
+                "policyAlias": policy.get("alias", ""),
+                "reason": policy.get("reason", ""),
+                "inputEventIds": valid_from_event_uuids,
+                "outputEventIds": valid_to_event_uuids
             }
         })
-    
+        
+        # 동일 배치 내 중복 생성을 막기 위해 새로 추가된 정책도 기존 목록에 추가
+        existing_policies[policy_id] = {"inputs": from_event_uuids, "outputs": to_event_uuids}
+
     return actions
 
 # 요약 요청 컨텍스트 빌드 함수

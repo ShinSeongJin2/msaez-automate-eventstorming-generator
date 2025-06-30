@@ -59,17 +59,6 @@ class ESFakeActionsUtil:
                     back_fake_actions.append(ESFakeActionsUtil._get_fake_event_action(
                         action.ids["boundedContextId"], action.ids["aggregateId"], event_id))
 
-            # 이벤트가 정책으로 호출시킬 커맨드가 없는 경우를 대비해서 가짜 커맨드 액션을 추가
-            if action.objectType == "Event" and action.args and "outputCommandIds" in action.args:
-                for output_command in action.args["outputCommandIds"]:
-                    command_id_to_check = output_command["commandId"]
-                    if command_id_to_check in es_value.elements:
-                        continue
-                    if ESFakeActionsUtil._is_have_command_create_action(getAllCreatedActions(), command_id_to_check):
-                        continue
-                    back_fake_actions.append(ESFakeActionsUtil._get_fake_command_action(
-                        action.ids["boundedContextId"], action.ids["aggregateId"], command_id_to_check))
-
         return getAllCreatedActions()
 
     @staticmethod
@@ -144,8 +133,7 @@ class ESFakeActionsUtil:
                         "type": "Long",
                         "isKey": True
                     }
-                ],
-                "outputCommandIds": []
+                ]
             }
         )
 

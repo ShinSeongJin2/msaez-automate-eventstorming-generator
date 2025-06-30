@@ -5,7 +5,7 @@ import os
 
 from ..models import AggregateGenerationState, State, ActionModel, EsValueModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateActionsByFunction
-from ..utils import EsActionsUtil, ESFakeActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil
+from ..utils import EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -359,9 +359,6 @@ def postprocess_aggregate_generation(state: State) -> State:
         
         # ES 값 업데이트를 위한 준비
         es_value_to_modify = EsValueModel(**deepcopy(es_value.model_dump()))
-        
-        # 가짜 액션 추가 (부분 처리를 위한 보완 조치)
-        actions = ESFakeActionsUtil.add_fake_actions(actions, es_value_to_modify)
         
         # 이전 Bounded Context 관련 요소 제거 (필요한 경우)
         if not current_gen.is_accumulated:
@@ -720,47 +717,6 @@ def _restore_actions(actions: List[Dict[str, Any]], es_value: Dict[str, Any], ta
                 "boundedContextId": target_bounded_context.get("id"),
                 **action.get("ids", {})
             }
-    
-    # 이벤트 및 커맨드 ID 복원
-    for action in actions:
-        if action.get("objectType") == "Command" and action.get("args"):
-            if "outputEventNames" in action["args"]:
-                action["args"]["outputEventIds"] = [
-                    _get_id_by_name_in_es_value(name, actions, es_value)
-                    for name in action["args"]["outputEventNames"]
-                ]
-                action["args"]["outputEventIds"] = [id_ for id_ in action["args"]["outputEventIds"] if id_]
-        
-        elif action.get("objectType") == "Event" and action.get("args"):
-            if "outputCommandNames" in action["args"]:
-                action["args"]["outputCommandIds"] = [
-                    {
-                        "commandId": _get_id_by_name_in_es_value(name, actions, es_value),
-                        "relatedAttribute": "",
-                        "reason": ""
-                    }
-                    for name in action["args"]["outputCommandNames"]
-                ]
-                action["args"]["outputCommandIds"] = [
-                    cmd for cmd in action["args"]["outputCommandIds"] if cmd.get("commandId")
-                ]
-
-def _get_id_by_name_in_es_value(name: str, actions: List[Dict[str, Any]], es_value: Dict[str, Any]) -> Optional[str]:
-    """
-    이름으로 ES 값에서 ID 찾기
-    """
-    # 액션에서 찾기
-    for action in actions:
-        if ((action.get("args") and action["args"].get("commandName") == name) or
-            (action.get("args") and action["args"].get("eventName") == name)):
-            return action.get("ids", {}).get("commandId" if "commandName" in action["args"] else "eventId")
-    
-    # ES 값에서 찾기
-    for element in es_value.get("elements", {}).values():
-        if element and element.get("name") == name and element.get("id"):
-            return element["id"]
-    
-    return None
 
 def _get_target_bounded_context(es_value: Dict[str, Any], target_bounded_context_name: str) -> Dict[str, Any]:
     """

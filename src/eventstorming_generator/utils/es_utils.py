@@ -113,6 +113,16 @@ class EsUtils:
         ]
     
     @staticmethod
+    def get_aggregate_policies(es_value: Dict[str, Any], target_aggregate_id: str) -> List[Dict[str, Any]]:
+        """특정 Aggregate에 속한 모든 Policy 가져오기"""
+        return [
+            element for element in es_value["elements"].values()
+            if (element and
+                element.get("_type") == "org.uengine.modeling.model.Policy" and
+                element.get("aggregate", {}).get("id") == target_aggregate_id)
+        ]
+    
+    @staticmethod
     def get_related_value_objects(es_value: Dict[str, Any], aggregate_id: str) -> List[Dict[str, Any]]:
         """특정 Aggregate에 속한 모든 ValueObject 가져오기"""
         entities = EsUtils.get_entities_for_aggregate(es_value, aggregate_id)
@@ -167,6 +177,43 @@ class EsUtils:
                 relation.get("targetElement", {}).get("id") == event["id"])
         )
 
+    @staticmethod
+    def get_valid_position_for_left_side_element(es_value: Dict[str, Any], aggregate_id: str, 
+                                                 element_object: Dict[str, Any]) -> Dict[str, int]:
+        """Aggregate 좌측 요소(Command, ReadModel, Policy)의 유효한 위치를 계산합니다"""
+        commands = EsUtils.get_aggregate_commands(es_value, aggregate_id)
+        read_models = EsUtils.get_aggregate_read_models(es_value, aggregate_id)
+        policies = EsUtils.get_aggregate_policies(es_value, aggregate_id)
+        
+        # 새롭게 추가되는 element_object는 아직 es_value에 없으므로, 중복 계산을 피하기 위해 리스트에서 제거
+        all_models = [
+            m for m in (commands + read_models + policies) 
+            if m["id"] != element_object["id"]
+        ]
+        
+        if len(all_models) <= 0:
+            current_aggregate = es_value["elements"].get(aggregate_id, {})
+            if not current_aggregate:
+                return {"x": 0, "y": 0}
+                
+            return {
+                "x": current_aggregate["elementView"]["x"] - int(current_aggregate["elementView"]["width"]/2) - 29,
+                "y": current_aggregate["elementView"]["y"] - int(current_aggregate["elementView"]["height"]/2)
+            }
+        else:
+            min_x = min(model["elementView"]["x"] for model in all_models)
+            max_y = max(model["elementView"]["y"] for model in all_models)
+            
+            max_y_models = [model for model in all_models if model["elementView"]["y"] == max_y]
+            if not max_y_models:
+                return {"x": min_x, "y": max_y + 150}
+                
+            max_y_model = max_y_models[0]
+            return {
+                "x": min_x,
+                "y": max_y + int(max_y_model["elementView"]["height"]/2) + int(element_object["elementView"]["height"]/2) + 14
+            }
+            
     @staticmethod
     def getEventStormingRelationObjectBase(fromObject: Dict[str, Any], toObject: Dict[str, Any]) -> Dict[str, Any]:
         """이벤트스토밍 관계 객체 생성"""

@@ -44,11 +44,7 @@ class ActorProcessor:
     @staticmethod
     def make_actor_to_command(es_value: Dict[str, Any], action: Dict[str, Any], 
                             command_object: Dict[str, Any], user_info: Dict[str, Any]) -> None:
-        """Command와 연결된 Actor를 생성합니다"""
-        # 이미 연결된 정책이 있는지 확인
-        if ActorProcessor._get_related_policies(es_value, command_object):
-            return
-            
+        """Command와 연결된 Actor를 생성합니다"""          
         # actor가 지정되지 않았으면 중단
         if not action.args.get("actor"):
             return
@@ -65,16 +61,6 @@ class ActorProcessor:
         
         # Actor 객체 추가
         es_value["elements"][actor_base["id"]] = actor_base
-    
-    @staticmethod
-    def _get_related_policies(es_value: Dict[str, Any], command_object: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Command와 연결된 Policy 객체 목록을 가져옵니다"""
-        return [
-            relation for relation in es_value["relations"].values()
-            if (relation and 
-                relation.get("targetElement", {}).get("id") == command_object["id"] and
-                relation.get("sourceElement", {}).get("_type") == "org.uengine.modeling.model.Policy")
-        ]
     
     @staticmethod
     def _get_actor_base(user_info: Dict[str, Any], actor_name: str, 

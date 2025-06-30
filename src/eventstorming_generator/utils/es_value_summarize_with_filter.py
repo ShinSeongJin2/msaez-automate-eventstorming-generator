@@ -127,6 +127,26 @@ The approximate structure is as follows.
                     }
                 ],
 
+                "policies": [
+                    {
+                        "id": "<policyId>",
+                        "name": "<policyName>",
+                        "description": "<policyDescription>",
+                        "inputEvents": [
+                            {
+                                "id": "<eventId>",
+                                "name": "<eventName>"
+                            }
+                        ],
+                        "outputEvents": [
+                            {
+                                "id": "<eventId>",
+                                "name": "<eventName>"
+                            }
+                        ]
+                    }
+                ],
+
                 "events": [
                     {
                         "id": "<eventId>",
@@ -136,16 +156,6 @@ The approximate structure is as follows.
                                 "name": "<propertyName>",
                                 ["type": "<propertyType>"],
                                 ["isKey": true]
-                            }
-                        ],
-
-                        // A list of cascading commands that occur when an event is executed.
-                        "outputCommands": [
-                            {
-                                "id": "<commandId>",
-                                "name": "<commandName>",
-                                "policyId": "<policyId>",
-                                "policyName": "<policyName>"
                             }
                         ]
                     }
@@ -386,6 +396,13 @@ The approximate structure is as follows.
         result.update(get_conditional_value(
             ["commands", "aggregate.commands"],
             {"commands": ESValueSummarizeWithFilter.get_summarized_command_value(
+                es_value, bounded_context, aggregate, keys_to_exclude_filter, es_alias_trans_manager
+            )}
+        ))
+        
+        result.update(get_conditional_value(
+            ["policies", "aggregate.policies"],
+            {"policies": ESValueSummarizeWithFilter.get_summarized_policy_value(
                 es_value, bounded_context, aggregate, keys_to_exclude_filter, es_alias_trans_manager
             )}
         ))
@@ -655,6 +672,101 @@ The approximate structure is as follows.
         return summarized_command_value
     
     @staticmethod
+    def get_summarized_policy_value(es_value: Dict[str, Any], bounded_context: Dict[str, Any], 
+                                   aggregate: Dict[str, Any], keys_to_exclude_filter: List[str] = None, 
+                                   es_alias_trans_manager: Optional[EsAliasTransManager] = None) -> List[Dict[str, Any]]:
+        """
+        Policy에 대한 요약된 정보를 반환합니다.
+        
+        Args:
+            es_value: 이벤트 스토밍 모델 객체
+            bounded_context: Bounded Context 객체
+            aggregate: Aggregate 객체
+            keys_to_exclude_filter: 제외할 속성 키 배열
+            es_alias_trans_manager: ID 변환을 위한 매니저 객체
+            
+        Returns:
+            요약된 Policy 정보 리스트
+        """
+        if keys_to_exclude_filter is None:
+            keys_to_exclude_filter = []
+        
+        def get_conditional_value(keys, value):
+            return value if not ESValueSummarizeWithFilter._check_key_filters(keys_to_exclude_filter, keys) else {}
+        
+        summarized_policy_value = []
+        for element in es_value.get("elements", {}).values():
+            if (element and element.get("_type") == 'org.uengine.modeling.model.Policy' and
+                element.get("boundedContext", {}).get("id") == bounded_context.get("id") and
+                element.get("aggregate", {}).get("id") == aggregate.get("id")):
+                
+                policy = {}
+                policy.update(get_conditional_value(
+                    ["id", "policies.id"],
+                    {"id": ESValueSummarizeWithFilter._get_element_id_safely(element, es_alias_trans_manager)}
+                ))
+                
+                policy.update(get_conditional_value(
+                    ["name", "policies.name"],
+                    {"name": element.get("name", "")}
+                ))
+                
+                policy.update(get_conditional_value(
+                    ["description", "policies.description"],
+                    {"description": element.get("description", "") or ""}
+                ))
+                
+                input_events = []
+                for relation in es_value.get("relations", {}).values():
+                    if (relation and relation.get("targetElement", {}).get("id") == element.get("id") and 
+                        relation.get("sourceElement", {}).get("_type") == 'org.uengine.modeling.model.Event'):
+                        
+                        event = {}
+                        event.update(get_conditional_value(
+                            ["id", "policies.inputEvents.id"],
+                            {"id": ESValueSummarizeWithFilter._get_element_id_safely(relation["sourceElement"], es_alias_trans_manager)}
+                        ))
+                        
+                        event.update(get_conditional_value(
+                            ["name", "policies.inputEvents.name"],
+                            {"name": relation["sourceElement"].get("name", "")}
+                        ))
+                        
+                        input_events.append(event)
+                
+                policy.update(get_conditional_value(
+                    ["inputEvents", "policies.inputEvents"],
+                    {"inputEvents": input_events}
+                ))
+                
+                output_events = []
+                for relation in es_value.get("relations", {}).values():
+                    if (relation and relation.get("sourceElement", {}).get("id") == element.get("id") and 
+                        relation.get("targetElement", {}).get("_type") == 'org.uengine.modeling.model.Event'):
+                        
+                        event = {}
+                        event.update(get_conditional_value(
+                            ["id", "policies.outputEvents.id"],
+                            {"id": ESValueSummarizeWithFilter._get_element_id_safely(relation["targetElement"], es_alias_trans_manager)}
+                        ))
+                        
+                        event.update(get_conditional_value(
+                            ["name", "policies.outputEvents.name"],
+                            {"name": relation["targetElement"].get("name", "")}
+                        ))
+                        
+                        output_events.append(event)
+                
+                policy.update(get_conditional_value(
+                    ["outputEvents", "policies.outputEvents"],
+                    {"outputEvents": output_events}
+                ))
+                
+                summarized_policy_value.append(policy)
+        
+        return summarized_policy_value
+    
+    @staticmethod
     def get_summarized_event_value(es_value: Dict[str, Any], bounded_context: Dict[str, Any], 
                                  aggregate: Dict[str, Any], keys_to_exclude_filter: List[str] = None, 
                                  es_alias_trans_manager: Optional[EsAliasTransManager] = None) -> List[Dict[str, Any]]:
@@ -676,48 +788,6 @@ The approximate structure is as follows.
         
         def get_conditional_value(keys, value):
             return value if not ESValueSummarizeWithFilter._check_key_filters(keys_to_exclude_filter, keys) else {}
-        
-        def get_relations_for_type(source_element, target_type):
-            return [
-                relation for relation in es_value.get("relations", {}).values()
-                if relation and relation.get("sourceElement", {}).get("id") == source_element.get("id") and 
-                   relation.get("targetElement", {}).get("_type") == target_type
-            ]
-        
-        def get_output_commands(element):
-            commands = []
-            for policy_relation in get_relations_for_type(element, "org.uengine.modeling.model.Policy"):
-                policy_id = policy_relation.get("targetElement", {}).get("id")
-                if not policy_id or policy_id not in es_value.get("elements", {}):
-                    continue
-                
-                target_policy = es_value["elements"][policy_id]
-                
-                for command_relation in get_relations_for_type(target_policy, "org.uengine.modeling.model.Command"):
-                    command = {}
-                    command.update(get_conditional_value(
-                        ["id", "events.outputCommands.id"],
-                        {"id": ESValueSummarizeWithFilter._get_element_id_safely(command_relation["targetElement"], es_alias_trans_manager)}
-                    ))
-                    
-                    command.update(get_conditional_value(
-                        ["name", "events.outputCommands.name"],
-                        {"name": command_relation["targetElement"].get("name", "")}
-                    ))
-                    
-                    command.update(get_conditional_value(
-                        ["id", "events.outputCommands.policyId"],
-                        {"policyId": ESValueSummarizeWithFilter._get_element_id_safely(target_policy, es_alias_trans_manager)}
-                    ))
-                    
-                    command.update(get_conditional_value(
-                        ["name", "events.outputCommands.policyName"],
-                        {"policyName": target_policy.get("name", "")}
-                    ))
-                    
-                    commands.append(command)
-            
-            return commands
         
         summarized_event_value = []
         for element in es_value.get("elements", {}).values():
@@ -746,11 +816,6 @@ The approximate structure is as follows.
                         ["properties", "events.properties"],
                         {"properties": []}
                     ))
-                
-                event.update(get_conditional_value(
-                    ["outputCommands", "events.outputCommands"],
-                    {"outputCommands": get_output_commands(element)}
-                ))
                 
                 summarized_event_value.append(event)
         
