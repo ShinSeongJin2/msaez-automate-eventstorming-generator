@@ -52,7 +52,7 @@ Command and Event Guidelines:
 1. Each command must:
    - Have a corresponding event (e.g., CreateOrder -> OrderCreated)
    - Include necessary validation parameters
-   - Specify the actor (user, system, admin, etc.)
+   - Specify the actor (User, System, Admin, etc.)
 2. For update/delete operations:
    - Always include the Aggregate's primary key
    - Include only the fields being modified
