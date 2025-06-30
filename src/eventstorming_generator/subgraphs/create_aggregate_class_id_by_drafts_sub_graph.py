@@ -302,8 +302,8 @@ def generate_class_id(state: State) -> State:
         filtered_actions = _filter_invalid_actions(actions, current_gen.target_references, es_value, es_alias_trans_manager)
         filtered_actions = _filter_bidirectional_actions(filtered_actions, es_value, es_alias_trans_manager)
         if len(filtered_actions) == 0:
-            LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] No valid actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
-            current_gen.retry_count += 1
+            LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] No valid actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
+            current_gen.generation_complete = True
             return state
         
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Filtered to {len(filtered_actions)} valid actions for references: {', '.join(current_gen.target_references)}")
@@ -345,8 +345,8 @@ def postprocess_class_id_generation(state: State) -> State:
         
         # 생성된 액션이 없으면 실패로 처리
         if not current_gen.created_actions:
-            LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] No valid actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
-            current_gen.retry_count += 1
+            LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] No valid actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
+            current_gen.generation_complete = True
             return state
         
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Processing {len(current_gen.created_actions)} actions for references: {', '.join(current_gen.target_references)}")
