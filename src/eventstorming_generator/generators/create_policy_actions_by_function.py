@@ -64,7 +64,8 @@ Please follow these rules:
    - Policies that could cause deadlocks
    - Over-complicated policy chains
    - Ambiguous or vague policy names
-   - Policies that contradict defined context relationships"""
+   - Policies that contradict defined context relationships
+   - Policies that connect events within the same aggregate. Policies must only connect events between different aggregates."""
 
     def _build_inference_guidelines_prompt(self) -> str:
         return """
@@ -75,7 +76,7 @@ Inference Guidelines:
 4. Context Relations Analysis: Review context relationships to understand interaction patterns, data flow directions, and integration constraints.
 5. Policy Design: Derive clear and distinct policies that connect related source events with appropriate target events, ensuring each policy delivers unique business value while respecting context boundaries.
 6. Cross-Context Validation: Ensure policies align with defined context interaction patterns and don't violate bounded context principles.
-7. Validation: Verify that policies avoid duplication, circular dependencies, and only span across aggregates or bounded contexts when necessary and supported by context relations.
+7. Validation: Verify that policies avoid duplication and circular dependencies. It is strictly forbidden to create a policy where a source event and a target event belong to the same aggregate. Such policies are invalid and must be filtered out.
 """
 
     def _build_request_format_prompt(self) -> str:
@@ -292,7 +293,7 @@ CREATE TABLE reservations (
 
             "Final Check": """
 * Do not create a duplicate policy if there is already an existing policy connecting the same set of input and output events.
-* Do not create a policy where an Event triggers another Event within the same Aggregate, unless it's a clear state transition.
+* CRITICAL RULE: Do not create a policy where an Event triggers another Event within the same Aggregate. This is an invalid design, as such logic should be handled internally within the aggregate itself, not through a policy.
 * Ensure all policies that cross Aggregate or Bounded Context boundaries are justified by the requirements.
 * Verify that each policy serves a distinct business purpose and is not redundant.
 """

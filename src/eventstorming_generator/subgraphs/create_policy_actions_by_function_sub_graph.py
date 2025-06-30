@@ -646,6 +646,9 @@ def _to_policy_creation_actions(policies: List[Dict[str, Any]],
         from_event_uuids.discard(None)
         to_event_uuids.discard(None)
 
+        if not from_event_uuids or not to_event_uuids:
+            continue
+
         # 중복 확인
         is_duplicate = False
         for existing_policy_data in existing_policies.values():
@@ -657,25 +660,23 @@ def _to_policy_creation_actions(policies: List[Dict[str, Any]],
         if is_duplicate:
             continue
 
+        # from 이벤트들의 애그리거트 ID 집합을 구함
+        from_aggregate_ids = set()
+        for from_uuid in from_event_uuids:
+            element = es_value["elements"].get(from_uuid)
+            if element and "aggregate" in element and "id" in element["aggregate"]:
+                from_aggregate_ids.add(element["aggregate"]["id"])
 
-        valid_from_event_uuids = []
-        valid_to_event_uuids = []
+        # to 이벤트들의 애그리거트 ID 집합을 구함
+        to_aggregate_ids = set()
+        for to_uuid in to_event_uuids:
+            element = es_value["elements"].get(to_uuid)
+            if element and "aggregate" in element and "id" in element["aggregate"]:
+                to_aggregate_ids.add(element["aggregate"]["id"])
 
-        to_event_aggregate_ids = set()
-        for to_event_uuid in to_event_uuids:
-            if to_event_uuid in es_value["elements"]:
-                valid_to_event_uuids.append(to_event_uuid)
-                to_event_aggregate_ids.add(es_value["elements"][to_event_uuid].get("aggregate", {}).get("id"))
-        
-        for from_event_uuid in from_event_uuids:
-            if from_event_uuid in es_value["elements"]:
-                from_event_aggregate_id = es_value["elements"][from_event_uuid].get("aggregate", {}).get("id")
-                if from_event_aggregate_id not in to_event_aggregate_ids:
-                    valid_from_event_uuids.append(from_event_uuid)
-        
-        if not valid_from_event_uuids or not valid_to_event_uuids:
+        # from 이벤트 애그리거트와 to 이벤트 애그리거트 간에 겹치는 것이 하나라도 있으면 해당 정책은 생성하지 않음
+        if not from_aggregate_ids.isdisjoint(to_aggregate_ids):
             continue
-
 
         # 3. 새로운 Policy 생성 액션 생성
         policy_name = policy.get("name")
@@ -691,8 +692,8 @@ def _to_policy_creation_actions(policies: List[Dict[str, Any]],
                 "policyName": policy_name,
                 "policyAlias": policy.get("alias", ""),
                 "reason": policy.get("reason", ""),
-                "inputEventIds": valid_from_event_uuids,
-                "outputEventIds": valid_to_event_uuids
+                "inputEventIds": list(from_event_uuids),
+                "outputEventIds": list(to_event_uuids)
             }
         })
         
