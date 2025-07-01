@@ -283,7 +283,7 @@ class EsUtils:
     @staticmethod
     def resize_aggregate_vertically(es_value: Dict[str, Any], agg_element_object: Dict[str, Any]) -> None:
         """Aggregate 크기를 수직으로 조정합니다"""
-        RESIZE_HEIGHT = 150
+        RESIZE_HEIGHT = 115 + 14
         
         bc_object = es_value["elements"].get(agg_element_object["boundedContext"]["id"], {})
         agg_object = es_value["elements"].get(agg_element_object["aggregate"]["id"], {})
@@ -298,9 +298,8 @@ class EsUtils:
         # BoundedContext 크기 조정
         if (agg_object["elementView"]["y"] + int(agg_object["elementView"]["height"]/2) + RESIZE_HEIGHT >
             bc_object["elementView"]["y"] + int(bc_object["elementView"]["height"]/2)):
-            BC_RESIZE_HEIGHT = int(RESIZE_HEIGHT * 0.90)
-            bc_object["elementView"]["height"] += BC_RESIZE_HEIGHT
-            bc_object["elementView"]["y"] += int(BC_RESIZE_HEIGHT/2)
+            bc_object["elementView"]["height"] += RESIZE_HEIGHT
+            bc_object["elementView"]["y"] += int(RESIZE_HEIGHT/2)
             es_value["elements"][bc_object["id"]] = bc_object.copy()
 
             # 아래 BoundedContext 위치 조정
