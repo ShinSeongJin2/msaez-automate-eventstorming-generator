@@ -109,7 +109,7 @@ class BoundedContextProcessor:
         # 첫 번째 BoundedContext인 경우 기본 위치 반환
         bounded_contexts = EsUtils.get_all_bounded_contexts(es_value)
         if not bounded_contexts:
-            return {"x": 650, "y": 450}
+            return {"x": 600, "y": 450}
         
         # 가장 아래쪽 행에서 가장 오른쪽 BoundedContext 찾기
         max_y_bounded_context = max(bounded_contexts, key=lambda bc: bc["elementView"]["y"])
