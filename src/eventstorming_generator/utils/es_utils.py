@@ -326,6 +326,13 @@ class EsUtils:
                 element.get("_type") == "org.uengine.modeling.model.BoundedContext" and
                 element.get("id") != bc_object["id"] and
                 element["elementView"]["y"] >= bc_object["elementView"]["y"] and
-                element["elementView"]["x"] >= bc_object["elementView"]["x"] - int(bc_object["elementView"]["width"]/2) and
-                element["elementView"]["x"] <= bc_object["elementView"]["x"] + int(bc_object["elementView"]["width"]/2))
+
+                element["elementView"]["x"] + int(element["elementView"]["width"]/2) >= bc_object["elementView"]["x"] - int(bc_object["elementView"]["width"]/2) and
+                element["elementView"]["x"] - int(element["elementView"]["width"]/2) <= bc_object["elementView"]["x"] + int(bc_object["elementView"]["width"]/2) and
+
+                (
+                    element["elementView"]["x"] - int(element["elementView"]["width"]/2) <= bc_object["elementView"]["x"] + int(bc_object["elementView"]["width"]/2) or
+                    element["elementView"]["x"] + int(element["elementView"]["width"]/2) >= bc_object["elementView"]["x"] - int(bc_object["elementView"]["width"]/2)
+                )
+            )
         ]
