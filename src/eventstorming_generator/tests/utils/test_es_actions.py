@@ -14,7 +14,7 @@ def test_es_value_creation():
         alias_trans_manager = EsAliasTransManager(es_value)
 
         mocked_actions = make_mocked_actions(
-            [[13, 5, 2], [2, 3], [6, 1], [4], [5, 3, 1, 5]]
+            [[7, 2, 2], [8, 2, 2], [8, 2, 2], [4, 7], [6, 1, 5], [6, 5, 2]]
         ) # [[9, 5, 2], [2, 3], [6, 1], [4], [5, 3, 1, 5]]
         uuid_actions = alias_trans_manager.trans_to_uuid_in_actions(mocked_actions)
         result = EsActionsUtil.apply_actions(

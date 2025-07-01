@@ -318,7 +318,7 @@ class EsUtils:
     
     @staticmethod
     def get_all_bc_below_bc(es_value: Dict[str, Any], bc_object: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """지정된 BoundedContext 아래에 있으면서 수평으로 겹치는 모든 BoundedContext를 가져옵니다"""
+        """지정된 BoundedContext 아래에 있으면서 직접적으로 인접한 모든 BoundedContext를 가져옵니다."""
         target_bc_id = bc_object.get("id")
         target_view = bc_object.get("elementView", {})
         if not target_view or not target_bc_id:
@@ -327,8 +327,10 @@ class EsUtils:
         target_y = target_view.get("y", 0)
         target_x = target_view.get("x", 0)
         target_width = target_view.get("width", 0)
+        target_height = target_view.get("height", 0)
         target_left = target_x - (target_width // 2)
         target_right = target_x + (target_width // 2)
+        target_bottom = target_y + (target_height // 2)
 
         bcs_below = []
         for element in es_value["elements"].values():
@@ -348,14 +350,20 @@ class EsUtils:
 
             element_x = element_view.get("x", 0)
             element_width = element_view.get("width", 0)
+            element_height = element_view.get("height", 0)
             element_left = element_x - (element_width // 2)
             element_right = element_x + (element_width // 2)
+            element_top = element_y - (element_height // 2)
             
             # 2. 수평 위치 확인: 수평으로 겹치는지 확인
             # (element의 범위가 target의 범위와 하나라도 겹치면 True)
             is_horizontally_overlapping = (element_right >= target_left and element_left <= target_right)
             
-            if is_horizontally_overlapping:
+            # 3. 수직 인접성 확인: 불필요한 공백을 방지하기 위해, 바로 아래에 위치하는지 검사합니다.
+            vertical_gap = element_top - target_bottom
+            is_vertically_adjacent = vertical_gap < 0
+            
+            if is_horizontally_overlapping and is_vertically_adjacent:
                 bcs_below.append(element)
                 
         return bcs_below
