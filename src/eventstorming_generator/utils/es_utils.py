@@ -319,20 +319,44 @@ class EsUtils:
     
     @staticmethod
     def get_all_bc_below_bc(es_value: Dict[str, Any], bc_object: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """지정된 BoundedContext 아래에 있는 모든 BoundedContext를 가져옵니다"""
-        return [
-            element for element in es_value["elements"].values()
-            if (element and
-                element.get("_type") == "org.uengine.modeling.model.BoundedContext" and
-                element.get("id") != bc_object["id"] and
-                element["elementView"]["y"] >= bc_object["elementView"]["y"] and
+        """지정된 BoundedContext 아래에 있으면서 수평으로 겹치는 모든 BoundedContext를 가져옵니다"""
+        target_bc_id = bc_object.get("id")
+        target_view = bc_object.get("elementView", {})
+        if not target_view or not target_bc_id:
+            return []
 
-                element["elementView"]["x"] + int(element["elementView"]["width"]/2) >= bc_object["elementView"]["x"] - int(bc_object["elementView"]["width"]/2) and
-                element["elementView"]["x"] - int(element["elementView"]["width"]/2) <= bc_object["elementView"]["x"] + int(bc_object["elementView"]["width"]/2) and
+        target_y = target_view.get("y", 0)
+        target_x = target_view.get("x", 0)
+        target_width = target_view.get("width", 0)
+        target_left = target_x - (target_width // 2)
+        target_right = target_x + (target_width // 2)
 
-                (
-                    element["elementView"]["x"] - int(element["elementView"]["width"]/2) <= bc_object["elementView"]["x"] + int(bc_object["elementView"]["width"]/2) or
-                    element["elementView"]["x"] + int(element["elementView"]["width"]/2) >= bc_object["elementView"]["x"] - int(bc_object["elementView"]["width"]/2)
-                )
-            )
-        ]
+        bcs_below = []
+        for element in es_value["elements"].values():
+            if not element or element.get("_type") != "org.uengine.modeling.model.BoundedContext":
+                continue
+            
+            element_id = element.get("id")
+            element_view = element.get("elementView", {})
+            if not element_id or not element_view or element_id == target_bc_id:
+                continue
+
+            element_y = element_view.get("y", 0)
+            
+            # 1. 수직 위치 확인: 대상 BC보다 아래에 있는지 확인 (y 좌표가 더 큰 경우)
+            if element_y <= target_y:
+                continue
+
+            element_x = element_view.get("x", 0)
+            element_width = element_view.get("width", 0)
+            element_left = element_x - (element_width // 2)
+            element_right = element_x + (element_width // 2)
+            
+            # 2. 수평 위치 확인: 수평으로 겹치는지 확인
+            # (element의 범위가 target의 범위와 하나라도 겹치면 True)
+            is_horizontally_overlapping = (element_right >= target_left and element_left <= target_right)
+            
+            if is_horizontally_overlapping:
+                bcs_below.append(element)
+                
+        return bcs_below
