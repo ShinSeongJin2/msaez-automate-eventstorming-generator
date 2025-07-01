@@ -302,20 +302,20 @@ class EsUtils:
             bc_object["elementView"]["height"] += BC_RESIZE_HEIGHT
             bc_object["elementView"]["y"] += int(BC_RESIZE_HEIGHT/2)
             es_value["elements"][bc_object["id"]] = bc_object.copy()
+
+            # 아래 BoundedContext 위치 조정
+            for bc_element in EsUtils.get_all_bc_below_bc(es_value, bc_object):
+                bc_element["elementView"]["y"] += RESIZE_HEIGHT
+                es_value["elements"][bc_element["id"]] = bc_element.copy()
+                
+                for element_in_bc in EsUtils.get_all_elements_in_bounded_context(es_value, bc_element["id"]):
+                    element_in_bc["elementView"]["y"] += RESIZE_HEIGHT
+                    es_value["elements"][element_in_bc["id"]] = element_in_bc.copy()
         
         # Aggregate 크기 조정
         agg_object["elementView"]["height"] += RESIZE_HEIGHT
         agg_object["elementView"]["y"] += int(RESIZE_HEIGHT/2)
         es_value["elements"][agg_object["id"]] = agg_object.copy()
-        
-        # 아래 BoundedContext 위치 조정
-        for bc_element in EsUtils.get_all_bc_below_bc(es_value, bc_object):
-            bc_element["elementView"]["y"] += RESIZE_HEIGHT
-            es_value["elements"][bc_element["id"]] = bc_element.copy()
-            
-            for element_in_bc in EsUtils.get_all_elements_in_bounded_context(es_value, bc_element["id"]):
-                element_in_bc["elementView"]["y"] += RESIZE_HEIGHT
-                es_value["elements"][element_in_bc["id"]] = element_in_bc.copy()
     
     @staticmethod
     def get_all_bc_below_bc(es_value: Dict[str, Any], bc_object: Dict[str, Any]) -> List[Dict[str, Any]]:
