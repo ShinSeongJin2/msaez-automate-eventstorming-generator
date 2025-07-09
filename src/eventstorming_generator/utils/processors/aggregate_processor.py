@@ -55,7 +55,10 @@ class AggregateProcessor:
         root_aggregate_object = AggregateProcessor._get_root_aggregate_base(
             aggregate_name, 
             aggregate_id,
-            AggregateProcessor._get_field_descriptors_for_root_aggregate(action.args.get("properties", []))
+            EsUtils.create_field_descriptors(
+                action.args.get("properties", []),
+                options={"is_root_aggregate": True}
+            )
         )
         aggregate_object["aggregateRoot"]["entities"]["elements"][root_aggregate_object["id"]] = root_aggregate_object
     
@@ -284,40 +287,10 @@ class AggregateProcessor:
     @staticmethod
     def _get_field_descriptors(properties: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Aggregate 필드 기술자를 생성합니다"""
-        return [
-            {
-                "className": prop.get("type") or "String",
-                "isCopy": False,
-                "isKey": prop.get("isKey") or False,
-                "name": prop.get("name", ""),
-                "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
-                "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
-                "displayName": prop.get("displayName", ""),
-                "referenceClass": prop.get("referenceClass", None),
-                "isOverrideField": prop.get("isOverrideField", False),
-                "_type": "org.uengine.model.FieldDescriptor"
-            }
-            for prop in properties
-        ]
-    
-    @staticmethod
-    def _get_field_descriptors_for_root_aggregate(properties: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Root Aggregate 필드 기술자를 생성합니다"""
-        return [
-            {
-                "className": prop.get("type") or "String",
-                "isCopy": False,
-                "isKey": prop.get("isKey") or False,
-                "name": prop.get("name", ""),
-                "displayName": "",
-                "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
-                "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
-                "_type": "org.uengine.model.FieldDescriptor",
-                "inputUI": None,
-                "options": None
-            }
-            for prop in properties
-        ]
+        return EsUtils.create_field_descriptors(
+            properties,
+            options={"include_ref_and_override": True}
+        )
     
     @staticmethod
     def _merge_field_descriptors(existing_fields: List[Dict[str, Any]], new_properties: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

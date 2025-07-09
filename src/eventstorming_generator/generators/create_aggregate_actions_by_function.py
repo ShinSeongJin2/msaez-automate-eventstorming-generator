@@ -411,18 +411,8 @@ CREATE TABLE courses (
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
-        return {
-            "Summarized Existing EventStorming Model": inputs.get("summarizedESValue"),
-
-            "Bounded Context to Generate Actions": inputs.get("targetBoundedContext").get("name"),
-
-            "Functional Requirements": inputs.get("description"),
-
-            "Suggested Structure": inputs.get("draftOption"),
-
-            "Aggregate to create": inputs.get("targetAggregate"),
-
-            "Final Check": f"""
+        
+        final_check_prompt = f"""
 1. Language and Naming:
    * Object names (classes, methods, properties): English only
    * Alias properties: {self.client.get("preferredLanguage")} only
@@ -438,5 +428,26 @@ CREATE TABLE courses (
    * Analyze context relationships (Pub/Sub, API calls) for integration requirements
    * Include properties needed for external system interactions
    * Design aggregates to support described integration patterns
-""",
+"""
+
+        extracted_ddl_fields = inputs.get("extractedDdlFields")
+        if extracted_ddl_fields:
+            fields_str = ", ".join(extracted_ddl_fields)
+            final_check_prompt += f"""
+4. DDL Field Requirement:
+   * The following fields from the DDL must be included in at least one of the generated Aggregates or ValueObjects: {fields_str}
+"""
+        
+        return {
+            "Summarized Existing EventStorming Model": inputs.get("summarizedESValue"),
+
+            "Bounded Context to Generate Actions": inputs.get("targetBoundedContext").get("name"),
+
+            "Functional Requirements": inputs.get("description"),
+
+            "Suggested Structure": inputs.get("draftOption"),
+
+            "Aggregate to create": inputs.get("targetAggregate"),
+
+            "Final Check": final_check_prompt,
         }

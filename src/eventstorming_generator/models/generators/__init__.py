@@ -5,6 +5,10 @@ from .create_command_actions_by_function_output import CreateCommandActionsByFun
 from .create_policy_actions_by_function_output import CreatePolicyActionsByFunctionOutput
 from .create_gwt_generator_by_function_output import CreateGWTGeneratorByFunctionOutput
 from .es_value_summary_generator_output import ESValueSummaryGeneratorOutput
+from .extract_ddl_fields_generator_output import ExtractDDLFieldsGeneratorOutput
+from .assign_fields_to_actions_generator_output import AssignFieldsToActionsGeneratorOutput
+from .assign_ddl_fields_to_aggregate_draft_output import AssignDDLFieldsToAggregateDraftOutput
+from .assign_event_names_to_aggregate_draft_output import AssignEventNamesToAggregateDraftOutput
 
 __all__ = [
     "SanityCheckGeneratorOutput",
@@ -13,7 +17,11 @@ __all__ = [
     "CreateCommandActionsByFunctionOutput",
     "CreatePolicyActionsByFunctionOutput",
     "CreateGWTGeneratorByFunctionOutput",
-    "ESValueSummaryGeneratorOutput"
+    "ESValueSummaryGeneratorOutput",
+    "ExtractDDLFieldsGeneratorOutput",
+    "AssignFieldsToActionsGeneratorOutput",
+    "AssignDDLFieldsToAggregateDraftOutput",
+    "AssignEventNamesToAggregateDraftOutput",
 ]
 
 

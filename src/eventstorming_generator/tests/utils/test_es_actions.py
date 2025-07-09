@@ -2,7 +2,7 @@ from typing import List
 
 from ...models import ActionModel, EsValueModel
 from ...utils import EsActionsUtil, EsAliasTransManager
-from ..mocks import information, user_info
+from ..mocks import information, user_info, actionsCollection
 from ..test_utils import TestUtils
 from ...utils import LoggingUtil
 from .mock_actions_builder import MockActionBuilder
@@ -13,18 +13,15 @@ def test_es_value_creation():
         es_value = EsValueModel()
         alias_trans_manager = EsAliasTransManager(es_value)
 
-        mocked_actions = make_mocked_actions(
-            [[7, 2, 2], [8, 2, 2], [8, 2, 2], [4, 7], [6, 1, 5], [6, 5, 2]]
-        ) # [[9, 5, 2], [2, 3], [6, 1], [4], [5, 3, 1, 5]]
-        uuid_actions = alias_trans_manager.trans_to_uuid_in_actions(mocked_actions)
-        result = EsActionsUtil.apply_actions(
-            es_value, uuid_actions, user_info, information
-        )
+        actionsCollection = [make_mocked_actions([[8, 8]] * 10)]
 
+        result = es_value
+        for actions in actionsCollection:
+            uuid_actions = alias_trans_manager.trans_to_uuid_in_actions(actions)
+            result = EsActionsUtil.apply_actions(result, uuid_actions, user_info, information)
+        
         TestUtils.save_dict_to_temp_file(result, "test_es_value_creation")
-        TestUtils.save_es_summarize_result_to_temp_file(
-            result, "test_es_value_creation"
-        )
+        TestUtils.save_es_summarize_result_to_temp_file(result, "test_es_value_creation")
 
     except Exception as e:
         LoggingUtil.exception("test_es_value_creation", "테스트 실패", e)

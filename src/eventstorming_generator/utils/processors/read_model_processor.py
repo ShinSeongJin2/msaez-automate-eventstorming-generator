@@ -43,7 +43,7 @@ class ReadModelProcessor:
         callbacks["afterAllRelationAppliedCallBacks"].append(make_actor_to_read_model)
         
         # 쿼리 파라미터 설정
-        read_model_object["queryParameters"] = ReadModelProcessor._get_query_parameters(es_value, action)
+        read_model_object["queryParameters"] = EsUtils.create_field_descriptors(action["args"].get("queryParameters", []))
         
         # ReadModel 객체 추가
         es_value["elements"][read_model_object["id"]] = read_model_object
@@ -176,43 +176,3 @@ class ReadModelProcessor:
         """ReadModel의 적절한 위치를 계산합니다"""
         aggregate_id = action["ids"].get("aggregateId", "")
         return EsUtils.get_valid_position_for_left_side_element(es_value, aggregate_id, read_model_object)
-    
-    @staticmethod
-    def _get_query_parameters(es_value: Dict[str, Any], action: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """ReadModel의 쿼리 파라미터를 생성합니다"""
-        if action["args"].get("queryParameters"):
-            return [
-                {
-                    "className": prop.get("type") or "String",
-                    "isCopy": False,
-                    "isKey": prop.get("isKey") or False,
-                    "name": prop.get("name", ""),
-                    "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
-                    "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
-                    "displayName": prop.get("displayName", ""),
-                    "_type": "org.uengine.model.FieldDescriptor"
-                }
-                for prop in action["args"].get("queryParameters", [])
-            ]
-        
-        aggregate = es_value["elements"].get(action["ids"].get("aggregateId", ""), {})
-        if not aggregate or not aggregate.get("aggregateRoot") or not aggregate["aggregateRoot"].get("fieldDescriptors"):
-            return []
-            
-        target_field_descriptors = aggregate["aggregateRoot"]["fieldDescriptors"]
-        if action["args"].get("api_verb") == "DELETE":
-            target_field_descriptors = [fd for fd in target_field_descriptors if fd.get("isKey")]
-        
-        return [
-            {
-                "className": prop.get("className", "String"),
-                "isCopy": False,
-                "isKey": prop.get("isKey") or False,
-                "name": prop.get("name", ""),
-                "nameCamelCase": prop.get("nameCamelCase", ""),
-                "namePascalCase": prop.get("namePascalCase", ""),
-                "displayName": prop.get("displayName", ""),
-                "_type": "org.uengine.model.FieldDescriptor"
-            }
-            for prop in target_field_descriptors
-        ]

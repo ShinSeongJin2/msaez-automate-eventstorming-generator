@@ -58,7 +58,7 @@ class CommandProcessor:
         callbacks["afterAllRelationAppliedCallBacks"].append(make_actor_to_command)
         
         # 필드 설정
-        command_object["fieldDescriptors"] = CommandProcessor._get_field_descriptors(es_value, action)
+        command_object["fieldDescriptors"] = EsUtils.create_field_descriptors(action.args.get("properties", []))
         
         # Command 객체 추가
         es_value["elements"][command_object["id"]] = command_object
@@ -162,43 +162,3 @@ class CommandProcessor:
         """Command의 적절한 위치를 계산합니다"""
         aggregate_id = action.ids.get("aggregateId", "")
         return EsUtils.get_valid_position_for_left_side_element(es_value, aggregate_id, command_object)
-    
-    @staticmethod
-    def _get_field_descriptors(es_value: Dict[str, Any], action: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Command의 필드 디스크립터를 생성합니다"""
-        if action.args.get("properties"):
-            return [
-                {
-                    "className": prop.get("type") or "String",
-                    "isCopy": False,
-                    "isKey": prop.get("isKey") or False,
-                    "name": prop.get("name", ""),
-                    "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
-                    "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
-                    "displayName": prop.get("displayName", ""),
-                    "_type": "org.uengine.model.FieldDescriptor"
-                }
-                for prop in action.args.get("properties", [])
-            ]
-        
-        aggregate = es_value["elements"].get(action.ids.get("aggregateId", ""), {})
-        if not aggregate or not aggregate.get("aggregateRoot") or not aggregate["aggregateRoot"].get("fieldDescriptors"):
-            return []
-            
-        target_field_descriptors = aggregate["aggregateRoot"]["fieldDescriptors"]
-        if action.args.get("api_verb") == "DELETE":
-            target_field_descriptors = [fd for fd in target_field_descriptors if fd.get("isKey")]
-        
-        return [
-            {
-                "className": prop.get("className", "String"),
-                "isCopy": False,
-                "isKey": prop.get("isKey") or False,
-                "name": prop.get("name", ""),
-                "nameCamelCase": prop.get("nameCamelCase", ""),
-                "namePascalCase": prop.get("namePascalCase", ""),
-                "displayName": prop.get("displayName", ""),
-                "_type": "org.uengine.model.FieldDescriptor"
-            }
-            for prop in target_field_descriptors
-        ]

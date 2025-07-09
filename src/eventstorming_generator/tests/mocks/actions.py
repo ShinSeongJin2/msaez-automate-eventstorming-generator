@@ -3,230 +3,111 @@ from ...models import ActionModel
 user_info = {"uid": "test_user"}
 information = {"projectId": "test_project"}
 
+bounded_context_id = '0faf38c9-6471-4a6e-b24a-d691ac7ab385'
+aggregate_id = 'a932c245-ac83-4d8e-8fe3-eb787fe5943b'
+
 actionsCollection = [
     [
-        # 1. Bounded Context: OrderManagement
         ActionModel(
-            objectType="BoundedContext",
-            type="create",
-            ids={"boundedContextId": "bc-orderManagement"},
-            args={
-                "boundedContextName": "OrderManagement",
-                "boundedContextAlias": "Order Management",
-                "description": "Handles all logic related to customer orders.",
-            },
+            objectType='BoundedContext',
+            type='create',
+            ids={'boundedContextId': bounded_context_id},
+            args={'boundedContextName': 'BookManagement', 'boundedContextAlias': '도서 관리'}
         ),
-        # 2. Aggregate: Order
+
         ActionModel(
-            objectType="Aggregate",
-            type="create",
-            ids={"boundedContextId": "bc-orderManagement", "aggregateId": "agg-order"},
-            args={
-                "aggregateName": "Order",
-                "aggregateAlias": "Order",
-                "properties": [
-                    {"name": "orderId", "type": "String", "isKey": True},
-                    {"name": "productId", "type": "ProductId"},
-                    {"name": "orderStatus", "type": "OrderStatus"},
-                ],
-            },
-        ),
-        # 3. Value Object: ProductId
-        ActionModel(
-            objectType="ValueObject",
-            type="create",
+            objectType='Aggregate',
+            type='create',
             ids={
-                "boundedContextId": "bc-orderManagement",
-                "aggregateId": "agg-order",
-                "valueObjectId": "vo-productId",
+                'boundedContextId': bounded_context_id,
+                'aggregateId': aggregate_id
             },
             args={
-                "valueObjectName": "ProductId",
-                "properties": [{"name": "id", "type": "String", "isKey": True}],
+                'aggregateName': 'Book',
+                'aggregateAlias': '도서',
+                'properties': [
+                    {'name': 'bookId', 'type': 'Long', 'isKey': True, 'isForeignProperty': None},
+                    {'name': 'title', 'type': None, 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'isbn', 'type': None, 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'author', 'type': None, 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'publisher', 'type': None, 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'category', 'type': 'BookCategory', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'status', 'type': 'BookStatus', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'registrationDate', 'type': 'Date', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'disposalDate', 'type': 'Date', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'disposalReason', 'type': 'String', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'createdAt', 'type': 'Date', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'updatedAt', 'type': 'Date', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'statusHistory', 'type': 'List<BookStatusHistoryRecord>', 'isKey': None, 'isForeignProperty': None},
+                ]
             },
+            actionName='CreateBookAggregate'
         ),
-        # 4. Enumeration: OrderStatus
+
         ActionModel(
-            objectType="Enumeration",
-            type="create",
+            objectType='ValueObject',
+            type='create',
             ids={
-                "boundedContextId": "bc-orderManagement",
-                "aggregateId": "agg-order",
-                "enumerationId": "enum-orderStatus",
+                'boundedContextId': bounded_context_id,
+                'aggregateId': aggregate_id,
+                'valueObjectId': '129018ed-d272-4a92-af35-52185f611b37'
             },
             args={
-                "enumerationName": "OrderStatus",
-                "properties": [
-                    {"name": "PLACED"},
-                    {"name": "SHIPPED"},
-                    {"name": "DELIVERED"},
-                ],
+                'valueObjectName': 'BookStatusHistoryRecord',
+                'valueObjectAlias': '도서 상태 이력',
+                'properties': [
+                    {'name': 'historyId', 'type': 'Long', 'isKey': True, 'isForeignProperty': None},
+                    {'name': 'previousStatus', 'type': 'BookStatus', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'newStatus', 'type': 'BookStatus', 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'changeReason', 'type': None, 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'changedBy', 'type': None, 'isKey': None, 'isForeignProperty': None},
+                    {'name': 'changeDate', 'type': 'Date', 'isKey': None, 'isForeignProperty': None},
+                ]
             },
+            actionName='CreateBookStatusHistoryRecordVO'
         ),
-        # 5. Command: PlaceOrder -> triggers OrderPlaced event
+
         ActionModel(
-            objectType="Command",
-            type="create",
+            objectType='Enumeration',
+            type='create',
             ids={
-                "boundedContextId": "bc-orderManagement",
-                "aggregateId": "agg-order",
-                "commandId": "cmd-placeOrder",
+                'boundedContextId': bounded_context_id,
+                'aggregateId': aggregate_id,
+                'enumerationId': '14e13172-626a-4b56-8533-4ebcc8eab732'
             },
             args={
-                "commandName": "PlaceOrder",
-                "commandAlias": "Place Order",
-                "api_verb": "POST",
-                "properties": [
-                    {"name": "productId", "type": "ProductId"},
-                    {"name": "userId", "type": "String"},
-                ],
-                "outputEventIds": ["evt-orderPlaced"],
-                "actor": "Customer",
+                'enumerationName': 'BookStatus',
+                'enumerationAlias': '도서 상태',
+                'properties': [
+                    {'name': 'AVAILABLE'},
+                    {'name': 'ON_LOAN'},
+                    {'name': 'RESERVED'},
+                    {'name': 'DISCARDED'},
+                ]
             },
+            actionName='CreateBookStatusEnum'
         ),
-        # 6. Event: OrderPlaced
+        
         ActionModel(
-            objectType="Event",
-            type="create",
+            objectType='Enumeration',
+            type='create',
             ids={
-                "boundedContextId": "bc-orderManagement",
-                "aggregateId": "agg-order",
-                "eventId": "evt-orderPlaced",
+                'boundedContextId': bounded_context_id,
+                'aggregateId': aggregate_id,
+                'enumerationId': 'a53763bc-5beb-4a39-b1af-518b4d2da65c'
             },
             args={
-                "eventName": "OrderPlaced",
-                "eventAlias": "Order Placed",
-                "properties": [
-                    {"name": "orderId", "type": "String", "isKey": True},
-                    {"name": "productId", "type": "ProductId"},
-                    {"name": "userId", "type": "String"},
-                ],
+                'enumerationName': 'BookCategory',
+                'enumerationAlias': '도서 카테고리',
+                'properties': [
+                    {'name': 'NOVEL'},
+                    {'name': 'NONFICTION'},
+                    {'name': 'ACADEMIC'},
+                    {'name': 'MAGAZINE'},
+                ]
             },
-        ),
-        # 7. Bounded Context: NotificationManagement
-        ActionModel(
-            objectType="BoundedContext",
-            type="create",
-            ids={"boundedContextId": "bc-notificationManagement"},
-            args={
-                "boundedContextName": "NotificationManagement",
-                "boundedContextAlias": "Notification Management",
-                "description": "Handles user notifications.",
-            },
-        ),
-        # 8. Aggregate: Notification
-        ActionModel(
-            objectType="Aggregate",
-            type="create",
-            ids={
-                "boundedContextId": "bc-notificationManagement",
-                "aggregateId": "agg-notification",
-            },
-            args={
-                "aggregateName": "Notification",
-                "aggregateAlias": "Notification",
-                "properties": [
-                    {"name": "notificationId", "type": "String", "isKey": True},
-                    {"name": "userId", "type": "String"},
-                    {"name": "message", "type": "String"},
-                ],
-            },
-        ),
-        # 9. Policy: Listens for OrderPlaced, triggers NotificationDispatchRequested
-        ActionModel(
-            objectType="Policy",
-            type="create",
-            ids={
-                "policyId": "pol-notifyOnOrderPlacement",
-            },
-            args={
-                "policyName": "NotifyOnOrderPlacement",
-                "policyAlias": "Notify on Order Placement",
-                "inputEventIds": ["evt-orderPlaced"],
-                "outputEventIds": ["evt-notificationDispatchRequested"],
-                "reason": "Automatically notify users when an order is placed."
-            },
-        ),
-        # 10. Event: NotificationDispatchRequested
-        ActionModel(
-            objectType="Event",
-            type="create",
-            ids={
-                "boundedContextId": "bc-notificationManagement",
-                "aggregateId": "agg-notification",
-                "eventId": "evt-notificationDispatchRequested",
-            },
-            args={
-                "eventName": "NotificationDispatchRequested",
-                "eventAlias": "Notification Dispatch Requested",
-                "properties": [
-                    {"name": "orderId", "type": "String"},
-                    {"name": "userId", "type": "String"},
-                ],
-            },
+            actionName='CreateBookCategoryEnum'
         )
-    ],
-    [
-        # 11. ReadModel: Notify
-        ActionModel(
-            objectType="ReadModel",
-            type="create",
-            ids={
-                "boundedContextId": "bc-notificationManagement",
-                "aggregateId": "agg-notification",
-                "readModelId": "rm-notify",
-            },
-            args={
-                "readModelName": "Notify",
-                "readModelAlias": "Notify",
-                "isMultipleResult": False,
-                "queryParameters": [
-                    {"name": "orderId", "type": "String"},
-                    {"name": "userId", "type": "String"},
-                ],
-                "actor": "User"
-            },
-        ),
-        # 12. Command: Notify -> triggers NotificationSent event
-        ActionModel(
-            objectType="Command",
-            type="create",
-            ids={
-                "boundedContextId": "bc-notificationManagement",
-                "aggregateId": "agg-notification",
-                "commandId": "cmd-notify",
-            },
-            args={
-                "commandName": "Notify",
-                "commandAlias": "Notify",
-                "api_verb": "POST",
-                "properties": [
-                    {"name": "notificationId", "type": "String", "isKey": True},
-                    {"name": "orderId", "type": "String"},
-                    {"name": "userId", "type": "String"},
-                ],
-                "outputEventIds": ["evt-notificationSent"],
-                "actor": "User",
-            },
-        ),
-        # 13. Event: NotificationSent
-        ActionModel(
-            objectType="Event",
-            type="create",
-            ids={
-                "boundedContextId": "bc-notificationManagement",
-                "aggregateId": "agg-notification",
-                "eventId": "evt-notificationSent",
-            },
-            args={
-                "eventName": "NotificationSent",
-                "eventAlias": "Notification Sent",
-                "properties": [
-                    {"name": "notificationId", "type": "String", "isKey": True},
-                    {"name": "userId", "type": "String"},
-                ],
-            },
-        ),
     ]
 ]
 

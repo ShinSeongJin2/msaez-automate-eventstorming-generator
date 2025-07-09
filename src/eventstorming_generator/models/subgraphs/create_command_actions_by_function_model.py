@@ -13,6 +13,7 @@ class CommandActionGenerationState(BaseModelWithItem):
     created_actions: List[ActionModel] = []
     generation_complete: bool = False
     is_token_over_limit: bool = False
+    required_event_names: List[str] = []
 
 class CreateCommandActionsByFunctionModel(BaseModelWithItem):
     """Command 액션 생성 관련 상태 관리 모델"""
@@ -37,3 +38,4 @@ class CreateCommandActionsByFunctionModel(BaseModelWithItem):
 
     # 최종적으로 실행 실패 여부
     is_failed: bool = False
+    assign_event_names_complete: bool = False

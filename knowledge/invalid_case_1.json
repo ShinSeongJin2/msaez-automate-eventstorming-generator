@@ -1,0 +1,18 @@
+{
+    "inference": "GuideAndNotice 컨텍스트의 GuideManagement Aggregate에서 발생하는 GuideCreatedOrUpdated 이벤트는, 인수인계 프로세스(HandoverProcess) 컨텍스트로 Pub/Sub 패턴을 통해 전달되어야 한다는 요구사항이 명확히 존재한다. 이는 관리자가 안내문구를 등록/수정할 때, 인수인계 프로세스 화면 및 플로우에 실시간으로 반영되어 사용자 혼란을 줄이고 시스템 사용 효율을 높이기 위함이다. 이벤트 스토밍 모델 상 GuideCreatedOrUpdated 이벤트는 GuideManagement Aggregate에서만 발생하며, HandoverProcess 컨텍스트 내에서는 이를 수신하여 별도의 UI/UX 개선 및 안내문구 최신화에 활용할 수 있다. 두 Aggregate 간 직접적인 이벤트 연결은 없으므로, 컨텍스트 간 정책(Policy)으로만 연결이 가능하다. 또한, 동일 Aggregate 내 이벤트 간 연결은 금지되어 있으므로, GuideCreatedOrUpdated 이벤트가 HandoverProcess 컨텍스트로 전달되는 정책만이 유효하다.",
+    "result": {
+      "extractedPolicies": [
+        {
+          "name": "PropagateGuideUpdateToHandoverProcess",
+          "alias": "안내문구 갱신 시 인수인계 프로세스 실시간 반영",
+          "reason": "관리자가 안내문구(가이드, FAQ 등)를 등록/수정할 때, 인수인계 프로세스 화면 및 플로우에 실시간으로 반영하여 사용자 혼란을 줄이고 시스템 사용 효율을 높이기 위함입니다.",
+          "fromEventIds": [
+            "evt-guideCreatedOrUpdated"
+          ],
+          "toEventIds": [
+            "evt-guideCreatedOrUpdated"
+          ]
+        }
+      ]
+    }
+  }

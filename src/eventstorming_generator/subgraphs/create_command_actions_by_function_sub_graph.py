@@ -1,9 +1,10 @@
 import os
 from typing import Callable, Dict, Any, List
 from langgraph.graph import StateGraph, START
+import re
 
 from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
-from ..generators import CreateCommandActionsByFunction
+from ..generators import CreateCommandActionsByFunction, AssignEventNamesToAggregateDraft
 from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
@@ -53,7 +54,7 @@ def prepare_command_actions_generation(state: State) -> State:
         for bc_name, draft_option in state.inputs.selectedDraftOptions.items():
             bounded_context = draft_option.get("boundedContext", {})
             bc_display_name = bounded_context.get("displayName", bc_name)
-            
+
             # 현재 ES Value에서 해당 BoundedContext에 속한 Aggregate들을 찾음
             aggregates_in_bc = []
             for element in state.outputs.esValue.elements.values():
@@ -81,6 +82,106 @@ def prepare_command_actions_generation(state: State) -> State:
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during command actions generation preparation", e)
+        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
+    
+    return state
+
+def assign_events_to_aggregates(state: State) -> State:
+    """
+    BC별 요청된 이벤트들을 해당 BC 내 적절한 애그리거트에 할당하는 노드
+    """
+    
+    try:
+        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting event assignment to aggregates")
+        
+        model = state.subgraphs.createCommandActionsByFunctionModel
+        
+        # BC별로 이벤트 할당 처리
+        for bc_name, draft_option in state.inputs.selectedDraftOptions.items():
+            bounded_context = draft_option.get("boundedContext", {})
+            bc_events = bounded_context.get("requirements", {}).get("event", [])
+            
+            if not bc_events:
+                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] No events to assign for bounded context '{bc_name}'")
+                continue
+                
+            # bc_events에서 이벤트 이름 추출
+            event_names = []
+            try:
+
+                event_names = re.findall(r'"name":"(.*?)"', bc_events)
+                event_names = [name for name in event_names if name]
+                    
+            except Exception as e:
+                LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to parse events for bounded context '{bc_name}': {e}")
+                continue
+            
+            # 해당 BC의 애그리거트 목록 수집
+            aggregates_in_bc = []
+            for element in state.outputs.esValue.elements.values():
+                if (element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and 
+                    element.get("boundedContext", {}).get("id") == bounded_context.get("id")):
+                    aggregates_in_bc.append(element)
+            
+            if not aggregates_in_bc:
+                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] No aggregates found for bounded context '{bc_name}'")
+                continue
+                
+            # 애그리거트가 1개인 경우 모든 이벤트를 해당 애그리거트에 할당
+            if len(aggregates_in_bc) == 1:
+                aggregate_name = aggregates_in_bc[0].get("name", "")
+                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Single aggregate '{aggregate_name}' found in BC '{bc_name}', assigning all {len(event_names)} events")
+                
+                # 해당 애그리거트의 generation state 찾아서 이벤트 할당
+                for generation in model.pending_generations:
+                    if (generation.target_aggregate.get("id") == aggregates_in_bc[0].get("id")):
+                        generation.required_event_names = event_names
+                        break
+            else:
+                # 애그리거트가 여러 개인 경우 LLM을 통해 이벤트 소속 결정
+                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Multiple aggregates found in BC '{bc_name}', using LLM to assign {len(event_names)} events to {len(aggregates_in_bc)} aggregates")
+                
+                # 모델명 가져오기
+                model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+                
+                # 이벤트 할당 생성기 실행
+                assign_generator = AssignEventNamesToAggregateDraft(
+                    model_name=model_name,
+                    client={
+                        "inputs": {
+                            "boundedContextName": bounded_context.get("name", bc_name),
+                            "aggregates": aggregates_in_bc,
+                            "eventNames": event_names
+                        },
+                        "preferredLanguage": state.inputs.preferedLanguage
+                    }
+                )
+                
+                result = assign_generator.generate()
+                
+                if result and result.get("result"):
+                    assignments = result["result"]
+                    LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Event assignment completed for BC '{bc_name}': {len(assignments)} aggregates assigned")
+                    
+                    # 결과를 각 generation state에 할당
+                    for assignment in assignments:
+                        aggregate_name = assignment.get("aggregateName", "")
+                        assigned_events = assignment.get("eventNames", [])
+                        
+                        # 해당 애그리거트의 generation state 찾기
+                        for generation in model.pending_generations:
+                            if generation.target_aggregate.get("name", "").lower() == aggregate_name.lower():
+                                generation.required_event_names = assigned_events
+                                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Assigned {len(assigned_events)} events to aggregate '{aggregate_name}': {assigned_events}")
+                                break
+                else:
+                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to get event assignment result for BC '{bc_name}'")
+        
+        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Event assignment to aggregates completed")
+        state.subgraphs.createCommandActionsByFunctionModel.assign_event_names_complete = True
+
+    except Exception as e:
+        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during event assignment to aggregates", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
     
     return state
@@ -198,7 +299,8 @@ def generate_command_actions(state: State) -> State:
                 "inputs": {
                     "summarizedESValue": current_gen.summarized_es_value,
                     "description": current_gen.description,
-                    "targetAggregate": current_gen.target_aggregate
+                    "targetAggregate": current_gen.target_aggregate,
+                    "requiredEventNames": current_gen.required_event_names
                 },
                 "preferredLanguage": state.inputs.preferedLanguage
             }
@@ -220,7 +322,8 @@ def generate_command_actions(state: State) -> State:
                     "inputs": {
                         "summarizedESValue": {},
                         "description": current_gen.description,
-                        "targetAggregate": current_gen.target_aggregate
+                        "targetAggregate": current_gen.target_aggregate,
+                        "requiredEventNames": current_gen.required_event_names
                     },
                     "preferredLanguage": state.inputs.preferedLanguage
                 }
@@ -275,6 +378,19 @@ def generate_command_actions(state: State) -> State:
         actionModels = [ActionModel(**action) for action in actions]
         for action in actionModels:
             action.type = "create"
+        
+        # 필수 이벤트 검증
+        if current_gen.required_event_names:
+            missing_events = validate_required_events(current_gen.required_event_names, actionModels)
+            if missing_events:
+                # 최대 재시도 횟수에 도달하지 않은 경우 재시도
+                if current_gen.retry_count < state.subgraphs.createCommandActionsByFunctionModel.max_retry_count:
+                    current_gen.retry_count += 1
+                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Missing required events for aggregate '{aggregate_name}': {missing_events}. Retrying generation (attempt {current_gen.retry_count})")
+                    return state
+                else:
+                    # 최대 재시도 횟수에 도달한 경우 경고 로그만 출력하고 계속 진행
+                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Missing required events for aggregate '{aggregate_name}': {missing_events}. Maximum retry count reached, proceeding with current result")
         
         current_gen.created_actions = actionModels
         
@@ -445,6 +561,10 @@ def decide_next_step(state: State) -> str:
         if state.subgraphs.createCommandActionsByFunctionModel.all_complete:
             return "complete"
         
+        # prepare 단계 직후라면 이벤트 할당 단계로 이동
+        if not state.subgraphs.createCommandActionsByFunctionModel.assign_event_names_complete:
+            return "assign_events"
+        
         # 현재 처리 중인 작업이 없으면 다음 작업 선택
         if not state.subgraphs.createCommandActionsByFunctionModel.current_generation:
             return "select_next"
@@ -491,6 +611,7 @@ def create_command_actions_by_function_subgraph() -> Callable:
     
     # 노드 추가
     subgraph.add_node("prepare", prepare_command_actions_generation)
+    subgraph.add_node("assign_events", assign_events_to_aggregates)
     subgraph.add_node("select_next", select_next_command_actions)
     subgraph.add_node("preprocess", preprocess_command_actions_generation)
     subgraph.add_node("generate", generate_command_actions)
@@ -502,6 +623,7 @@ def create_command_actions_by_function_subgraph() -> Callable:
     # 엣지 추가 (라우팅)
     subgraph.add_conditional_edges(START, resume_from_create_command_actions, {
         "prepare": "prepare",
+        "assign_events": "assign_events",
         "select_next": "select_next",
         "preprocess": "preprocess",
         "generate": "generate",
@@ -513,6 +635,15 @@ def create_command_actions_by_function_subgraph() -> Callable:
 
     subgraph.add_conditional_edges(
         "prepare",
+        decide_next_step,
+        {
+            "assign_events": "assign_events",
+            "complete": "complete"
+        }
+    )
+    
+    subgraph.add_conditional_edges(
+        "assign_events",
         decide_next_step,
         {
             "select_next": "select_next",
@@ -751,3 +882,26 @@ This context is specifically for generating:
 - Read models for query operations
 
 All within the scope of {bounded_context_name} bounded context and {aggregate_name} aggregate."""
+
+def validate_required_events(required_event_names: List[str], action_models: List[ActionModel]) -> List[str]:
+    """
+    필수 이벤트가 생성된 액션에 포함되어 있는지 검증
+    
+    Args:
+        required_event_names: 필수로 생성되어야 하는 이벤트 이름 목록
+        action_models: 생성된 액션 모델 목록
+    
+    Returns:
+        누락된 이벤트 이름 목록
+    """
+    # 생성된 이벤트 이름 목록 추출
+    generated_event_names = set()
+    for action in action_models:
+        if action.objectType == "Event" and action.args and action.args["eventName"]:
+            generated_event_names.add(action.args["eventName"])
+    
+    # 누락된 이벤트 찾기
+    missing_events = [event_name for event_name in required_event_names 
+                     if event_name not in generated_event_names]
+    
+    return missing_events

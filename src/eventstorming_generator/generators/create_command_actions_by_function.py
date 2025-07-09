@@ -436,6 +436,29 @@ CREATE TABLE enrollments (
             }
         }
     
+    def _build_required_events_constraint(self) -> str:
+        """필수 이벤트 제약 조건 빌드"""
+        inputs = self.client.get("inputs", {})
+        required_events = inputs.get("requiredEventNames", [])
+        
+        if not required_events:
+            return ""
+            
+        event_list = ", ".join(f"'{event}'" for event in required_events)
+        return f"""
+CRITICAL REQUIREMENT - Required Events Generation:
+The following events MUST be included in the eventActions result:
+{event_list}
+
+These events are specifically requested by the user and are mandatory. Ensure each of these events:
+1. Is included in the eventActions array with proper structure
+2. Has appropriate properties based on business semantics
+3. Has meaningful display names (aliases) in {self.client.get("preferredLanguage")}
+4. Is connected to relevant commands via outputEventIds where appropriate
+
+IMPORTANT: If any of these required events are missing from the final result, the generation will be considered incomplete and may need to be retried.
+"""
+    
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
         return {
@@ -489,5 +512,6 @@ Best Practices:
 * Proper error handling considerations
 * Security and authorization requirements included
 * Eventual consistency patterns are considered
-"""
+
+{self._build_required_events_constraint()}"""
         }

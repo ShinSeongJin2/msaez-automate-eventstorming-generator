@@ -674,6 +674,7 @@ def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: Li
     유효하지 않은 액션 필터링
     """
     filtered_actions = []
+    seen_combinations = set()
     
     for action in actions:
         if not action.get("args") or not action["args"].get("valueObjectName"):
@@ -691,20 +692,31 @@ def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: Li
         if not is_valid_reference:
             continue
 
+        # 동일한 boundedContextId + aggregateId + referenceClass 조합의 중복 액션 필터링
+        # 인덱스상 뒤에 있는 중복 액션을 제외
+        bounded_context_id = action["ids"].get("boundedContextId")
+        aggregate_id = action["ids"].get("aggregateId")
+        reference_class = action["args"].get("referenceClass")
+        
+        combination_key = f"{bounded_context_id}|{aggregate_id}|{reference_class}"
+        if combination_key in seen_combinations:
+            # 이미 동일한 조합의 액션이 있으므로 현재 액션은 중복으로 제외
+            continue
+        
+        seen_combinations.add(combination_key)
+
         # esValue에 이미 존재하는 참조인지 확인하여 중복 필터링
         is_duplicate = False
-        aggregate_id = es_alias_trans_manager.get_uuid_safely(action["ids"].get("aggregateId"))
-        aggregate_element = es_value["elements"].get(aggregate_id)
+        aggregate_uuid = es_alias_trans_manager.get_uuid_safely(aggregate_id)
+        aggregate_element = es_value["elements"].get(aggregate_uuid)
         
-        action_ref_class = action["args"].get("referenceClass")
-
-        if aggregate_element and action_ref_class:
+        if aggregate_element and reference_class:
             entities = aggregate_element.get("aggregateRoot", {}).get("entities", {}).get("elements", {})
             for entity in entities.values():
                 if entity.get("_type") == "org.uengine.uml.model.vo.Class":
                     field_descriptors = entity.get("fieldDescriptors", [])
                     for field in field_descriptors:
-                        if field.get("referenceClass") == action_ref_class:
+                        if field.get("referenceClass") == reference_class:
                             is_duplicate = True
                             break
                 if is_duplicate:

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aggregate 서브그래프 DDL 처리 흐름</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+        
+        .title {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+        
+        .subtitle {
+            text-align: center;
+            color: #7f8c8d;
+            margin-bottom: 50px;
+            font-size: 1.2em;
+        }
+        
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            gap: 30px;
+            align-items: center;
+        }
+        
+        .phase {
+            width: 100%;
+            max-width: 1200px;
+            border: 2px solid #3498db;
+            border-radius: 15px;
+            background: #f8f9ff;
+            overflow: hidden;
+            box-shadow: 0 8px 25px rgba(52, 152, 219, 0.15);
+        }
+        
+        .phase-header {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            padding: 15px 25px;
+            font-weight: bold;
+            font-size: 1.3em;
+            text-align: center;
+        }
+        
+        .phase-content {
+            padding: 25px;
+        }
+        
+        .step-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        .step {
+            background: white;
+            border: 2px solid #e74c3c;
+            border-radius: 10px;
+            padding: 20px;
+            min-width: 280px;
+            flex: 1;
+            max-width: 350px;
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .step:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(231, 76, 60, 0.2);
+        }
+        
+        .step-header {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            padding: 10px 15px;
+            margin: -20px -20px 15px -20px;
+            border-radius: 8px 8px 0 0;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        
+        .step-content {
+            line-height: 1.6;
+            color: #2c3e50;
+        }
+        
+        .generator {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            border-radius: 8px;
+            padding: 10px;
+            margin: 10px 0;
+            font-weight: bold;
+            color: #856404;
+            text-align: center;
+        }
+        
+        .arrow {
+            width: 0;
+            height: 0;
+            border-left: 25px solid transparent;
+            border-right: 25px solid transparent;
+            border-top: 30px solid #3498db;
+            margin: 0 auto;
+            position: relative;
+        }
+        
+        .arrow::after {
+            content: '';
+            position: absolute;
+            top: -35px;
+            left: -15px;
+            width: 0;
+            height: 0;
+            border-left: 15px solid transparent;
+            border-right: 15px solid transparent;
+            border-top: 20px solid white;
+        }
+        
+        .decision {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            border-radius: 50px;
+            padding: 15px 25px;
+            text-align: center;
+            font-weight: bold;
+            color: #155724;
+            margin: 15px auto;
+            max-width: 300px;
+        }
+        
+        .parallel-flow {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        
+        .flow-branch {
+            flex: 1;
+            min-width: 300px;
+            max-width: 500px;
+        }
+        
+        .validation-step {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            color: #721c24;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .success-step {
+            background: #d1ecf1;
+            border: 2px solid #17a2b8;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            color: #0c5460;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        .legend {
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .legend-title {
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 1.2em;
+        }
+        
+        .legend-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px;
+            border-radius: 5px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 4px;
+            border: 1px solid #666;
+        }
+        
+        .retry-flow {
+            background: #fff3cd;
+            border: 2px dashed #ffc107;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            color: #856404;
+            text-align: center;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">Aggregate 서브그래프 DDL 처리 흐름</h1>
+        <p class="subtitle">사용자로부터 전달된 DDL을 애그리거트 생성에 활용하는 전체 프로세스</p>
+        
+        <div class="flow-container">
+            <!-- Phase 1: DDL 초기 처리 -->
+            <div class="phase">
+                <div class="phase-header">Phase 1: DDL 초기 처리 및 필드 추출</div>
+                <div class="phase-content">
+                    <div class="step-group">
+                        <div class="step">
+                            <div class="step-header">1. 준비 단계 시작</div>
+                            <div class="step-content">
+                                • Bounded Context별 DDL 수집<br>
+                                • 처리할 애그리거트 목록 초기화<br>
+                                • requirements.ddl에서 DDL 문자열 추출
+                            </div>
+                        </div>
+                        
+                        <div class="step">
+                            <div class="step-header">2. DDL 필드 추출</div>
+                            <div class="step-content">
+                                <div class="generator">ExtractDDLFieldsGenerator</div>
+                                • CREATE TABLE 문 파싱<br>
+                                • 컬럼명만 추출 (타입, 제약조건 제외)<br>
+                                • 중복 제거된 필드 목록 생성<br>
+                                • camelCase로 변환
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="arrow"></div>
+            
+            <!-- Phase 2: 애그리거트별 필드 할당 -->
+            <div class="phase">
+                <div class="phase-header">Phase 2: 애그리거트별 DDL 필드 할당</div>
+                <div class="phase-content">
+                    <div class="decision">애그리거트 개수가 1개인가?</div>
+                    
+                    <div class="parallel-flow">
+                        <div class="flow-branch">
+                            <div class="step">
+                                <div class="step-header">단일 애그리거트 (최적화)</div>
+                                <div class="step-content">
+                                    • 모든 DDL 필드를 해당 애그리거트에 직접 할당<br>
+                                    • AI 호출 없이 즉시 처리<br>
+                                    • 성능 최적화된 경로
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flow-branch">
+                            <div class="step">
+                                <div class="step-header">다중 애그리거트 (AI 할당)</div>
+                                <div class="step-content">
+                                    <div class="generator">AssignDDLFieldsToAggregateDraft</div>
+                                    • 도메인 컨텍스트 분석<br>
+                                    • 필드명과 비즈니스 로직 기반 할당<br>
+                                    • 각 애그리거트별 필드 리스트 생성
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="validation-step">
+                        할당 검증: 누락 필드 및 초과 필드 확인
+                    </div>
+                    
+                    <div class="retry-flow">
+                        누락 필드 발견 시 최대 3회 재시도 (missing_fields 처리)
+                    </div>
+                </div>
+            </div>
+            
+            <div class="arrow"></div>
+            
+            <!-- Phase 3: 애그리거트 생성 실행 -->
+            <div class="phase">
+                <div class="phase-header">Phase 3: 애그리거트 생성 실행</div>
+                <div class="phase-content">
+                    <div class="step-group">
+                        <div class="step">
+                            <div class="step-header">3. DDL 필드 설정</div>
+                            <div class="step-content">
+                                • 사전 할당된 DDL 필드를 extracted_ddl_fields로 설정<br>
+                                • 현재 처리 중인 애그리거트의 필드 목록 준비<br>
+                                • ddl_extraction_attempted 플래그 설정
+                            </div>
+                        </div>
+                        
+                        <div class="step">
+                            <div class="step-header">4. 애그리거트 생성</div>
+                            <div class="step-content">
+                                <div class="generator">CreateAggregateActionsByFunction</div>
+                                • 요약된 ES 값과 DDL 필드 포함하여 호출<br>
+                                • Aggregate, ValueObject, Enumeration 액션 생성<br>
+                                • 토큰 제한 시 ES 값 요약 처리
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="arrow"></div>
+            
+            <!-- Phase 4: 후처리 및 검증 -->
+            <div class="phase">
+                <div class="phase-header">Phase 4: 후처리 및 DDL 필드 검증</div>
+                <div class="phase-content">
+                    <div class="step-group">
+                        <div class="step">
+                            <div class="step-header">5. DDL 필드 포함 검증</div>
+                            <div class="step-content">
+                                • 생성된 액션의 모든 프로퍼티 수집<br>
+                                • extracted_ddl_fields와 비교<br>
+                                • 누락된 필드 식별<br>
+                                • camelCase 변환 고려한 매칭
+                            </div>
+                        </div>
+                        
+                        <div class="step">
+                            <div class="step-header">6. 액션 필터링 및 정리</div>
+                            <div class="step-content">
+                                • 유효한 속성 액션만 필터링<br>
+                                • Bounded Context ID 복원<br>
+                                • 대상 애그리거트 ID 검증<br>
+                                • ES 값에 액션 적용
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="decision">누락된 DDL 필드가 있는가?</div>
+                    
+                    <div class="parallel-flow">
+                        <div class="flow-branch">
+                            <div class="success-step">
+                                모든 필드 포함 완료 → 검증 단계로 진행
+                            </div>
+                        </div>
+                        
+                        <div class="flow-branch">
+                            <div class="step">
+                                <div class="step-header">7. 누락 필드 할당</div>
+                                <div class="step-content">
+                                    <div class="generator">AssignFieldsToActionsGenerator</div>
+                                    • 기존 액션 구조 분석<br>
+                                    • 누락 필드를 적절한 부모에 할당<br>
+                                    • Java 데이터 타입 추론<br>
+                                    • 프로퍼티 추가 후 재검증
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="arrow"></div>
+            
+            <!-- Phase 5: 완료 -->
+            <div class="phase">
+                <div class="phase-header">Phase 5: 프로세스 완료</div>
+                <div class="phase-content">
+                    <div class="success-step">
+                        ✅ DDL 필드가 완전히 포함된 애그리거트 액션 생성 완료<br>
+                        ✅ ES 값 업데이트 및 다음 애그리거트 처리 준비
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 범례 -->
+        <div class="legend">
+            <div class="legend-title">📋 범례</div>
+            <div class="legend-items">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fff3cd; border-color: #ffc107;"></div>
+                    <span>AI 생성기 (Generator)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #d4edda; border-color: #28a745;"></div>
+                    <span>의사결정 지점</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f8d7da; border-color: #dc3545;"></div>
+                    <span>검증 단계</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #d1ecf1; border-color: #17a2b8;"></div>
+                    <span>성공/완료 단계</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #fff3cd; border: 2px dashed #ffc107;"></div>
+                    <span>재시도 흐름</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 주요 특징 -->
+        <div class="legend" style="margin-top: 20px;">
+            <div class="legend-title">🔍 주요 특징</div>
+            <div style="line-height: 1.8; color: #495057;">
+                <strong>• 완전성 보장:</strong> DDL의 모든 필드가 최종 애그리거트에 포함되도록 검증<br>
+                <strong>• 지능형 할당:</strong> 도메인 컨텍스트를 고려한 AI 기반 필드 할당<br>
+                <strong>• 재시도 메커니즘:</strong> 누락 필드 발견 시 자동 재할당 처리<br>
+                <strong>• 성능 최적화:</strong> 단일 애그리거트의 경우 AI 호출 생략<br>
+                <strong>• 타입 추론:</strong> 필드명 기반 Java 데이터 타입 자동 추론
+            </div>
+        </div>
+    </div>
+</body>
+</html>

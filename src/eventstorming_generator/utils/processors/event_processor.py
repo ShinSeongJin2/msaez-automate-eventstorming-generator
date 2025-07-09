@@ -46,9 +46,7 @@ class EventProcessor:
                                          information_cb: Dict[str, Any]) -> None:
             event_obj = es_value_cb["elements"].get(event_object["id"])
             if event_obj:
-                event_obj["fieldDescriptors"] = EventProcessor._get_aggregate_field_descriptors(
-                    es_value_cb, action, event_obj
-                )
+                event_obj["fieldDescriptors"] = EsUtils.create_field_descriptors(action.args.get("properties", []))
                 
         callbacks["afterAllRelationAppliedCallBacks"].append(set_field_descriptors_callback)
     
@@ -145,49 +143,3 @@ class EventProcessor:
                 "x": max_x,
                 "y": max_y + int(max_y_event["elementView"]["height"]/2) + int(event_object["elementView"]["height"]/2) + 14
             }
-            
-    @staticmethod
-    def _get_aggregate_field_descriptors(es_value: Dict[str, Any], action: Dict[str, Any], 
-                                        event_object: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """이벤트의 필드 기술자를 생성합니다"""
-        # 액션에서 속성이 지정되었을 경우 해당 속성 사용
-        if action.get("args", {}).get("properties"):
-            return [
-                {
-                    "className": prop.get("type") or "String",
-                    "isCopy": False,
-                    "isKey": prop.get("isKey") or False,
-                    "name": prop.get("name", ""),
-                    "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
-                    "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
-                    "displayName": prop.get("displayName", ""),
-                    "_type": "org.uengine.model.FieldDescriptor"
-                }
-                for prop in action["args"]["properties"]
-            ]
-            
-        # 속성이 지정되지 않았을 경우 Aggregate의 필드 사용
-        target_field_descriptors = es_value["elements"].get(
-            action.get("ids", {}).get("aggregateId", ""), {}
-        ).get("aggregateRoot", {}).get("fieldDescriptors", [])
-        
-        # Delete 커맨드와 연결된 이벤트일 경우 키 필드만 사용
-        if EsUtils.is_related_by_delete_command(es_value, event_object):
-            target_field_descriptors = [
-                field for field in target_field_descriptors
-                if field.get("isKey") or False
-            ]
-            
-        return [
-            {
-                "className": prop.get("className", "String"),
-                "isCopy": False,
-                "isKey": prop.get("isKey") or False,
-                "name": prop.get("name", ""),
-                "nameCamelCase": prop.get("nameCamelCase", ""),
-                "namePascalCase": prop.get("namePascalCase", ""),
-                "displayName": prop.get("displayName", ""),
-                "_type": "org.uengine.model.FieldDescriptor"
-            }
-            for prop in target_field_descriptors
-        ]

@@ -65,7 +65,10 @@ Please follow these rules:
    - Over-complicated policy chains
    - Ambiguous or vague policy names
    - Policies that contradict defined context relationships
-   - Policies that connect events within the same aggregate. Policies must only connect events between different aggregates."""
+   - Policies that connect events within the same aggregate. Policies must only connect events between different aggregates.
+   - Policies where the `toEventIds` array is empty. A policy must always trigger at least one subsequent event.
+   - Policies where an event in `fromEventIds` is identical to an event in `toEventIds`. An event cannot trigger itself.
+"""
 
     def _build_inference_guidelines_prompt(self) -> str:
         return """
@@ -294,6 +297,8 @@ CREATE TABLE reservations (
             "Final Check": """
 * Do not create a duplicate policy if there is already an existing policy connecting the same set of input and output events.
 * CRITICAL RULE: Do not create a policy where an Event triggers another Event within the same Aggregate. This is an invalid design, as such logic should be handled internally within the aggregate itself, not through a policy.
+* CRITICAL RULE: Every policy must have at least one target event. The `toEventIds` array cannot be empty.
+* CRITICAL RULE: A source event in `fromEventIds` cannot be the same as a target event in `toEventIds`. An event cannot trigger itself.
 * Ensure all policies that cross Aggregate or Bounded Context boundaries are justified by the requirements.
 * Verify that each policy serves a distinct business purpose and is not redundant.
 """

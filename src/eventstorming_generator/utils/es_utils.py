@@ -1,5 +1,6 @@
 import uuid
 from typing import Dict, Any, List
+from .convert_case_util import CaseConvertUtil
 
 class EsUtils:
     @staticmethod
@@ -275,7 +276,7 @@ class EsUtils:
             },
             "sourceMultiplicity": "1",
             "targetMultiplicity": "1",
-            "relationType": "Association",
+            "relationType": "Realization",
             "fromLabel": "",
             "toLabel": ""
         }
@@ -367,3 +368,60 @@ class EsUtils:
                 bcs_below.append(element)
                 
         return bcs_below
+
+    @staticmethod
+    def create_field_descriptors(
+        properties: List[Dict[str, Any]],
+        options: Dict[str, Any] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        속성 목록에서 필드 디스크립터 목록을 생성합니다.
+
+        Args:
+            properties: 필드 속성 목록.
+            options (dict): 생성 옵션.
+                'is_value_object' (bool): ValueObject 전용 `label` 필드를 추가합니다.
+                'is_root_aggregate' (bool): AggregateRoot 전용 필드를 추가하고 displayName을 비웁니다.
+                'include_ref_and_override' (bool): `referenceClass`와 `isOverrideField`를 포함합니다.
+                'exclude_foreign' (bool): 'isForeignProperty'가 True인 속성을 제외합니다.
+        """
+        if options is None:
+            options = {}
+
+        descriptors = []
+        
+        props_to_process = properties
+        if options.get("exclude_foreign"):
+            props_to_process = [p for p in properties if not p.get("isForeignProperty")]
+
+        for prop in props_to_process:
+            name = prop.get("name", "")
+            prop_type = prop.get("type") or "String"
+            
+            descriptor = {
+                "className": prop_type,
+                "isCopy": False,
+                "isKey": prop.get("isKey") or False,
+                "name": CaseConvertUtil.camel_case(name),
+                "nameCamelCase": CaseConvertUtil.camel_case(name),
+                "namePascalCase": CaseConvertUtil.pascal_case(name),
+                "displayName": prop.get("displayName", ""),
+                "_type": "org.uengine.model.FieldDescriptor",
+                "isList": ("list" in prop_type.lower()) or ("collection" in prop_type.lower())
+            }
+
+            if options.get("is_root_aggregate"):
+                descriptor["displayName"] = ""
+                descriptor["inputUI"] = None
+                descriptor["options"] = None
+            
+            if options.get("include_ref_and_override"):
+                descriptor["referenceClass"] = prop.get("referenceClass", None)
+                descriptor["isOverrideField"] = prop.get("isOverrideField", False)
+                
+            if options.get("is_value_object"):
+                descriptor["label"] = f"- {name}: {prop_type}"
+
+            descriptors.append(descriptor)
+            
+        return descriptors

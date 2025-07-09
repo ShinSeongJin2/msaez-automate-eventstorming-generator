@@ -127,22 +127,14 @@ class ValueObjectProcessor:
     @staticmethod
     def _get_field_descriptors(properties: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """필드 기술자 목록을 생성합니다"""
-        return [
-            {
-                "className": prop.get("type") or "String",
-                "isCopy": False,
-                "isKey": prop.get("isKey") or False,
-                "label": f"- {prop.get('name', '')}: {prop.get('type', 'String')}",
-                "name": prop.get("name", ""),
-                "nameCamelCase": CaseConvertUtil.camel_case(prop.get("name", "")),
-                "namePascalCase": CaseConvertUtil.pascal_case(prop.get("name", "")),
-                "displayName": prop.get("displayName", ""),
-                "referenceClass": prop.get("referenceClass", None),
-                "isOverrideField": prop.get("isOverrideField", False),
-                "_type": "org.uengine.model.FieldDescriptor"
+        return EsUtils.create_field_descriptors(
+            properties,
+            options={
+                "is_value_object": True,
+                "include_ref_and_override": True,
+                "exclude_foreign": True
             }
-            for prop in properties if not prop.get("isForeignProperty", False)
-        ]
+        )
     
     @staticmethod
     def _merge_field_descriptors(existing_fields: List[Dict[str, Any]], new_properties: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -215,7 +207,7 @@ class ValueObjectProcessor:
                     continue
                 
                 # 새 관계 생성
-                ddl_relation_object = ValueObjectProcessor._get_ddl_relation_base(source_element, matched_element)
+                ddl_relation_object = EsUtils.getDDLRelationObjectBase(source_element, matched_element)
                 
                 if not source_element.get("relations"):
                     source_element["relations"] = []
@@ -226,41 +218,5 @@ class ValueObjectProcessor:
                 matched_element["relations"].append(ddl_relation_object["id"])
                 
                 entities["relations"][ddl_relation_object["id"]] = ddl_relation_object
-                
-                # 필드에서 제거
-                source_element["fieldDescriptors"] = [
-                    fd for fd in source_element["fieldDescriptors"] 
-                    if fd.get("className") != matched_element.get("name")
-                ]
         
         callbacks["afterAllRelationAppliedCallBacks"].append(make_relations_callback)
-    
-    @staticmethod
-    def _get_ddl_relation_base(from_object: Dict[str, Any], to_object: Dict[str, Any]) -> Dict[str, Any]:
-        """DDL 관계 객체를 생성합니다"""
-        element_uuid = EsUtils.get_uuid()
-        from_id = from_object.get("id") or from_object["elementView"]["id"]
-        to_id = to_object.get("id") or to_object["elementView"]["id"]
-        
-        return {
-            "name": to_object.get("name", ""),
-            "id": element_uuid,
-            "_type": "org.uengine.uml.model.Relation",
-            "sourceElement": from_object,
-            "targetElement": to_object,
-            "from": from_id,
-            "to": to_id,
-            "selected": False,
-            "relationView": {
-                "id": element_uuid,
-                "style": "{\"arrow-start\":\"none\",\"arrow-end\":\"none\"}",
-                "from": from_id,
-                "to": to_id,
-                "needReconnect": True
-            },
-            "sourceMultiplicity": "1",
-            "targetMultiplicity": "1",
-            "relationType": "Association",
-            "fromLabel": "",
-            "toLabel": ""
-        }

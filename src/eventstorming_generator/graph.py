@@ -89,6 +89,7 @@ def create_bounded_contexts(state: State):
         # 생성된 내용으로 Boundconxt 내용을 교체하기
         for context_name, context in state.inputs.selectedDraftOptions.items():
             if context_name in created_bounded_contexts:
+                created_bounded_contexts[context_name]["requirements"] = context["boundedContext"].get("requirements", {})
                 context["boundedContext"] = created_bounded_contexts[context_name]
 
     except Exception as e:
