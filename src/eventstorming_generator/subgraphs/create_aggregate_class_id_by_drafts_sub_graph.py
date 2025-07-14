@@ -48,8 +48,15 @@ def prepare_class_id_generation(state: State) -> State:
             return state
         
         # 초안 데이터 설정
-        draft_options = state.inputs.selectedDraftOptions
-        draft_options = {k: v.get("structure", []) for k, v in draft_options.items()}
+        draft_options = {}
+        for bounded_context_id, bounded_context_data in state.inputs.selectedDraftOptions.items():
+            draft_options[bounded_context_id] = []
+            for structure in bounded_context_data.get("structure", []):
+                draft_options[bounded_context_id].append({
+                    "aggregate": structure.get("aggregate", {}),
+                    "enumerations": structure.get("enumerations", []),
+                    "valueObjects": structure.get("valueObjects", [])
+                })
 
         state.subgraphs.createAggregateClassIdByDraftsModel.draft_options = draft_options
         state.subgraphs.createAggregateClassIdByDraftsModel.is_processing = True

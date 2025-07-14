@@ -69,125 +69,29 @@ def prepare_aggregate_generation(state: State) -> State:
             
             structures = bounded_context_data.get("structure", [])
             LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Processing bounded context '{bounded_context_name}' with {len(structures)} aggregates")
-            
-            # BC별 DDL 처리
-            bc_ddl = target_bounded_context.get("requirements", {}).get("ddl", "")
-            bc_ddl_fields = []
-            aggregate_field_assignments = {}
-            
-            if bc_ddl and bc_ddl.strip():
-                LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Processing DDL for bounded context '{bounded_context_name}'")
-                
-                try:
-                    # 1. BC 전체 DDL에서 필드 추출
-                    model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
-                    
-                    ddl_extractor = ExtractDDLFieldsGenerator(
-                        model_name=model_name,
-                        client={
-                            "inputs": {"ddl": bc_ddl},
-                            "preferredLanguage": state.inputs.preferedLanguage
-                        }
-                    )
-                    
-                    extraction_result = ddl_extractor.generate()
-                    
-                    if extraction_result and "result" in extraction_result and "ddl_fields" in extraction_result["result"]:
-                        bc_ddl_fields = [CaseConvertUtil.camel_case(field) for field in extraction_result["result"]["ddl_fields"]]
-                        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Extracted {len(bc_ddl_fields)} DDL fields from BC '{bounded_context_name}'")
-                        
-                        # 2. DDL 필드를 애그리거트별로 할당
-                        if bc_ddl_fields:
-                            aggregate_drafts = [{"name": structure.get("aggregate", {}).get("name"), "alias": structure.get("aggregate", {}).get("alias", "")} for structure in structures]
-                            
-                            # 애그리거트가 1개인 경우 직접 할당 (최적화)
-                            if len(aggregate_drafts) == 1:
-                                single_aggregate_name = aggregate_drafts[0]["name"]
-                                aggregate_field_assignments[single_aggregate_name] = bc_ddl_fields.copy()
-                                LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Single aggregate '{single_aggregate_name}' in BC '{bounded_context_name}' - directly assigned all {len(bc_ddl_fields)} DDL fields")
-                            else:
-                                # 여러 애그리거트인 경우 AI 생성기 사용
-                                LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Multiple aggregates ({len(aggregate_drafts)}) in BC '{bounded_context_name}' - using AI assignment")
-                                
-                                assignment_generator = AssignDDLFieldsToAggregateDraft(
-                                    model_name=model_name,
-                                    client={
-                                        "inputs": {
-                                            "description": bounded_context_data.get("description", ""),
-                                            "aggregateDrafts": aggregate_drafts,
-                                            "allDdlFields": bc_ddl_fields
-                                        },
-                                        "preferredLanguage": state.inputs.preferedLanguage
-                                    }
-                                )
-                                
-                                assignment_result = assignment_generator.generate()
-                                
-                                if assignment_result and "result" in assignment_result and "aggregateFieldAssignments" in assignment_result["result"]:
-                                    assignments = assignment_result["result"]["aggregateFieldAssignments"]
-                                    for assignment in assignments:
-                                        aggregate_field_assignments[assignment["aggregateName"]] = assignment["ddl_fields"]
-                                    
-                                    # 할당 검증: 모든 필드가 할당되었는지 확인
-                                    assigned_fields = set()
-                                    for fields in aggregate_field_assignments.values():
-                                        assigned_fields.update(fields)
-                                    
-                                    missing_fields = set(bc_ddl_fields) - assigned_fields
-                                    extra_fields = assigned_fields - set(bc_ddl_fields)
-                                    
-                                    if missing_fields:
-                                        LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] Missing DDL field assignments in BC '{bounded_context_name}': {list(missing_fields)}")
-                                    if extra_fields:
-                                        LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] Extra DDL field assignments in BC '{bounded_context_name}': {list(extra_fields)}")
-                                    
-                                    # extra_fields 처리: 유효하지 않은 필드들 제거
-                                    if extra_fields:
-                                        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Removing extra fields from assignments in BC '{bounded_context_name}': {list(extra_fields)}")
-                                        for aggregate_name in aggregate_field_assignments:
-                                            aggregate_field_assignments[aggregate_name] = [
-                                                field for field in aggregate_field_assignments[aggregate_name] 
-                                                if field not in extra_fields
-                                            ]
-                                    
-                                    # missing_fields 처리: 최대 3번 재시도
-                                    if missing_fields:
-                                        aggregate_field_assignments = _handle_missing_fields_with_retry(
-                                            state, bounded_context_name, bounded_context_data, 
-                                            aggregate_drafts, list(missing_fields), aggregate_field_assignments, 
-                                            model_name, max_retries=3
-                                        )
-                                else:
-                                    LogUtil.add_error_log(state, f"[AGGREGATE_SUBGRAPH] DDL field assignment failed for BC '{bounded_context_name}'")
-                            
-                            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] DDL field assignment completed for BC '{bounded_context_name}'")
-                    else:
-                        LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] No DDL fields extracted from BC '{bounded_context_name}'")
-                        
-                except Exception as ddl_error:
-                    LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] DDL processing failed for BC '{bounded_context_name}'", ddl_error)
-            
+
             # 해당 Bounded Context의 구조 정보를 처리
             for index, structure in enumerate(structures):
                 aggregate_name = structure.get("aggregate", {}).get("name", "Unknown")
-                
-                # 해당 애그리거트에 할당된 DDL 필드 가져오기
-                assigned_ddl_fields = aggregate_field_assignments.get(aggregate_name, [])
-                
+
                 # 각 Aggregate 구조에 대한 생성 상태 초기화
                 generation_state = AggregateGenerationState(
                     target_bounded_context=target_bounded_context,
                     target_aggregate=structure.get("aggregate", {}),
                     description=bounded_context_data.get("description", {}),
-                    draft_option=[structure],
+                    draft_option=[{
+                        "aggregate": structure.get("aggregate", {}),
+                        "enumerations": structure.get("enumerations", []),
+                        "valueObjects": structure.get("valueObjects", [])
+                    }],
                     is_accumulated=index > 0,  # 첫 번째가 아니면 누적 처리
                     retry_count=0,
                     generation_complete=False,
                     requirements=target_bounded_context.get("requirements", {}),
-                    ddl_fields=assigned_ddl_fields  # 할당된 DDL 필드 설정
+                    ddl_fields=[CaseConvertUtil.camel_case(field) for field in structure.get("previewAttributes", [])]  # 할당된 DDL 필드 설정
                 )
                 pending_generations.append(generation_state)
-                LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Queued aggregate '{aggregate_name}' in context '{bounded_context_name}' with {len(assigned_ddl_fields)} DDL fields (accumulated: {index > 0})")
+                LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Queued aggregate '{aggregate_name}' in context '{bounded_context_name}' with {len(structure.get('previewAttributes', []))} DDL fields (accumulated: {index > 0})")
         
         # 처리할 Aggregate 목록 저장
         state.subgraphs.createAggregateByFunctionsModel.pending_generations = pending_generations
@@ -1104,99 +1008,3 @@ Focus:
 - Elements directly related to {aggregate_name} aggregate
 - Supporting elements within {bounded_context_name} bounded context
 - Essential domain relationships and dependencies"""
-
-
-def _handle_missing_fields_with_retry(
-    state: State, 
-    bounded_context_name: str, 
-    bounded_context_data: Dict[str, Any], 
-    aggregate_drafts: List[Dict[str, Any]], 
-    missing_fields: List[str], 
-    current_assignments: Dict[str, List[str]], 
-    model_name: str, 
-    max_retries: int = 3
-) -> Dict[str, List[str]]:
-    """
-    missing_fields에 대해 AssignDDLFieldsToAggregateDraft를 재시도하여 할당 처리
-    
-    Args:
-        state: 현재 상태
-        bounded_context_name: Bounded Context 이름
-        bounded_context_data: Bounded Context 데이터
-        aggregate_drafts: 애그리거트 초안 목록
-        missing_fields: 누락된 필드 목록
-        current_assignments: 현재 필드 할당 상태
-        model_name: AI 모델명
-        max_retries: 최대 재시도 횟수
-        
-    Returns:
-        업데이트된 필드 할당 맵
-    """
-    
-    retry_count = 0
-    remaining_missing_fields = missing_fields.copy()
-    updated_assignments = current_assignments.copy()
-    
-    while retry_count < max_retries and remaining_missing_fields:
-        retry_count += 1
-        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Retry {retry_count}/{max_retries} for missing fields in BC '{bounded_context_name}': {remaining_missing_fields}")
-        
-        try:
-            # missing_fields만을 대상으로 다시 할당 시도
-            assignment_generator = AssignDDLFieldsToAggregateDraft(
-                model_name=model_name,
-                client={
-                    "inputs": {
-                        "description": bounded_context_data.get("description", ""),
-                        "aggregateDrafts": aggregate_drafts,
-                        "allDdlFields": remaining_missing_fields  # 누락된 필드만 전달
-                    },
-                    "preferredLanguage": state.inputs.preferedLanguage
-                }
-            )
-            
-            assignment_result = assignment_generator.generate()
-            
-            if assignment_result and "result" in assignment_result and "aggregateFieldAssignments" in assignment_result["result"]:
-                new_assignments = assignment_result["result"]["aggregateFieldAssignments"]
-                
-                # 새로 할당된 필드들을 기존 할당에 병합
-                for assignment in new_assignments:
-                    aggregate_name = assignment["aggregateName"]
-                    new_fields = assignment["ddl_fields"]
-                    
-                    if aggregate_name not in updated_assignments:
-                        updated_assignments[aggregate_name] = []
-                    
-                    # 중복 제거하면서 필드 추가
-                    for field in new_fields:
-                        if field not in updated_assignments[aggregate_name]:
-                            updated_assignments[aggregate_name].append(field)
-                
-                # 새로 할당된 필드들 확인
-                newly_assigned_fields = set()
-                for assignment in new_assignments:
-                    newly_assigned_fields.update(assignment["ddl_fields"])
-                
-                # 여전히 누락된 필드들 업데이트
-                remaining_missing_fields = [field for field in remaining_missing_fields if field not in newly_assigned_fields]
-                
-                if newly_assigned_fields:
-                    LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Retry {retry_count} assigned {len(newly_assigned_fields)} fields: {list(newly_assigned_fields)}")
-                
-                if not remaining_missing_fields:
-                    LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] All missing fields successfully assigned after {retry_count} retries")
-                    break
-            else:
-                LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] Retry {retry_count} failed to generate valid assignments for BC '{bounded_context_name}'")
-                
-        except Exception as e:
-            LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Retry {retry_count} failed for missing fields in BC '{bounded_context_name}'", e)
-    
-    # 최종 결과 로깅
-    if remaining_missing_fields:
-        LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] After {max_retries} retries, {len(remaining_missing_fields)} fields remain unassigned in BC '{bounded_context_name}': {remaining_missing_fields}")
-    else:
-        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] All missing fields successfully assigned for BC '{bounded_context_name}' after {retry_count} retries")
-    
-    return updated_assignments

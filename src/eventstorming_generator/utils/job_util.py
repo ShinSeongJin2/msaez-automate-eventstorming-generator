@@ -378,9 +378,10 @@ class JobUtil:
         """
         상태 객체를 Firebase에 업로드 가능한 객체 데이터로 변환 및 복제
         """
-        return JobUtil.delete_element_ref_from_state(
-            JsonUtil.convert_to_dict(JsonUtil.convert_to_json(state))
-        )
+        update_state = JsonUtil.convert_to_dict(JsonUtil.convert_to_json(state))
+        update_state = JobUtil.delete_element_ref_from_state(update_state)
+        update_state = JobUtil.delete_unused_events(update_state)
+        return update_state
 
     @staticmethod
     def delete_element_ref_from_state(state):
@@ -417,6 +418,104 @@ class JobUtil:
         
         except Exception as e:
             LoggingUtil.exception("job_util", f"[State Optimization Error] delete_element_ref_from_state 실행 중 오류", e)
+            return state
+
+    @staticmethod
+    def delete_unused_events(state):
+        """
+        Policy와 연관되지 않은 Event들과 해당 Event와 관련된 관계들을 삭제합니다.
+        
+        Args:
+            state: Firebase 업로드용 상태 딕셔너리
+            
+        Returns:
+            state: 최적화된 상태 딕셔너리
+        """
+        try:
+
+            # esValue가 존재하는지 확인
+            if not state['outputs'] or not state['outputs']['esValue']:
+                return state
+            
+            es_value = state['outputs']['esValue']
+            
+            if state["outputs"]["isCompleted"]:
+                print(es_value)
+
+            # elements와 relations가 존재하는지 확인
+            if not es_value.get('elements') or not es_value.get('relations'):
+                return state
+            
+
+            elements = es_value['elements']
+            relations = es_value['relations']
+            
+
+            # 1단계: Policy와 연관된 Event ID 수집
+            policy_related_event_ids = set()
+            
+            for relation_id, relation in relations.items():
+                if not relation:
+                    continue
+                    
+                from_id = relation.get('from')
+                to_id = relation.get('to')
+                
+                # Policy -> Event 관계 확인
+                if from_id and to_id:
+                    from_element = elements.get(from_id)
+                    to_element = elements.get(to_id)
+                    
+                    # Policy에서 Event로의 관계
+                    if (from_element and from_element.get('_type') == 'org.uengine.modeling.model.Policy' and
+                        to_element and to_element.get('_type') == 'org.uengine.modeling.model.Event'):
+                        policy_related_event_ids.add(to_id)
+                    
+                    # Event에서 Policy로의 관계
+                    elif (from_element and from_element.get('_type') == 'org.uengine.modeling.model.Event' and
+                          to_element and to_element.get('_type') == 'org.uengine.modeling.model.Policy'):
+                        policy_related_event_ids.add(from_id)
+            
+
+            # 2단계: 삭제할 Event ID 식별 (Policy와 연관되지 않은 Event들)
+            events_to_delete = set()
+            
+            for element_id, element in elements.items():
+                if (element and 
+                    element.get('_type') == 'org.uengine.modeling.model.Event' and
+                    element_id not in policy_related_event_ids):
+                    events_to_delete.add(element_id)
+            
+
+            # 3단계: 삭제 대상 Event들을 elements에서 제거
+            for event_id in events_to_delete:
+                if event_id in elements:
+                    del elements[event_id]
+            
+
+            # 4단계: 삭제된 Event와 관련된 관계들을 relations에서 제거
+            relations_to_delete = []
+            
+            for relation_id, relation in relations.items():
+                if not relation:
+                    continue
+                    
+                from_id = relation.get('from')
+                to_id = relation.get('to')
+                
+                # 삭제된 Event를 참조하는 관계 식별
+                if (from_id in events_to_delete or to_id in events_to_delete):
+                    relations_to_delete.append(relation_id)
+            
+            # 식별된 관계들 삭제
+            for relation_id in relations_to_delete:
+                if relation_id in relations:
+                    del relations[relation_id]
+            
+            return state
+            
+        except Exception as e:
+            LoggingUtil.exception("job_util", f"[Event Cleanup Error] delete_unused_events 실행 중 오류", e)
             return state
 
     @staticmethod
