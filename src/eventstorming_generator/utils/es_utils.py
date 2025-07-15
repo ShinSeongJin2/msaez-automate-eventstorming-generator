@@ -354,15 +354,14 @@ class EsUtils:
             element_height = element_view.get("height", 0)
             element_left = element_x - (element_width // 2)
             element_right = element_x + (element_width // 2)
-            element_top = element_y - (element_height // 2)
+            element_bottom = element_y + (element_height // 2)
             
             # 2. 수평 위치 확인: 수평으로 겹치는지 확인
             # (element의 범위가 target의 범위와 하나라도 겹치면 True)
             is_horizontally_overlapping = (element_right >= target_left and element_left <= target_right)
             
             # 3. 수직 인접성 확인: 불필요한 공백을 방지하기 위해, 바로 아래에 위치하는지 검사합니다.
-            vertical_gap = element_top - target_bottom
-            is_vertically_adjacent = vertical_gap < 0
+            is_vertically_adjacent = element_bottom >= target_bottom
             
             if is_horizontally_overlapping and is_vertically_adjacent:
                 bcs_below.append(element)
