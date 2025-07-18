@@ -1,5 +1,7 @@
 import uuid
 from typing import Dict, Any, List
+from ..models import ActionModel
+from .log_util import LogUtil
 from .convert_case_util import CaseConvertUtil
 
 class EsUtils:
@@ -7,6 +9,142 @@ class EsUtils:
     def get_uuid() -> str:
         """자바스크립트와 동일한 형식의 UUID 생성"""
         return str(uuid.uuid4())
+    
+    @staticmethod
+    def add_line_numbers_to_description(description: str) -> str:
+        """
+        기능 요구사항 텍스트에 줄 번호를 추가하는 공통 메서드
+        
+        Args:
+            description: 원본 기능 요구사항 텍스트
+            
+        Returns:
+            줄 번호가 추가된 텍스트
+        """
+        if not description:
+            return description
+            
+        lines = description.split('\n')
+        line_numbered_description = '\n'.join([f"{i+1}: {line}" for i, line in enumerate(lines)])
+        return line_numbered_description
+    
+    @staticmethod
+    def convert_source_references(actions: List[ActionModel], original_description: str, state, log_prefix: str = "") -> None:
+        """
+        Action 목록의 모든 sourceReferences를 단어 조합에서 컬럼 위치로 변환하는 공통 메서드
+        
+        Args:
+            actions: 변환할 액션 목록
+            original_description: 원본 기능 요구사항 텍스트 (줄 번호 없는 버전)
+            state: 로깅을 위한 State 객체
+            log_prefix: 로그 메시지에 사용할 접두사
+        """
+        if not original_description:
+            LogUtil.add_warning_log(state, f"{log_prefix} Original description is empty, skipping source reference conversion.")
+            return
+
+        lines = original_description.split('\n')
+
+        for action in actions:
+            args = action.args
+            if not args:
+                continue
+
+            # Aggregate, ValueObject, Enumeration, Command, Event, ReadModel 자체의 sourceReferences 변환
+            if args.get("sourceReferences"):
+                args["sourceReferences"] = EsUtils._transform_reference(args["sourceReferences"], lines, state, log_prefix)
+
+            # Properties 또는 queryParameters의 sourceReferences 변환
+            properties_key = None
+            if args.get("properties"):
+                properties_key = "properties"
+            elif args.get("queryParameters"):
+                properties_key = "queryParameters"
+                
+            if properties_key and args.get(properties_key):
+                for prop in args[properties_key]:
+                    if isinstance(prop, dict) and prop.get("sourceReferences"):
+                        prop["sourceReferences"] = EsUtils._transform_reference(prop["sourceReferences"], lines, state, log_prefix)
+
+    @staticmethod
+    def _transform_reference(reference: List[List[List[Any]]], lines: List[str], state, log_prefix: str) -> List[List[List[int]]]:
+        """
+        단일 sourceReferences 값을 변환합니다.
+        
+        Args:
+            reference: 변환할 sourceReferences 값
+            lines: 원본 텍스트의 줄 목록
+            state: 로깅을 위한 State 객체
+            log_prefix: 로그 메시지에 사용할 접두사
+            
+        Returns:
+            변환된 sourceReferences 값
+        """
+        transformed_positions = []
+        for position_pair in reference:
+            try:
+                if not position_pair:
+                    continue
+
+                start_pos = position_pair[0]
+                end_pos = position_pair[1] if len(position_pair) > 1 else None
+
+                start_line_num, start_words = start_pos
+                start_line_num = int(start_line_num)
+
+                start_col = EsUtils._find_column_for_words(lines, start_line_num, start_words)
+
+                if end_pos:
+                    end_line_num, end_words = end_pos
+                    end_line_num = int(end_line_num)
+                    end_col = EsUtils._find_column_for_words(lines, end_line_num, end_words, is_end=True)
+                else:
+                    end_line_num = start_line_num
+                    end_words = ""
+                    if 1 <= start_line_num <= len(lines):
+                        line_content = lines[start_line_num - 1]
+                        end_col = len(line_content)
+                    else:
+                        end_col = -1
+
+                if start_col != -1 and end_col != -1:
+                    transformed_positions.append([[start_line_num, start_col], [end_line_num, end_col]])
+                else:
+                    log_end_line = end_line_num if end_pos else start_line_num
+                    log_end_words = f"'{end_words}'" if end_pos else "<end of line>"
+                    LogUtil.add_warning_log(state, f"{log_prefix} Could not find words for reference. Start: L{start_line_num} '{start_words}', End: L{log_end_line} {log_end_words}. Skipping this reference.")
+
+            except (ValueError, IndexError, TypeError) as e:
+                LogUtil.add_warning_log(state, f"{log_prefix} Malformed sourceReferences item '{position_pair}'. Error: {e}. Skipping.")
+                continue
+        return transformed_positions
+
+    @staticmethod
+    def _find_column_for_words(lines: List[str], line_num: int, words: str, is_end: bool = False) -> int:
+        """
+        주어진 라인 번호와 단어 조합으로 컬럼 위치를 찾습니다.
+        
+        Args:
+            lines: 텍스트의 줄 목록
+            line_num: 라인 번호 (1-based)
+            words: 찾을 단어 조합
+            is_end: True이면 단어 조합의 끝 위치를 반환
+            
+        Returns:
+            컬럼 위치 (1-based), 찾지 못하면 -1
+        """
+        if not (1 <= line_num <= len(lines)):
+            return -1
+        
+        line_content = lines[line_num - 1]
+        
+        try:
+            start_col = line_content.index(words)
+            if is_end:
+                return start_col + len(words)
+            return start_col + 1  # 1-based index
+        except ValueError:
+            return len(line_content) if is_end else 0
     
     @staticmethod
     def get_all_bounded_contexts(es_value: Dict[str, Any]) -> List[Dict[str, Any]]:

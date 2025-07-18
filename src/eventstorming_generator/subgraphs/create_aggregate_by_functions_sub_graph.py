@@ -8,10 +8,9 @@ from ..models import (
     ESValueSummaryGeneratorModel
 )
 from ..generators import (
-    CreateAggregateActionsByFunction, ExtractDDLFieldsGenerator, 
-    AssignFieldsToActionsGenerator, AssignDDLFieldsToAggregateDraft
+    CreateAggregateActionsByFunction, AssignFieldsToActionsGenerator
 )
-from ..utils import EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil, CaseConvertUtil
+from ..utils import EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil, CaseConvertUtil, EsUtils
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -73,12 +72,13 @@ def prepare_aggregate_generation(state: State) -> State:
             # 해당 Bounded Context의 구조 정보를 처리
             for index, structure in enumerate(structures):
                 aggregate_name = structure.get("aggregate", {}).get("name", "Unknown")
-
+                description = bounded_context_data.get("description", {})
                 # 각 Aggregate 구조에 대한 생성 상태 초기화
                 generation_state = AggregateGenerationState(
                     target_bounded_context=target_bounded_context,
                     target_aggregate=structure.get("aggregate", {}),
-                    description=bounded_context_data.get("description", {}),
+                    description=description,
+                    original_description=description,
                     draft_option=[{
                         "aggregate": structure.get("aggregate", {}),
                         "enumerations": structure.get("enumerations", []),
@@ -171,6 +171,10 @@ def preprocess_aggregate_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Starting preprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
+        # 기능 요구사항에 라인 번호 추가
+        if current_gen.description:
+            current_gen.description = EsUtils.add_line_numbers_to_description(current_gen.description)
+
         # 별칭 변환 관리자 생성
         es_alias_trans_manager = EsAliasTransManager(state.outputs.esValue.model_dump())
         
@@ -383,6 +387,14 @@ def postprocess_aggregate_generation(state: State) -> State:
         
         LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Processing {len(current_gen.created_actions)} actions for aggregate '{aggregate_name}'")
         
+        # SourceReferences 후처리
+        try:
+            EsUtils.convert_source_references(current_gen.created_actions, current_gen.original_description, state, "[AGGREGATE_SUBGRAPH]")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Successfully converted source references for '{aggregate_name}'")
+        except Exception as e:
+            LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Failed to convert source references for '{aggregate_name}'", e)
+            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
+        
         # ES 값의 복사본 생성
         es_value = EsValueModel(**deepcopy(state.outputs.esValue.model_dump()))
         es_alias_trans_manager = EsAliasTransManager(es_value)
@@ -565,6 +577,7 @@ def validate_aggregate_generation(state: State) -> State:
             current_gen.target_bounded_context = {}
             current_gen.target_aggregate = {}
             current_gen.description = ""
+            current_gen.original_description = ""
             current_gen.draft_option = []
             current_gen.summarized_es_value = {}
             current_gen.created_actions = []

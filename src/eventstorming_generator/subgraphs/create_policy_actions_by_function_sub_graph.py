@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreatePolicyActionsByFunction
-from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil, EsUtils
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -69,6 +69,7 @@ def prepare_policy_actions_generation(state: State) -> State:
             generation_state = PolicyActionGenerationState(
                 target_bounded_context=target_bounded_context,
                 description=bounded_context_data.get("description", ""),
+                original_description=bounded_context_data.get("description", ""),
                 retry_count=0,
                 generation_complete=False
             )
@@ -148,6 +149,9 @@ def preprocess_policy_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting preprocessing for policy actions in bounded context: '{bc_name}'")
     
     try:
+        # 기능 요구사항에 라인 번호 추가
+        if current_gen.description:
+            current_gen.description = EsUtils.add_line_numbers_to_description(current_gen.description)
 
         # 현재 ES 값의 복사본 생성
         es_value = state.outputs.esValue.model_dump()
@@ -322,6 +326,14 @@ def postprocess_policy_actions_generation(state: State) -> State:
         
         LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Applying {len(current_gen.created_actions)} policy actions for bounded context: '{bc_name}'")
         
+        # SourceReferences 후처리
+        try:
+            EsUtils.convert_source_references(current_gen.created_actions, current_gen.original_description, state, "[POLICY_ACTIONS_SUBGRAPH]")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Successfully converted source references for '{bc_name}'")
+        except Exception as e:
+            LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to convert source references for '{bc_name}'", e)
+            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
+
         # ES 값의 복사본 생성
         es_value_to_modify = deepcopy(state.outputs.esValue)
         
@@ -693,7 +705,8 @@ def _to_policy_creation_actions(policies: List[Dict[str, Any]],
                 "policyAlias": policy.get("alias", ""),
                 "reason": policy.get("reason", ""),
                 "inputEventIds": list(from_event_uuids),
-                "outputEventIds": list(to_event_uuids)
+                "outputEventIds": list(to_event_uuids),
+                "sourceReferences": policy.get("sourceReferences")
             }
         })
         

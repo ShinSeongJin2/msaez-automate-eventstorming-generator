@@ -1,6 +1,8 @@
 from pydantic import Field
-from typing import List
+from typing import List, Optional, Union
 from ..base import BaseModelWithItem
+
+SourceReferences = Optional[List[List[List[Union[int, str]]]]]
 
 class ExtractedPolicy(BaseModelWithItem):
     """Represents a policy that connects an event to an event"""
@@ -9,6 +11,7 @@ class ExtractedPolicy(BaseModelWithItem):
     reason: str = Field(description="The business reason and purpose for this policy")
     fromEventIds: List[str] = Field(description="The IDs of the source events that triggers this policy")
     toEventIds: List[str] = Field(description="The IDs of the target events that this policy triggers")
+    sourceReferences: SourceReferences = Field(None, description="Source reference from the functional requirements")
 
 class PolicyResult(BaseModelWithItem):
     """Contains the extracted policies from the analysis"""

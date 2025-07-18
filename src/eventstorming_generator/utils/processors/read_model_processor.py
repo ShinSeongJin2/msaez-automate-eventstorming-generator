@@ -23,11 +23,12 @@ class ReadModelProcessor:
         bounded_context_id = action["ids"].get("boundedContextId", "")
         aggregate_id = action["ids"].get("aggregateId", "")
         read_model_id = action["ids"].get("readModelId", EsUtils.get_uuid())
-        
+        source_reference = action.args.get("sourceReferences", [])
+
         # ReadModel 객체 생성
         read_model_object = ReadModelProcessor._get_read_model_base(
             user_info, read_model_name, read_model_alias, is_multiple_result,
-            bounded_context_id, aggregate_id, 0, 0, read_model_id
+            bounded_context_id, aggregate_id, 0, 0, read_model_id, source_reference
         )
         
         # 위치 설정
@@ -55,7 +56,8 @@ class ReadModelProcessor:
     def _get_read_model_base(user_info: Dict[str, Any], name: str, display_name: str, 
                            is_multiple_result: bool, bounded_context_id: str, 
                            aggregate_id: str, x: int, y: int, 
-                           element_uuid: str = None) -> Dict[str, Any]:
+                           element_uuid: str = None, 
+                           source_reference: List[List[List[Any]]] = []) -> Dict[str, Any]:
         """ReadModel 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -167,7 +169,8 @@ class ReadModelProcessor:
                 }
             ],
             "rotateStatus": False,
-            "definitionId": ""
+            "definitionId": "",
+            "sourceReferences": source_reference
         }
     
     @staticmethod

@@ -26,13 +26,14 @@ class ValueObjectProcessor:
             value_object_alias = action.args.get("valueObjectAlias", "")
             aggregate_id = action.ids.get("aggregateId", "")
             value_object_id = action.ids.get("valueObjectId", EsUtils.get_uuid())
+            source_reference = action.args.get("sourceReferences", [])
             
             # ValueObject 객체 생성
             value_object = ValueObjectProcessor._get_value_object_base(
                 value_object_name, 
                 value_object_alias,
                 ValueObjectProcessor._get_field_descriptors(action.args.get("properties", [])),
-                0, 0, value_object_id
+                0, 0, value_object_id, source_reference
             )
             
             # 위치 설정
@@ -80,7 +81,8 @@ class ValueObjectProcessor:
     
     @staticmethod
     def _get_value_object_base(name: str, display_name: str, field_descriptors: List[Dict[str, Any]], 
-                              x: int, y: int, element_uuid: str = None) -> Dict[str, Any]:
+                              x: int, y: int, element_uuid: str = None, 
+                              source_reference: List[List[List[Any]]] = []) -> Dict[str, Any]:
         """ValueObject 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -115,7 +117,8 @@ class ValueObjectProcessor:
             "groupElement": None,
             "isAggregateRoot": False,
             "isAbstract": False,
-            "isInterface": False
+            "isInterface": False,
+            "sourceReferences": source_reference
         }
     
     @staticmethod

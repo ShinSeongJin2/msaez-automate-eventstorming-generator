@@ -26,7 +26,8 @@ class EnumerationProcessor:
             enumeration_alias = action.args.get("enumerationAlias", "")
             aggregate_id = action.ids.get("aggregateId", "")
             enumeration_id = action.ids.get("enumerationId", EsUtils.get_uuid())
-            
+            source_reference = action.args.get("sourceReferences", [])
+
             # Enumeration 값 목록 변환
             properties = action.args.get("properties", [])
             items = [{"value": prop.get("name")} for prop in properties]
@@ -36,7 +37,7 @@ class EnumerationProcessor:
                 enumeration_name, 
                 enumeration_alias,
                 items,
-                0, 0, enumeration_id
+                0, 0, enumeration_id, source_reference
             )
             
             # 위치 설정
@@ -70,7 +71,7 @@ class EnumerationProcessor:
             
             if action.args.get("properties"):
                 # 새 항목 추가
-                items = [{"value": prop.get("name")} for prop in action.args.get("properties", [])]
+                items = [{"value": prop.get("name"), "sourceReferences": prop.get("sourceReferences", [])} for prop in action.args.get("properties", [])]
                 target_enumeration["items"].extend(items)
                 target_aggregate["aggregateRoot"]["entities"]["elements"][action.ids.get("enumerationId", "")] = target_enumeration
         
@@ -79,7 +80,8 @@ class EnumerationProcessor:
     
     @staticmethod
     def _get_enumeration_base(name: str, display_name: str, items: List[Dict[str, str]], 
-                             x: int, y: int, element_uuid: str = None) -> Dict[str, Any]:
+                             x: int, y: int, element_uuid: str = None, 
+                             source_reference: List[List[List[Any]]] = []) -> Dict[str, Any]:
         """Enumeration 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -105,7 +107,8 @@ class EnumerationProcessor:
             "selected": False,
             "items": items,
             "useKeyValue": False,
-            "relations": []
+            "relations": [],
+            "sourceReferences": source_reference
         }
     
     @staticmethod

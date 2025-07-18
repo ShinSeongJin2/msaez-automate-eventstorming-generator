@@ -4,6 +4,8 @@ from langgraph.graph import StateGraph, START
 import re
 
 from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
+from ..generators import CreateCommandActionsByFunction
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, EsUtils
 from ..generators import CreateCommandActionsByFunction, AssignEventNamesToAggregateDraft
 from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
@@ -63,10 +65,12 @@ def prepare_command_actions_generation(state: State) -> State:
                     aggregates_in_bc.append(element)
                     
                     # 각 Aggregate에 대한 생성 상태 준비
+                    description = draft_option.get("description", "")
                     generation_state = CommandActionGenerationState(
                         target_bounded_context=bounded_context,
                         target_aggregate=element,
-                        description=draft_option.get("description", ""),
+                        description=description,
+                        original_description=description,
                     )
                     pending_generations.append(generation_state)
                     total_aggregates += 1
@@ -242,6 +246,10 @@ def preprocess_command_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Starting preprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
+
+        # 기능 요구사항에 라인 번호 추가
+        if current.description:
+            current.description = EsUtils.add_line_numbers_to_description(current.description)
 
         # 요약된 ES Value 생성
         summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
@@ -427,6 +435,14 @@ def postprocess_command_actions_generation(state: State) -> State:
 
         initial_action_count = len(current.created_actions)
         
+        # SourceReferences 후처리
+        try:
+            EsUtils.convert_source_references(current.created_actions, current.original_description, state, "[COMMAND_ACTIONS_SUBGRAPH]")
+            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Successfully converted source references for aggregate '{aggregate_name}'")
+        except Exception as e:
+            LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to convert source references for aggregate '{aggregate_name}'", e)
+            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
+        
         # 유효한 액션만 필터링
         actions = filter_valid_actions(current.created_actions)
         LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Filtered {initial_action_count} -> {len(actions)} valid actions for aggregate '{aggregate_name}'")
@@ -492,6 +508,7 @@ def validate_command_actions_generation(state: State) -> State:
             current_gen.target_bounded_context = {}
             current_gen.target_aggregate = {}
             current_gen.description = ""
+            current_gen.original_description = ""
             current_gen.summarized_es_value = {}
             current_gen.created_actions = []
 

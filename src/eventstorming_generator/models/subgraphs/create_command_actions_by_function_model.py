@@ -8,6 +8,7 @@ class CommandActionGenerationState(BaseModelWithItem):
     target_bounded_context: Dict[str, Any] = {}
     target_aggregate: Dict[str, Any] = {}
     description: str = ""
+    original_description: str = ""
     summarized_es_value: Dict[str, Any] = {}
     retry_count: int = 0
     created_actions: List[ActionModel] = []

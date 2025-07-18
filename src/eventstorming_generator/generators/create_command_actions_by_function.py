@@ -39,6 +39,13 @@ Data Type Guidelines:
 2. Avoid using String type when a more specific type exists (e.g., use Date for dates, Integer for counts)
 3. For arrays/collections, always use List<Type> format (e.g., List<String>)
 
+Traceability Rules:
+1. For every created element (Command, Event, ReadModel) and each of their properties, you MUST provide a `sourceReferences`.
+2. The `sourceReferences` links the generated element back to the specific text in the "Functional Requirements" it was derived from. The requirements will have line numbers prepended to each line (e.g., "1: ...", "2: ...").
+3. The format for `sourceReferences` is an array of Position Arrays: `[[[<start_line_number>, "<start_word_combination>"], [<end_line_number>, "<end_word_combination>"]]]`.
+4. The "word_combination" MUST be a direct quote of 2-3 consecutive words from the specified line in the "Functional Requirements" to ensure it can be uniquely located. Avoid using single, common words. For example, instead of just "student", use "student to enroll".
+5. If an element is inferred from multiple places, you can add multiple Position Arrays to the list. Example: `[[[10, "enroll in a course"], [10, "start learning"]], [[25, "FOREIGN KEY"], [25, "(course_id) REFERENCES"]]]`
+
 Naming and Language Conventions:
 1. Technical names (classes, properties, methods) must be in English
 2. Display names and descriptions (aliases) must be in {self.client.get("preferredLanguage")}
@@ -126,8 +133,9 @@ Inference Guidelines:
 1. The process of reasoning should be directly related to the output result, not a reference to a general strategy.
 2. Directional Focus: Prioritize key business objectives and ensure that the generated actions align with domain-driven design, CQRS, and event sourcing principles.
 3. Validation and Consistency: Carefully evaluate business rules, validation constraints, state transitions, and property specifications to ensure architectural consistency.
-4. Integration and Duplication Avoidance: Verify that new actions integrate with existing Commands, Events, and ReadModels without causing duplication.
-5. Edge Cases and Error Handling: Consider potential error scenarios and boundary conditions.
+4. Traceability: For each generated element and its properties, determine the `sourceReferences` by finding the exact line and word combination in the functional requirements that justifies its creation. This reference must be precise and verifiable.
+5. Integration and Duplication Avoidance: Verify that new actions integrate with existing Commands, Events, and ReadModels without causing duplication.
+6. Edge Cases and Error Handling: Consider potential error scenarios and boundary conditions.
 """
 
     def _build_request_format_prompt(self) -> str:
@@ -152,12 +160,13 @@ Inference Guidelines:
                     "commandName": "<commandName>",
                     "commandAlias": "<commandAlias>",
                     "api_verb": <"POST" | "PUT" | "PATCH" | "DELETE">,
-
+                    "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]],
                     "properties": [
                         {
                             "name": "<propertyName>",
-                            "type?": "<propertyType>" // If the type is String, do not specify the type.
-                            "isKey?": <true|false> // Write only if there is a primary key.
+                            "type?": "<propertyType>", // If the type is String, do not specify the type.
+                            "isKey?": <true|false>, // Write only if there is a primary key.
+                            "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]
                         }
                     ],
 
@@ -179,12 +188,14 @@ Inference Guidelines:
                 "args": {
                     "eventName": "<eventName>",
                     "eventAlias": "<eventAlias>",
+                    "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]],
 
                     "properties": [
                         {
                             "name": "<propertyName>",
                             "type?": "<propertyType>",
-                            "isKey?": <true|false>
+                            "isKey?": <true|false>,
+                            "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]
                         }
                     ]
                 }
@@ -204,12 +215,13 @@ Inference Guidelines:
                     "readModelName": "<readModelName>",
                     "readModelAlias": "<readModelAlias>",
                     "isMultipleResult": <true|false>,
-
+                    "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]],
                     "queryParameters": [
                         {
                             "name": "<propertyName>",
                             "type?": "<propertyType>",
-                            "isKey?": <true|false>
+                            "isKey?": <true|false>,
+                            "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]
                         }
                     ],
 
@@ -300,47 +312,47 @@ Inference Guidelines:
                 ]
             },
             "description": """
-# Functional Requirements for Course Enrollment
-
-## User Story
-As a student, I want to enroll in a course so I can start learning. The system must verify my eligibility and process my payment if the course is not free. Upon successful enrollment, my status should be updated, and I should receive a confirmation.
-
-## Key Events
-- `StudentEnrolled`: Triggered when a student successfully enrolls in a course.
-- `EnrollmentFailed`: Triggered if enrollment cannot be completed due to reasons like course full, payment failure, or prerequisites not met.
-- `CoursePublished`: A course must be in 'Published' state to allow enrollment.
-
-## DDL
-```sql
--- Courses Table
-CREATE TABLE courses (
-    course_id INT PRIMARY KEY,
-    title VARCHAR(255) NOT NULL,
-    instructor_id INT NOT NULL,
-    price DECIMAL(10, 2) NOT NULL,
-    status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL,
-    max_students INT,
-    current_students INT DEFAULT 0
-);
-
--- Enrollments Table
-CREATE TABLE enrollments (
-    enrollment_id INT PRIMARY KEY,
-    course_id INT NOT NULL,
-    student_id INT NOT NULL,
-    enrollment_date DATETIME NOT NULL,
-    status ENUM('ACTIVE', 'COMPLETED', 'CANCELLED') NOT NULL,
-    FOREIGN KEY (course_id) REFERENCES courses(course_id)
-);
-```
-
-## Context Relations
-### CourseToPaymentIntegration
-- **Type**: API
-- **Direction**: calls
-- **Target Context**: PaymentService
-- **Reason**: To process enrollment fees for paid courses.
-- **Interaction Pattern**: Synchronous API call to process payment. The enrollment is confirmed only after successful payment confirmation.
+1: # Functional Requirements for Course Enrollment
+2: 
+3: ## User Story
+4: As a student, I want to enroll in a course so I can start learning. The system must verify my eligibility and process my payment if the course is not free. Upon successful enrollment, my status should be updated, and I should receive a confirmation.
+5: 
+6: ## Key Events
+7: - `StudentEnrolled`: Triggered when a student successfully enrolls in a course.
+8: - `EnrollmentFailed`: Triggered if enrollment cannot be completed due to reasons like course full, payment failure, or prerequisites not met.
+9: - `CoursePublished`: A course must be in 'Published' state to allow enrollment.
+10: 
+11: ## DDL
+12: ```sql
+13: -- Courses Table
+14: CREATE TABLE courses (
+15:     course_id INT PRIMARY KEY,
+16:     title VARCHAR(255) NOT NULL,
+17:     instructor_id INT NOT NULL,
+18:     price DECIMAL(10, 2) NOT NULL,
+19:     status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL,
+20:     max_students INT,
+21:     current_students INT DEFAULT 0
+22: );
+23: 
+24: -- Enrollments Table
+25: CREATE TABLE enrollments (
+26:     enrollment_id INT PRIMARY KEY,
+27:     course_id INT NOT NULL,
+28:     student_id INT NOT NULL,
+29:     enrollment_date DATETIME NOT NULL,
+30:     status ENUM('ACTIVE', 'COMPLETED', 'CANCELLED') NOT NULL,
+31:     FOREIGN KEY (course_id) REFERENCES courses(course_id)
+32: );
+33: ```
+34: 
+35: ## Context Relations
+36: ### CourseToPaymentIntegration
+37: - **Type**: API
+38: - **Direction**: calls
+39: - **Target Context**: PaymentService
+40: - **Reason**: To process enrollment fees for paid courses.
+41: - **Interaction Pattern**: Synchronous API call to process payment. The enrollment is confirmed only after successful payment confirmation.
 """,
             "targetAggregate": "Course"
         }
@@ -361,15 +373,18 @@ CREATE TABLE enrollments (
                             "commandName": "EnrollStudent",
                             "commandAlias": "Enroll in Course",
                             "api_verb": "POST",
+                            "sourceReferences": [[["4", "want to enroll"], ["4", "in a course"]]],
                             "properties": [
                                 {
                                     "name": "courseId",
                                     "type": "Long",
-                                    "isKey": True
+                                    "isKey": True,
+                                    "sourceReferences": [[["27", "course_id INT"], ["27", "INT NOT NULL"]]]
                                 },
                                 {
                                     "name": "studentId",
-                                    "type": "Long"
+                                    "type": "Long",
+                                    "sourceReferences": [[["28", "student_id INT"], ["28", "INT NOT NULL"]]]
                                 }
                             ],
                             "outputEventIds": ["evt-student-enrolled"],
@@ -388,23 +403,28 @@ CREATE TABLE enrollments (
                         "args": {
                             "eventName": "StudentEnrolled",
                             "eventAlias": "Student Enrolled in Course",
+                            "sourceReferences": [[["7", "`StudentEnrolled`: Triggered"], ["7", "successfully enrolls"]]],
                             "properties": [
                                 {
                                     "name": "enrollmentId",
                                     "type": "Long",
-                                    "isKey": True
+                                    "isKey": True,
+                                    "sourceReferences": [[["26", "enrollment_id INT"], ["26", "PRIMARY KEY"]]]
                                 },
                                 {
                                     "name": "courseId",
-                                    "type": "Long"
+                                    "type": "Long",
+                                    "sourceReferences": [[["27", "course_id INT"], ["27", "INT NOT NULL"]]]
                                 },
                                 {
                                     "name": "studentId",
-                                    "type": "Long"
+                                    "type": "Long",
+                                    "sourceReferences": [[["28", "student_id INT"], ["28", "INT NOT NULL"]]]
                                 },
                                 {
                                     "name": "enrollmentDate",
-                                    "type": "Date"
+                                    "type": "Date",
+                                    "sourceReferences": [[["29", "enrollment_date DATETIME"], ["29", "DATETIME NOT NULL"]]]
                                 }
                             ]
                         }
@@ -422,11 +442,13 @@ CREATE TABLE enrollments (
                             "readModelName": "CourseDetails",
                             "readModelAlias": "View Course Details",
                             "isMultipleResult": False,
+                            "sourceReferences": [[["4", "enroll in a course"], ["4", "start learning"]]],
                             "queryParameters": [
                                 {
                                     "name": "courseId",
                                     "type": "Long",
-                                    "isKey": True
+                                    "isKey": True,
+                                    "sourceReferences": [[["15", "course_id INT"], ["15", "PRIMARY KEY"]]]
                                 }
                             ],
                             "actor": "Student"
@@ -474,6 +496,7 @@ Data Validation:
 * Complex types (Address, Money, Email, etc.) are used instead of String where applicable
 * Collections are properly defined using List<Type> format
 * Primary keys and foreign keys are correctly specified
+* `sourceReferences` are added to all generated elements and their properties, correctly linking them to the functional requirements.
 
 Naming Conventions:
 * All technical names (Commands, Events, ReadModels) are in English

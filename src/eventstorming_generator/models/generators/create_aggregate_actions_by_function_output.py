@@ -1,10 +1,13 @@
 from pydantic import Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from ..base import BaseModelWithItem
+
+SourceReferences = Optional[List[List[List[Union[int, str]]]]]
 
 class EnumPropertyModel(BaseModelWithItem):
     """Model representing a property of an enumeration"""
     name: str = Field(..., description="Name of the property")
+    sourceReferences: SourceReferences = Field(None, description="Source reference from the functional requirements")
 
 class PropertyModel(BaseModelWithItem):
     """Model representing a property of an aggregate, value object"""
@@ -12,6 +15,7 @@ class PropertyModel(BaseModelWithItem):
     type: Optional[str] = Field(None, description="Type of the property (optional for String type)")
     isKey: Optional[bool] = Field(None, description="Whether this property is a primary key")
     isForeignProperty: Optional[bool] = Field(None, description="Whether this property is a foreign key reference")
+    sourceReferences: SourceReferences = Field(None, description="Source reference from the functional requirements")
 
 class AggregateIds(BaseModelWithItem):
     """Model representing aggregate identifiers"""
@@ -32,18 +36,21 @@ class AggregateArgs(BaseModelWithItem):
     aggregateName: str = Field(..., description="Name of the aggregate")
     aggregateAlias: str = Field(..., description="Human-readable alias for the aggregate")
     properties: List[PropertyModel] = Field(..., description="List of properties for the aggregate")
+    sourceReferences: SourceReferences = Field(None, description="Source reference from the functional requirements")
 
 class ValueObjectArgs(BaseModelWithItem):
     """Model representing arguments for value object creation"""
     valueObjectName: str = Field(..., description="Name of the value object")
     valueObjectAlias: str = Field(..., description="Human-readable alias for the value object")
     properties: List[PropertyModel] = Field(..., description="List of properties for the value object")
+    sourceReferences: SourceReferences = Field(None, description="Source reference from the functional requirements")
 
 class EnumerationArgs(BaseModelWithItem):
     """Model representing arguments for enumeration creation"""
     enumerationName: str = Field(..., description="Name of the enumeration")
     enumerationAlias: str = Field(..., description="Human-readable alias for the enumeration")
     properties: List[EnumPropertyModel] = Field(..., description="List of enumeration values")
+    sourceReferences: SourceReferences = Field(None, description="Source reference from the functional requirements")
 
 class AggregateAction(BaseModelWithItem):
     """Model representing an aggregate creation action"""

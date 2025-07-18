@@ -9,6 +9,7 @@ class AggregateGenerationState(BaseModelWithItem):
     target_bounded_context: Dict[str, Any] = Field(default_factory=dict)
     target_aggregate: Dict[str, Any] = Field(default_factory=dict)
     description: str = ""
+    original_description: str = ""
     requirements: Dict[str, Any] = Field(default_factory=dict)
     draft_option: List[Dict[str, Any]] = Field(default_factory=list)
     summarized_es_value: Dict[str, Any] = Field(default_factory=dict)

@@ -24,10 +24,11 @@ class AggregateProcessor:
         aggregate_alias = action.args.get("aggregateAlias", "")
         bounded_context_id = action.ids.get("boundedContextId", "")
         aggregate_id = action.ids.get("aggregateId", EsUtils.get_uuid())
+        source_reference = action.args.get("sourceReferences", [])
         
         # Aggregate 객체 생성
         aggregate_object = AggregateProcessor._get_aggregate_base(
-            user_info, aggregate_name, aggregate_alias, bounded_context_id, 0, 0, aggregate_id
+            user_info, aggregate_name, aggregate_alias, bounded_context_id, 0, 0, aggregate_id, source_reference
         )
         
         # BoundedContext 레이아웃 조정
@@ -90,7 +91,8 @@ class AggregateProcessor:
     
     @staticmethod
     def _get_aggregate_base(user_info: Dict[str, Any], name: str, display_name: str, 
-                           bounded_context_id: str, x: int, y: int, element_uuid: str) -> Dict[str, Any]:
+                           bounded_context_id: str, x: int, y: int, element_uuid: str, 
+                           source_reference: List[List[List[Any]]]) -> Dict[str, Any]:
         """Aggregate 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -136,7 +138,8 @@ class AggregateProcessor:
             "namePlural": CaseConvertUtil.plural(name),
             "rotateStatus": False,
             "selected": False,
-            "_type": "org.uengine.modeling.model.Aggregate"
+            "_type": "org.uengine.modeling.model.Aggregate",
+            "sourceReferences": source_reference
         }
     
     @staticmethod
