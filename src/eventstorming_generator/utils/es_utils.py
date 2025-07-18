@@ -52,13 +52,17 @@ class EsUtils:
 
             # Aggregate, ValueObject, Enumeration, Command, Event, ReadModel 자체의 sourceReferences 변환
             if args.get("sourceReferences"):
+                is_processed = False
                 for reference in args["sourceReferences"]:
                     for position_pair in reference:
                         if isinstance(position_pair, list) and all(isinstance(item, int) for item in position_pair):
                             continue
                         else:
                             args["sourceReferences"] = EsUtils._transform_reference(args["sourceReferences"], lines, state, log_prefix)
+                            is_processed = True
                             break
+                    if is_processed:
+                        break
 
             # Properties 또는 queryParameters의 sourceReferences 변환
             properties_key = None
@@ -70,13 +74,17 @@ class EsUtils:
             if properties_key and args.get(properties_key):
                 for prop in args[properties_key]:
                     if isinstance(prop, dict) and prop.get("sourceReferences"):
+                        is_processed = False
                         for reference in prop["sourceReferences"]:
                             for position_pair in reference:
                                 if isinstance(position_pair, list) and all(isinstance(item, int) for item in position_pair):
                                     continue
                                 else:
                                     prop["sourceReferences"] = EsUtils._transform_reference(prop["sourceReferences"], lines, state, log_prefix)
+                                    is_processed = True
                                     break
+                            if is_processed:
+                                break
 
     @staticmethod
     def _transform_reference(reference: List[List[List[Any]]], lines: List[str], state, log_prefix: str) -> List[List[List[int]]]:
