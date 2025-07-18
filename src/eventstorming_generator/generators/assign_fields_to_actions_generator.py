@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 from .base import BaseGenerator
 from ..models import AssignFieldsToActionsGeneratorOutput
+from ..utils import EsUtils
 
 class AssignFieldsToActionsGenerator(BaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
@@ -35,8 +36,10 @@ Please adhere to the following guidelines:
 1.  **Assign Every Field:** You must assign every single field from the "Missing Fields" list to a parent in the "Existing Model Structure".
 2.  **Choose the Best Parent:** For each field, analyze its name and the functional requirements to decide which Aggregate or Value Object is its most logical home. Think about which concept the field helps to describe.
 3.  **Infer Data Types:** For each field you assign, you must also infer its likely Java data type. Use common naming conventions as clues (e.g., `status` -> `String` or a potential Enum, `createdAt` -> `Date`, `price` -> `Double`, `orderId` -> `Long`). Default to `String` if the type is ambiguous.
-4.  **Structure Your Output:** Group your assignments by the parent they belong to. For each parent, list all the properties you are adding to it.
-5.  **Provide Rationale:** In the `inference` section, explain your assignment decisions. For example, "The `disposal_date` and `disposal_reason` fields were assigned to the `Book` aggregate because they directly describe the lifecycle events of a book."
+4.  **Provide Source References:** For each field you assign, you MUST provide a `sourceReferences` that links the field back to the specific text in the "Functional Requirements" it was derived from. The requirements will have line numbers prepended to each line (e.g., "1: ...", "2: ...").
+5.  **Source Reference Format:** The format for `sourceReferences` is an array of Position Arrays: `[[[<start_line_number>, "<start_word_combination>"], [<end_line_number>, "<end_word_combination>"]]]`. The "word_combination" MUST be a direct quote of 2-3 consecutive words from the specified line in the "Functional Requirements" to ensure it can be uniquely located. Avoid using single, common words.
+6.  **Structure Your Output:** Group your assignments by the parent they belong to. For each parent, list all the properties you are adding to it.
+7.  **Provide Rationale:** In the `inference` section, explain your assignment decisions. For example, "The `disposal_date` and `disposal_reason` fields were assigned to the `Book` aggregate because they directly describe the lifecycle events of a book."
 """
 
     def _build_inference_guidelines_prompt(self) -> str:
@@ -64,11 +67,13 @@ Inference Guidelines:
                 "properties_to_add": [
                     {
                         "name": "<missing_field_name_1>",
-                        "type": "<inferred_java_type>"
+                        "type": "<inferred_java_type>",
+                        "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]
                     },
                     {
                         "name": "<missing_field_name_2>",
-                        "type": "<inferred_java_type>"
+                        "type": "<inferred_java_type>",
+                        "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]
                     }
                 ]
             },
@@ -79,7 +84,8 @@ Inference Guidelines:
                 "properties_to_add": [
                     {
                         "name": "<missing_field_name_3>",
-                        "type": "<inferred_java_type>"
+                        "type": "<inferred_java_type>",
+                        "sourceReferences": [[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]
                     }
                 ]
             }
@@ -90,7 +96,32 @@ Inference Guidelines:
 
     def _build_json_example_input_format(self) -> Optional[Dict[str, Any]]:
         return {
-            "Functional Requirements": "As a course instructor, I need to manage my courses. A course has a title, description, and status. It also has a price, which includes the amount and currency. The system must track when the course was created and last updated.",
+            "Functional Requirements": """
+1: # Bounded Context Overview: CourseManagement
+2: 
+3: ## Role
+4: This context is responsible for the entire lifecycle of a course, including its creation, management, and tracking. It handles course content, instructor assignments, pricing, and status changes (e.g., Draft, Published, Archived). The primary user is the Instructor.
+5: 
+6: ## User Story
+7: As an instructor, I want to create and manage my courses on the platform. When creating a course, I need to provide a title, description, and price. The course should initially be in a 'Draft' state. Once I'm ready, I can 'Publish' the course, making it available for students to enroll. If a course is outdated, I should be able to 'Archive' it, so it's no longer available for new enrollments but remains accessible to already enrolled students.
+8: 
+9: ## DDL
+10: ```sql
+11: -- Courses Table
+12: CREATE TABLE courses (
+13:     course_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+14:     title VARCHAR(255) NOT NULL,
+15:     description TEXT,
+16:     instructor_id BIGINT NOT NULL,
+17:     status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL DEFAULT 'DRAFT',
+18:     price_amount DECIMAL(10, 2),
+19:     price_currency VARCHAR(3),
+20:     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+21:     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+22:     INDEX idx_instructor_id (instructor_id)
+23: );
+24: ```
+""",
             "Existing Model Structure": [
                 {
                     "actionName": "CreateCourseAggregate",
@@ -136,10 +167,10 @@ Inference Guidelines:
                         "parent_id": "agg-course",
                         "parent_name": "Course",
                         "properties_to_add": [
-                            { "name": "description", "type": "String" },
-                            { "name": "instructor_id", "type": "Long" },
-                            { "name": "created_at", "type": "Date" },
-                            { "name": "updated_at", "type": "Date" }
+                            { "name": "description", "type": "String", "sourceReferences": [[["7", "provide a title"], ["7", "description, and price"]]] },
+                            { "name": "instructor_id", "type": "Long", "sourceReferences": [[["16", "instructor_id BIGINT"], ["16", "BIGINT NOT NULL"]]] },
+                            { "name": "created_at", "type": "Date", "sourceReferences": [[["20", "created_at TIMESTAMP"], ["20", "TIMESTAMP DEFAULT"]]] },
+                            { "name": "updated_at", "type": "Date", "sourceReferences": [[["21", "updated_at TIMESTAMP"], ["21", "TIMESTAMP ON"]]] }
                         ]
                     },
                     {
@@ -147,7 +178,7 @@ Inference Guidelines:
                         "parent_id": "vo-course-price",
                         "parent_name": "CoursePrice",
                         "properties_to_add": [
-                            { "name": "price_currency", "type": "String" }
+                            { "name": "price_currency", "type": "String", "sourceReferences": [[["19", "price_currency VARCHAR"], ["19", "VARCHAR(3)"]]] }
                         ]
                     }
                 ]
@@ -156,8 +187,13 @@ Inference Guidelines:
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
+        
+        # Add line numbers to functional requirements for sourceReferences
+        description = inputs.get("description", "")
+        line_numbered_description = EsUtils.add_line_numbers_to_description(description)
+        
         return {
-            "Functional Requirements": inputs.get("description"),
+            "Functional Requirements": line_numbered_description,
             "Existing Model Structure": inputs.get("existingActions"),
             "Missing Fields": inputs.get("missingFields")
         } 

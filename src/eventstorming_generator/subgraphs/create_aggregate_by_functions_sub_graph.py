@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Callable
 from copy import deepcopy
 from langgraph.graph import StateGraph, START
 import os
@@ -387,14 +387,6 @@ def postprocess_aggregate_generation(state: State) -> State:
         
         LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Processing {len(current_gen.created_actions)} actions for aggregate '{aggregate_name}'")
         
-        # SourceReferences 후처리
-        try:
-            EsUtils.convert_source_references(current_gen.created_actions, current_gen.original_description, state, "[AGGREGATE_SUBGRAPH]")
-            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Successfully converted source references for '{aggregate_name}'")
-        except Exception as e:
-            LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Failed to convert source references for '{aggregate_name}'", e)
-            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
-        
         # ES 값의 복사본 생성
         es_value = EsValueModel(**deepcopy(state.outputs.esValue.model_dump()))
         es_alias_trans_manager = EsAliasTransManager(es_value)
@@ -452,6 +444,14 @@ def postprocess_aggregate_generation(state: State) -> State:
                 es_value_to_modify
             )
         
+        # SourceReferences 후처리
+        try:
+            EsUtils.convert_source_references(actions, current_gen.original_description, state, "[AGGREGATE_SUBGRAPH]")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Successfully converted source references for '{aggregate_name}'")
+        except Exception as e:
+            LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Failed to convert source references for '{aggregate_name}'", e)
+            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
+
         updated_es_value = EsActionsUtil.apply_actions(
             es_value_to_modify,
             actions,
@@ -497,17 +497,33 @@ def assign_missing_fields(state: State) -> State:
             if action.objectType == "Aggregate":
                 aggregate_alias = "agg-" + action.args["aggregateName"]
                 elementAliasToUUIDDic[aggregate_alias] = action.ids["aggregateId"]
+
                 dumped_action = action.model_dump()
                 dumped_action["ids"]["aggregateId"] = aggregate_alias
-                del dumped_action["ids"]["boundedContextId"]
+                if "boundedContextId" in dumped_action["ids"]:
+                    del dumped_action["ids"]["boundedContextId"]
+                if "sourceReferences" in dumped_action["args"]:
+                    del dumped_action["args"]["sourceReferences"]
+                if "properties" in dumped_action["args"]:
+                    for prop in dumped_action["args"]["properties"]:
+                        if "sourceReferences" in prop:
+                            del prop["sourceReferences"]
                 existing_actions.append(dumped_action)
 
             elif action.objectType == "ValueObject":
                 value_object_alias = "vo-" + action.args["valueObjectName"]
                 elementAliasToUUIDDic[value_object_alias] = action.ids["valueObjectId"]
+
                 dumped_action = action.model_dump()
                 dumped_action["ids"]["valueObjectId"] = value_object_alias
-                del dumped_action["ids"]["boundedContextId"]
+                if "boundedContextId" in dumped_action["ids"]:
+                    del dumped_action["ids"]["boundedContextId"]
+                if "sourceReferences" in dumped_action["args"]:
+                    del dumped_action["args"]["sourceReferences"]
+                if "properties" in dumped_action["args"]:
+                    for prop in dumped_action["args"]["properties"]:
+                        if "sourceReferences" in prop:
+                            del prop["sourceReferences"]
                 existing_actions.append(dumped_action)
 
 
@@ -796,6 +812,7 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         "assign_missing_fields",
         decide_next_step,
         {
+            "assign_missing_fields": "assign_missing_fields",
             "postprocess": "postprocess",
             "complete": "complete"
         }
@@ -820,7 +837,7 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         서브그래프 실행 함수
         """
         # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
+        result = State(**compiled_subgraph.invoke(state, {"recursion_limit": 2147483647}))
         return result
     
     return run_subgraph

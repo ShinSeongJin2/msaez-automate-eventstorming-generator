@@ -544,7 +544,8 @@ class EsUtils:
                 "namePascalCase": CaseConvertUtil.pascal_case(name),
                 "displayName": prop.get("displayName", ""),
                 "_type": "org.uengine.model.FieldDescriptor",
-                "isList": ("list" in prop_type.lower()) or ("collection" in prop_type.lower())
+                "isList": ("list" in prop_type.lower()) or ("collection" in prop_type.lower()),
+                "sourceReferences": prop.get("sourceReferences", None)
             }
 
             if options.get("is_root_aggregate"):

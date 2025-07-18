@@ -30,7 +30,7 @@ class EnumerationProcessor:
 
             # Enumeration 값 목록 변환
             properties = action.args.get("properties", [])
-            items = [{"value": prop.get("name")} for prop in properties]
+            items = [{"value": prop.get("name"), "sourceReferences": prop.get("sourceReferences", [])} for prop in properties]
             
             # Enumeration 객체 생성
             enumeration = EnumerationProcessor._get_enumeration_base(
