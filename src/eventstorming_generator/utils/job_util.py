@@ -438,9 +438,6 @@ class JobUtil:
                 return state
             
             es_value = state['outputs']['esValue']
-            
-            if state["outputs"]["isCompleted"]:
-                print(es_value)
 
             # elements와 relations가 존재하는지 확인
             if not es_value.get('elements') or not es_value.get('relations'):
