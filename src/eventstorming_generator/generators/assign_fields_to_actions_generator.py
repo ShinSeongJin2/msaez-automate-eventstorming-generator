@@ -35,12 +35,16 @@ Please adhere to the following guidelines:
 
 1.  **Assign Every Field:** You must assign every single field from the "Missing Fields" list to a parent in the "Existing Model Structure".
 2.  **Choose the Best Parent:** For each field, analyze its name and the functional requirements to decide which Aggregate or Value Object is its most logical home. Think about which concept the field helps to describe.
-3.  **Infer Data Types:** For each field you assign, you must also infer its likely Java data type. Use common naming conventions as clues (e.g., `status` -> `String` or a potential Enum, `createdAt` -> `Date`, `price` -> `Double`, `orderId` -> `Long`). Default to `String` if the type is ambiguous.
-4.  **Provide Source References:** For each field you assign, you MUST provide a `sourceReferences` that links the field back to the specific text in the "Functional Requirements" it was derived from. The requirements will have line numbers prepended to each line (e.g., "1: ...", "2: ...").
-5.  **Source Reference Format:** The format for `sourceReferences` is an array of Position Arrays: `[[[<start_line_number>, "<start_word_combination>"], [<end_line_number>, "<end_word_combination>"]]]`. The "word_combination" MUST be a direct quote of 2-3 consecutive words from the specified line in the "Functional Requirements" to ensure it can be uniquely located. Avoid using single, common words.
-6.  **Structure Your Output:** Group your assignments by the parent they belong to. For each parent, list all the properties you are adding to it.
-7.  **Provide Rationale:** In the `inference` section, explain your assignment decisions. For example, "The `disposal_date` and `disposal_reason` fields were assigned to the `Book` aggregate because they directly describe the lifecycle events of a book."
-"""
+3.  **USE ONLY EXISTING PARENTS:** You MUST only assign fields to parents that already exist in the "Existing Model Structure". Do NOT create new Aggregates or Value Objects. Do NOT use arbitrary IDs or names.
+4.  **Correct ID Usage:** When assigning to an Aggregate, use the exact `aggregateId` from the Existing Model Structure as the `parent_id`. When assigning to a Value Object, use the exact `valueObjectId` from the Existing Model Structure as the `parent_id`.
+5.  **Correct Name Usage:** When assigning to an Aggregate, use the exact `aggregateName` from the Existing Model Structure as the `parent_name`. When assigning to a Value Object, use the exact `valueObjectName` from the Existing Model Structure as the `parent_name`.
+6.  **Infer Data Types:** For each field you assign, you must also infer its likely Java data type. Use common naming conventions as clues (e.g., `status` -> `String` or a potential Enum, `createdAt` -> `Date`, `price` -> `Double`, `orderId` -> `Long`). Default to `String` if the type is ambiguous.
+7.  **Provide Source References:** For each field you assign, you MUST provide a `sourceReferences` that links the field back to the specific text in the "Functional Requirements" it was derived from. The requirements will have line numbers prepended to each line (e.g., "1: ...", "2: ...").
+8.  **Source Reference Format:** The format for `sourceReferences` is an array of Position Arrays: `[[[<start_line_number>, "<start_word_combination>"], [<end_line_number>, "<end_word_combination>"]]]`. The "word_combination" MUST be a direct quote of 2-3 consecutive words from the specified line in the "Functional Requirements" to ensure it can be uniquely located. Avoid using single, common words.
+9.  **Structure Your Output:** Group your assignments by the parent they belong to. For each parent, list all the properties you are adding to it.
+10. **Provide Rationale:** In the `inference` section, explain your assignment decisions. For example, "The `disposal_date` and `disposal_reason` fields were assigned to the `Book` aggregate because they directly describe the lifecycle events of a book."
+
+CRITICAL CONSTRAINT: You can ONLY use parent_id values and parent_name values that exist in the provided "Existing Model Structure". Never invent new IDs or names."""
 
     def _build_inference_guidelines_prompt(self) -> str:
         return """
@@ -62,8 +66,8 @@ Inference Guidelines:
         "assignments": [
             {
                 "parent_type": "Aggregate",
-                "parent_id": "<ID of the parent aggregate>",
-                "parent_name": "<Name of the parent aggregate>",
+                "parent_id": "<EXACT aggregateId from Existing Model Structure>",
+                "parent_name": "<EXACT aggregateName from Existing Model Structure>",
                 "properties_to_add": [
                     {
                         "name": "<missing_field_name_1>",
@@ -79,8 +83,8 @@ Inference Guidelines:
             },
             {
                 "parent_type": "ValueObject",
-                "parent_id": "<ID of the parent value object>",
-                "parent_name": "<Name of the parent value object>",
+                "parent_id": "<EXACT valueObjectId from Existing Model Structure>",
+                "parent_name": "<EXACT valueObjectName from Existing Model Structure>",
                 "properties_to_add": [
                     {
                         "name": "<missing_field_name_3>",
