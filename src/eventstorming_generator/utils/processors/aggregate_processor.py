@@ -59,7 +59,8 @@ class AggregateProcessor:
             EsUtils.create_field_descriptors(
                 action.args.get("properties", []),
                 options={"is_root_aggregate": True}
-            )
+            ),
+            source_reference
         )
         aggregate_object["aggregateRoot"]["entities"]["elements"][root_aggregate_object["id"]] = root_aggregate_object
     
@@ -143,7 +144,7 @@ class AggregateProcessor:
         }
     
     @staticmethod
-    def _get_root_aggregate_base(name: str, aggregate_id: str, field_descriptors: List[Dict[str, Any]], element_uuid: str = None) -> Dict[str, Any]:
+    def _get_root_aggregate_base(name: str, aggregate_id: str, field_descriptors: List[Dict[str, Any]], source_reference: List[List[List[Any]]], element_uuid: str = None) -> Dict[str, Any]:
         """Root Aggregate 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -177,7 +178,8 @@ class AggregateProcessor:
             "isAbstract": False,
             "isInterface": False,
             "isAggregateRoot": True,
-            "parentId": aggregate_id
+            "parentId": aggregate_id,
+            "sourceReferences": source_reference
         }
     
     @staticmethod
