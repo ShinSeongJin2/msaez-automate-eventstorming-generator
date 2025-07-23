@@ -381,6 +381,7 @@ class JobUtil:
         update_state = JsonUtil.convert_to_dict(JsonUtil.convert_to_json(state))
         update_state = JobUtil.delete_element_ref_from_state(update_state)
         update_state = JobUtil.delete_unused_events(update_state)
+        update_state = JobUtil.delete_actor_elements(update_state)
         return update_state
 
     @staticmethod
@@ -438,9 +439,6 @@ class JobUtil:
                 return state
             
             es_value = state['outputs']['esValue']
-            
-            if state["outputs"]["isCompleted"]:
-                print(es_value)
 
             # elements와 relations가 존재하는지 확인
             if not es_value.get('elements') or not es_value.get('relations'):
@@ -516,6 +514,37 @@ class JobUtil:
             
         except Exception as e:
             LoggingUtil.exception("job_util", f"[Event Cleanup Error] delete_unused_events 실행 중 오류", e)
+            return state
+
+    @staticmethod
+    def delete_actor_elements(state):
+        """
+        Actor 요소를 삭제
+        """
+        try:
+            if not state['outputs'] or not state['outputs']['esValue']:
+                return state
+            
+            es_value = state['outputs']['esValue']
+            
+            if not es_value.get('elements'):
+                return state
+            
+            elements = es_value['elements']
+            
+            element_ids_to_delete = set()
+            for element_id, element in elements.items():
+                if element.get('_type') == 'org.uengine.modeling.model.Actor':
+                    element_ids_to_delete.add(element_id)
+            
+            for element_id in element_ids_to_delete:
+                if element_id in elements:
+                    del elements[element_id]
+
+            return state
+            
+        except Exception as e:
+            LoggingUtil.exception("job_util", f"[Actor Cleanup Error] delete_actor_elements 실행 중 오류", e)
             return state
 
     @staticmethod
