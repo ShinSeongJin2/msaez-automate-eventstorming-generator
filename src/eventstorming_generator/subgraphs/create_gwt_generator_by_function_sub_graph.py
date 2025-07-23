@@ -318,7 +318,7 @@ def generate_gwt_generation(state: State) -> State:
         
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Executing GWT generation for aggregates '{aggregate_names}' ({len(current_gen.target_command_aliases)} commands)")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 GWT 추출 및 적용
         commands_to_replace = []

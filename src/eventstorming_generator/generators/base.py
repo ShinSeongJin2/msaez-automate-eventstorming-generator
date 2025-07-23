@@ -141,7 +141,7 @@ The returned format should be as follows.
 {after_json_format.strip()}
 """
     
-    def generate(self, bypass_cache: bool = False) -> Any:
+    def generate(self, bypass_cache: bool = False, retry_count: int = 0) -> Any:
         """
         LLM을 사용하여 생성 실행
         
@@ -156,7 +156,7 @@ The returned format should be as follows.
         if not Config.is_local_run():
             bypass_cache = False
 
-        messages = self._get_messages(bypass_cache)
+        messages = self._get_messages(bypass_cache, retry_count)
         
         # 구조화된 출력이 설정된 경우 with_structured_output 사용
         if self.structured_output_class:
@@ -176,7 +176,7 @@ The returned format should be as follows.
             else:
                 raise ValueError("예측하지 못한 Base Generator 종료 이유: " + ai_message.response_metadata["finish_reason"])
 
-    def _get_messages(self, bypass_cache: bool = False) -> List[BaseMessage]:
+    def _get_messages(self, bypass_cache: bool = False, retry_count: int = 0) -> List[BaseMessage]:
         promptsToBuild = self._get_prompts_to_build()
 
         messages = []
@@ -184,7 +184,7 @@ The returned format should be as follows.
         if promptsToBuild["system"]:
             system_content = promptsToBuild["system"]
             if bypass_cache:
-                system_content += f"\n<!-- Cache bypass: {uuid.uuid4().hex[:8]} -->"
+                system_content += f"\n<!-- Cache bypass: {retry_count} -->"
             messages.append(SystemMessage(content=system_content))
 
         for i in range(len(promptsToBuild["user"])):

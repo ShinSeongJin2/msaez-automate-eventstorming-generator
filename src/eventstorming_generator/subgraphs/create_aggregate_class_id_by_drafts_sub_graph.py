@@ -295,7 +295,7 @@ def generate_class_id(state: State) -> State:
         
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Executing class ID generation for references: {', '.join(current_gen.target_references)}")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 액션 추출
         actions = []

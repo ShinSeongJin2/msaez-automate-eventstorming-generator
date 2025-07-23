@@ -363,7 +363,7 @@ def generate_command_actions(state: State) -> State:
         
         # Generator 실행
         LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Executing command actions generation for aggregate '{aggregate_name}'")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 생성 결과가 있는지 확인
         if not result or not result.get("result"):

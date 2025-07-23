@@ -129,7 +129,7 @@ def generate_es_value_summary(state: State) -> State:
         )
         
         # Generator 실행 결과
-        result_dict = generator.generate(current_gen.retry_count > 0)
+        result_dict = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 정렬된 요소 ID 추출
         if result_dict and "result" in result_dict and "sortedElementIds" in result_dict["result"]:

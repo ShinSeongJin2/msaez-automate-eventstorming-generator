@@ -269,7 +269,7 @@ def generate_policy_actions(state: State) -> State:
 
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Executing policy actions generation for bounded context '{bc_name}' with {token_count} tokens")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 Policy 추출
         policies = []

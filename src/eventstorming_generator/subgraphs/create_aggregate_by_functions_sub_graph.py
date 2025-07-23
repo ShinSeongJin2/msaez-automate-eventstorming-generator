@@ -335,7 +335,7 @@ def generate_aggregate(state: State) -> State:
         
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Executing generation for '{aggregate_name}' with {token_count} tokens")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 액션 추출
         actions = []
@@ -538,7 +538,7 @@ def assign_missing_fields(state: State) -> State:
             client={"inputs": generator_inputs, "preferredLanguage": state.inputs.preferedLanguage}
         )
         
-        result = generator.generate()
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
 
 
         if not result or "result" not in result or "assignments" not in result["result"]:
