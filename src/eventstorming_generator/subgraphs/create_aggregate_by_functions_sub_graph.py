@@ -814,6 +814,7 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         decide_next_step,
         {
             "postprocess": "postprocess",
+            "assign_missing_fields": "assign_missing_fields",
             "complete": "complete"
         }
     )
