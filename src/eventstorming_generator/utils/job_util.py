@@ -360,7 +360,7 @@ class JobUtil:
         Args:
             state (State): 업로드할 상태 객체
         """
-        JobUtil._add_update_to_queue(JobUtil.convert_state_to_firebase_data(state), "set")
+        JobUtil._add_update_to_queue(JobUtil._convert_state_to_firebase_data(state), "set")
 
     @staticmethod
     def update_job_to_firebase_fire_and_forget(state: State):
@@ -370,22 +370,20 @@ class JobUtil:
         Args:
             state (State): 업데이트할 상태 객체
         """
-        JobUtil._add_update_to_queue(JobUtil.convert_state_to_firebase_data(state), "update")
+        JobUtil._add_update_to_queue(JobUtil._convert_state_to_firebase_data(state), "update")
     
-
     @staticmethod
-    def convert_state_to_firebase_data(state: State):
+    def _convert_state_to_firebase_data(state: State):
         """
         상태 객체를 Firebase에 업로드 가능한 객체 데이터로 변환 및 복제
         """
         update_state = JsonUtil.convert_to_dict(JsonUtil.convert_to_json(state))
-        update_state = JobUtil.delete_element_ref_from_state(update_state)
-        update_state = JobUtil.delete_unused_events(update_state)
-        update_state = JobUtil.delete_actor_elements(update_state)
+        update_state = JobUtil._delete_element_ref_from_state(update_state)
+        update_state = JobUtil._delete_unused_events(update_state)
         return update_state
 
     @staticmethod
-    def delete_element_ref_from_state(state):
+    def _delete_element_ref_from_state(state):
         """
         state의 outputs.esValue.relations에서 중복 데이터인 sourceElement, targetElement를 제거
         
@@ -393,23 +391,15 @@ class JobUtil:
             state (State): 처리할 상태 객체
         """
         try:
-            
-            # esValue가 존재하는지 확인
-            if not state['outputs'] or not state['outputs']['esValue']:
-                return state
-            
-            es_value = state['outputs']['esValue']
-            
-            
-            # relations가 존재하는지 확인
-            if not es_value['relations']:
-                return state
-            
-            relations = es_value['relations']
-            
 
-            # 각 relation에서 sourceElement, targetElement 제거
-            for relation_id, relation in relations.items():
+            if not state['outputs'] or \
+               not state['outputs']['esValue'] or \
+               not state['outputs']['esValue']['relations']:
+                return state
+            
+            
+            relations = state['outputs']['esValue']['relations']
+            for _, relation in relations.items():
                 if 'sourceElement' in relation:
                     del relation['sourceElement']
                 if 'targetElement' in relation:
@@ -422,7 +412,7 @@ class JobUtil:
             return state
 
     @staticmethod
-    def delete_unused_events(state):
+    def _delete_unused_events(state):
         """
         Policy와 연관되지 않은 Event들과 해당 Event와 관련된 관계들을 삭제합니다.
         
@@ -434,19 +424,14 @@ class JobUtil:
         """
         try:
 
-            # esValue가 존재하는지 확인
-            if not state['outputs'] or not state['outputs']['esValue']:
+            if not state['outputs'] or \
+               not state['outputs']['esValue'] or \
+               not state['outputs']['esValue']['elements'] or \
+               not state['outputs']['esValue']['relations']:
                 return state
             
-            es_value = state['outputs']['esValue']
-
-            # elements와 relations가 존재하는지 확인
-            if not es_value.get('elements') or not es_value.get('relations'):
-                return state
-            
-
-            elements = es_value['elements']
-            relations = es_value['relations']
+            elements = state['outputs']['esValue']['elements']
+            relations = state['outputs']['esValue']['relations']
             
 
             # 1단계: Policy와 연관된 Event ID 수집
@@ -516,36 +501,6 @@ class JobUtil:
             LoggingUtil.exception("job_util", f"[Event Cleanup Error] delete_unused_events 실행 중 오류", e)
             return state
 
-    @staticmethod
-    def delete_actor_elements(state):
-        """
-        Actor 요소를 삭제
-        """
-        try:
-            if not state['outputs'] or not state['outputs']['esValue']:
-                return state
-            
-            es_value = state['outputs']['esValue']
-            
-            if not es_value.get('elements'):
-                return state
-            
-            elements = es_value['elements']
-            
-            element_ids_to_delete = set()
-            for element_id, element in elements.items():
-                if element.get('_type') == 'org.uengine.modeling.model.Actor':
-                    element_ids_to_delete.add(element_id)
-            
-            for element_id in element_ids_to_delete:
-                if element_id in elements:
-                    del elements[element_id]
-
-            return state
-            
-        except Exception as e:
-            LoggingUtil.exception("job_util", f"[Actor Cleanup Error] delete_actor_elements 실행 중 오류", e)
-            return state
 
     @staticmethod
     def add_element_ref_to_state(state):
