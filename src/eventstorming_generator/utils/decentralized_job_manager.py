@@ -145,7 +145,8 @@ class DecentralizedJobManager:
         
         # 할당되지 않은 Job 찾기 (시간순으로)
         for job_id, job_data in sorted_jobs:
-            if job_data.get('assignedPodId') is None:
+            # assignedPodId가 없고, status가 'failed'가 아닌 작업만 고려
+            if job_data.get('assignedPodId') is None and job_data.get('status') != 'failed':
                 success = await self.atomic_claim_job(job_id)
                 if success:
                     # 성공적으로 클레임한 경우 해당 Job 처리 시작
@@ -252,10 +253,10 @@ class DecentralizedJobManager:
             # createdAt 기준으로 정렬
             sorted_jobs = self._sort_jobs_by_created_at(requested_jobs)
             
-            # 대기 중인 작업들만 필터링 (assignedPodId가 없는 것들)
+            # 대기 중인 작업들만 필터링 (assignedPodId가 없고, status가 'failed'가 아닌 것들)
             waiting_jobs = []
             for job_id, job_data in sorted_jobs:
-                if job_data.get('assignedPodId') is None:
+                if job_data.get('assignedPodId') is None and job_data.get('status') != 'failed':
                     waiting_jobs.append((job_id, job_data))
             
             # 각 대기 중인 작업의 waitingJobCount 계산 및 업데이트
@@ -276,7 +277,7 @@ class DecentralizedJobManager:
     
 
     async def recover_failed_jobs(self, requested_jobs: dict):
-        """다른 Pod의 실패한 작업 복구"""
+        """다른 Pod의 실패한 작업 복구 및 영구 실패 처리"""
         try:     
             if not requested_jobs:
                 return
@@ -291,13 +292,36 @@ class DecentralizedJobManager:
                     current_time - last_heartbeat > 300 and
                     job_data.get('status') == 'processing'):
                     
-                    LoggingUtil.warning("decentralized_job_manager", f"실패한 작업 감지: {job_id} (Pod: {assigned_pod})")
-                    await self.reset_failed_job(job_id)
+                    recovery_count = job_data.get('recoveryCount', 0)
+                    LoggingUtil.warning("decentralized_job_manager", f"실패한 작업 감지: {job_id} (Pod: {assigned_pod}), 복구 시도 횟수: {recovery_count}")
+
+                    if recovery_count >= 1:
+                        # 복구 횟수 초과 시 영구 실패 처리
+                        await self.mark_job_as_failed(job_id)
+                    else:
+                        # 작업 복구 시도
+                        await self.reset_failed_job(job_id, recovery_count)
         except Exception as e:
             LoggingUtil.exception("decentralized_job_manager", f"실패 작업 복구 오류", e)
+
+    async def mark_job_as_failed(self, job_id: str):
+        """영구적으로 실패한 작업을 'failed' 상태로 표시"""
+        try:
+            await FirebaseSystem.instance().update_data_async(
+                Config.get_requested_job_path(job_id),
+                {
+                    'status': 'failed',
+                    'assignedPodId': None,
+                    'lastHeartbeat': None,
+                    'failedAt': time.time(),
+                }
+            )
+            LoggingUtil.error("decentralized_job_manager", f"작업 {job_id}가 영구 실패 처리되었습니다.")
+        except Exception as e:
+            LoggingUtil.exception("decentralized_job_manager", f"작업 {job_id} 실패 처리 중 오류", e)
     
-    async def reset_failed_job(self, job_id: str):
-        """실패한 작업 초기화"""
+    async def reset_failed_job(self, job_id: str, current_recovery_count: int):
+        """실패한 작업 초기화 및 복구 횟수 증가"""
         try:
             await FirebaseSystem.instance().update_data_async(
                 Config.get_requested_job_path(job_id),
@@ -305,9 +329,10 @@ class DecentralizedJobManager:
                     'assignedPodId': None,
                     'status': 'pending',
                     'lastHeartbeat': None,
+                    'recoveryCount': current_recovery_count + 1,
                 }
             )
-            LoggingUtil.debug("decentralized_job_manager", f"실패 작업 {job_id} 초기화 완료")
+            LoggingUtil.info("decentralized_job_manager", f"실패 작업 {job_id} 초기화 완료 (복구 시도: {current_recovery_count + 1})")
         except Exception as e:
             LoggingUtil.exception("decentralized_job_manager", f"실패 작업 초기화 오류", e)
     
