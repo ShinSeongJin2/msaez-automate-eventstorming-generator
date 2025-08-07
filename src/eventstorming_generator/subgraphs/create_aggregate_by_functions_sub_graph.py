@@ -8,8 +8,7 @@ from ..models import (
     ESValueSummaryGeneratorModel
 )
 from ..generators import (
-    CreateAggregateActionsByFunction, ExtractDDLFieldsGenerator, 
-    AssignFieldsToActionsGenerator, AssignDDLFieldsToAggregateDraft
+    CreateAggregateActionsByFunction, AssignFieldsToActionsGenerator
 )
 from ..utils import EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil, CaseConvertUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
@@ -519,23 +518,54 @@ def assign_missing_fields(state: State) -> State:
             return state
 
         assignments = result["result"]["assignments"]
-        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Generator proposed assignments for {len(assignments)} parents.")
+        invalid_properties = set(result["result"].get("invalid_properties", []))
+        LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Generator proposed assignments for {len(assignments)} parents and identified {len(invalid_properties)} invalid properties.")
+
+        # Remove invalid properties from the list of fields to be checked against in the future.
+        # This prevents the postprocess <-> assign_missing_fields loop.
+        if invalid_properties:
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Removing invalid fields from extracted DDL list: {list(invalid_properties)}")
+            current_gen.extracted_ddl_fields = [
+                field for field in current_gen.extracted_ddl_fields
+                if field not in invalid_properties
+            ]
 
         actions_map = {action.ids["aggregateId"] if action.objectType == "Aggregate" else action.ids["valueObjectId"]: action for action in current_gen.created_actions if action.objectType in ["Aggregate", "ValueObject"]}
 
-        for assignment in assignments:
-            parent_id = elementAliasToUUIDDic[assignment.get("parent_id")]
-            if parent_id in actions_map:
-                parent_action = actions_map[parent_id]
-                props_to_add = assignment.get("properties_to_add", [])
-                for prop_data in props_to_add:
-                    parent_action.args["properties"].append(prop_data)
-            else:
-                LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] Could not find parent with ID '{parent_id}' to assign fields.")
 
-        current_gen.missing_ddl_fields = []
-        current_gen.retry_count = 0 # Reset retry count after successful assignment to allow postprocessing to try again
+        assigned_fields = set()
+        if assignments:
+            for assignment in assignments:
+                parent_id_alias = assignment.get("parent_id")
+                if not parent_id_alias or parent_id_alias not in elementAliasToUUIDDic:
+                    LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] Could not find parent with alias '{parent_id_alias}' to assign fields.")
+                    continue
 
+                parent_id = elementAliasToUUIDDic[parent_id_alias]
+                if parent_id in actions_map:
+                    parent_action = actions_map[parent_id]
+                    props_to_add = assignment.get("properties_to_add", [])
+                    for prop_data in props_to_add:
+                        if prop_data.get("name"):
+                            assigned_fields.add(CaseConvertUtil.camel_case(prop_data.get("name")))
+                            if not any(p.get("name") == prop_data.get("name") for p in parent_action.args["properties"]):
+                                parent_action.args["properties"].append(prop_data)
+                else:
+                    LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] Could not find parent with ID '{parent_id}' to assign fields.")
+
+        original_missing_fields = set(current_gen.missing_ddl_fields)
+        # 할당된 필드와 유효하지 않은 필드를 모두 제외
+        remaining_fields = original_missing_fields - assigned_fields - invalid_properties
+        
+        if not remaining_fields:
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Successfully processed all {len(original_missing_fields)} fields (Assigned: {len(assigned_fields)}, Invalid: {len(invalid_properties)}).")
+            current_gen.missing_ddl_fields = []
+            current_gen.retry_count = 0 # Reset retry count after successful assignment
+        else:
+            LogUtil.add_warning_log(state, f"[AGGREGATE_SUBGRAPH] Failed to assign all missing fields. Remaining: {list(remaining_fields)}. Retrying.")
+            current_gen.missing_ddl_fields = list(remaining_fields)
+            current_gen.retry_count += 1
+    
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Failed during field assignment for '{aggregate_name}'", e)
         current_gen.retry_count += 1

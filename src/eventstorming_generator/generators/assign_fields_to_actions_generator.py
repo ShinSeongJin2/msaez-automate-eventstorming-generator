@@ -32,11 +32,12 @@ You will be given:
 
 Please adhere to the following guidelines:
 
-1.  **Assign Every Field:** You must assign every single field from the "Missing Fields" list to a parent in the "Existing Model Structure".
-2.  **Choose the Best Parent:** For each field, analyze its name and the functional requirements to decide which Aggregate or Value Object is its most logical home. Think about which concept the field helps to describe.
-3.  **Infer Data Types:** For each field you assign, you must also infer its likely Java data type. Use common naming conventions as clues (e.g., `status` -> `String` or a potential Enum, `createdAt` -> `Date`, `price` -> `Double`, `orderId` -> `Long`). Default to `String` if the type is ambiguous.
-4.  **Structure Your Output:** Group your assignments by the parent they belong to. For each parent, list all the properties you are adding to it.
-5.  **Provide Rationale:** In the `inference` section, explain your assignment decisions. For example, "The `disposal_date` and `disposal_reason` fields were assigned to the `Book` aggregate because they directly describe the lifecycle events of a book."
+1.  **Identify Invalid Fields:** First, examine each field in the "Missing Fields" list. If a field is a comment (starts with `//`), documentation text, or any non-field identifier, add it to the `invalid_properties` list instead of assigning it.
+2.  **Assign Valid Fields:** For remaining valid fields, assign each one to a parent in the "Existing Model Structure".
+3.  **Choose the Best Parent:** For each valid field, analyze its name and the functional requirements to decide which Aggregate or Value Object is its most logical home. Think about which concept the field helps to describe.
+4.  **Infer Data Types:** For each field you assign, you must also infer its likely Java data type. Use common naming conventions as clues (e.g., `status` -> `String` or a potential Enum, `createdAt` -> `Date`, `price` -> `Double`, `orderId` -> `Long`). Default to `String` if the type is ambiguous.
+5.  **Structure Your Output:** Group your assignments by the parent they belong to. For each parent, list all the properties you are adding to it.
+6.  **Provide Rationale:** In the `inference` section, explain your assignment decisions and why certain fields were marked as invalid. For example, "The `disposal_date` and `disposal_reason` fields were assigned to the `Book` aggregate because they directly describe the lifecycle events of a book. The field `//검수상태:'대기','승인','반려'` was marked as invalid because it is a comment, not an actual field name."
 """
 
     def _build_inference_guidelines_prompt(self) -> str:
@@ -54,7 +55,7 @@ Inference Guidelines:
     def _build_json_response_format(self) -> str:
         return """
 {
-    "inference": "<Detailed reasoning for the assignments>",
+    "inference": "<Detailed reasoning for the assignments and invalid fields>",
     "result": {
         "assignments": [
             {
@@ -83,6 +84,10 @@ Inference Guidelines:
                     }
                 ]
             }
+        ],
+        "invalid_properties": [
+            "<invalid_property_name_1>",
+            "<invalid_property_name_2>"
         ]
     }
 }
@@ -122,13 +127,15 @@ Inference Guidelines:
                 "instructor_id",
                 "price_currency",
                 "created_at",
-                "updated_at"
+                "updated_at",
+                "//Course status: 'draft', 'published', 'archived'",
+                "//This is a comment field"
             ]
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "I have assigned the missing fields to the most logical parents. `description`, `instructor_id`, `created_at`, and `updated_at` are core attributes of the Course itself and belong in the `Course` aggregate. The `price_currency` field is an essential part of the price concept and belongs in the `CoursePrice` value object to ensure the price is always represented as a complete monetary value.",
+            "inference": "I have assigned the missing fields to the most logical parents. `description`, `instructor_id`, `created_at`, and `updated_at` are core attributes of the Course itself and belong in the `Course` aggregate. The `price_currency` field is an essential part of the price concept and belongs in the `CoursePrice` value object to ensure the price is always represented as a complete monetary value. The fields starting with '//' are comments and have been marked as invalid properties since they are not actual field names.",
             "result": {
                 "assignments": [
                     {
@@ -150,6 +157,10 @@ Inference Guidelines:
                             { "name": "price_currency", "type": "String" }
                         ]
                     }
+                ],
+                "invalid_properties": [
+                    "//Course status: 'draft', 'published', 'archived'",
+                    "//This is a comment field"
                 ]
             }
         }

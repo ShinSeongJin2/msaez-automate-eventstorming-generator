@@ -17,6 +17,7 @@ class ParentAssignment(BaseModelWithItem):
 class AssignFieldsToActionsGeneratorResult(BaseModelWithItem):
     """Model for assigning a list of properties to a specific parent (Aggregate or ValueObject)"""
     assignments: List[ParentAssignment] = Field(..., description="List of parent elements with the new fields assigned to them.")
+    invalid_properties: List[str] = Field(default_factory=list, description="List of properties that are commented out or invalid and therefore cannot be assigned")
 
 class AssignFieldsToActionsGeneratorOutput(BaseModelWithItem):
     """Structured Output Model of the AssignFieldsToActionsGenerator"""
