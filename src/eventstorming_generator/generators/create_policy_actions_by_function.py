@@ -59,15 +59,32 @@ Please follow these rules:
    - Must be idempotent where possible.
    - Should handle failure scenarios gracefully.
    - Should align with defined context interaction patterns.
-9. Avoid:
+9. Traceability Rules:
+   - For every created policy, you MUST provide `refs`.
+   - The `refs` links the generated policy back to the specific text in the "Functional Requirements" it was derived from. The requirements will have line numbers prepended to each line (e.g., "1: ...", "2: ...").
+   - The format for `refs` is `[[[<start_line_number>, "<start_word_combination>"], [<end_line_number>, "<end_word_combination>"]]]`.
+   - The "word_combination" should be MINIMAL words (1-2 words) that uniquely identify the position in the line. Use the shortest possible phrase that can locate the specific part of requirements. For example: "assign" instead of "automatically assign an appropriate table", "kitchen" instead of "Kitchen should be notified".
+   - If a policy is inferred from multiple places, add multiple Position Arrays to the list. Example: `[[[6, "assign"], [6, "table"]], [[28, "publishes"], [28, "events"]]]`
+10. CRITICAL POLICY VALIDATION RULES - STRICTLY ENFORCE:
+   - **NO SELF-TRIGGERING**: An event ID that appears in `fromEventIds` MUST NEVER appear in `toEventIds` for the same policy. Events cannot trigger themselves.
+   - **NO SAME-AGGREGATE POLICIES**: Policies must only connect events between DIFFERENT aggregates. Events within the same aggregate should be handled internally, not through policies.
+   - **MANDATORY TARGET EVENTS**: Every policy MUST have at least one event in `toEventIds`. Empty `toEventIds` arrays are forbidden.
+   - **CROSS-BOUNDARY ONLY**: Policies should primarily connect events across bounded contexts or aggregates to implement business workflows.
+   - **UNIQUE EVENT MAPPING**: If event A triggers event B, then event B should NOT trigger event A in another policy to avoid circular dependencies.
+11. Policy Purpose and Design Principles:
+   - Policies represent business workflows that span multiple domains or aggregates
+   - They implement integration patterns between bounded contexts
+   - They should transform or relay events to achieve business objectives
+   - They must create NEW events, not republish the same event
+   - They implement eventual consistency across domain boundaries
+12. Avoid:
    - Tightly coupled policies across multiple contexts
-   - Policies that could cause deadlocks
+   - Policies that could cause deadlocks or infinite loops
    - Over-complicated policy chains
    - Ambiguous or vague policy names
    - Policies that contradict defined context relationships
-   - Policies that connect events within the same aggregate. Policies must only connect events between different aggregates.
-   - Policies where the `toEventIds` array is empty. A policy must always trigger at least one subsequent event.
-   - Policies where an event in `fromEventIds` is identical to an event in `toEventIds`. An event cannot trigger itself.
+   - Creating policies just to "forward" the same event without transformation
+   - Any policy where source and target events are identical
 """
 
     def _build_inference_guidelines_prompt(self) -> str:
@@ -80,6 +97,7 @@ Inference Guidelines:
 5. Policy Design: Derive clear and distinct policies that connect related source events with appropriate target events, ensuring each policy delivers unique business value while respecting context boundaries.
 6. Cross-Context Validation: Ensure policies align with defined context interaction patterns and don't violate bounded context principles.
 7. Validation: Verify that policies avoid duplication and circular dependencies. It is strictly forbidden to create a policy where a source event and a target event belong to the same aggregate. Such policies are invalid and must be filtered out.
+8. Source Reference Justification: For each generated policy, determine the `refs` by finding the exact line and minimal word combination in the functional requirements that justifies its creation. Use the shortest possible phrase (1-2 words) that uniquely identifies the position. This reference must be precise and verifiable.
 """
 
     def _build_request_format_prompt(self) -> str:
@@ -96,7 +114,8 @@ Inference Guidelines:
                 "alias": "<alias>",
                 "reason": "<reason>",
                 "fromEventIds": ["<fromEventId1>", "<fromEventId2>"],
-                "toEventIds": ["<toEventId1>", "<toEventId2>"]
+                "toEventIds": ["<toEventId1>", "<toEventId2>"],
+                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
             }
         ]
     }
@@ -226,37 +245,37 @@ Inference Guidelines:
                     }
                 ]
             },
-            "Functional Requirements": """# Functional Requirements: Restaurant Reservation System
-
-## User Story
-As a customer, I want to make a restaurant reservation and receive confirmation.
-- Acceptance Criteria:
-  - Reservation should be created with customer details and party size.
-  - System should automatically assign an appropriate table.
-  - Kitchen should be notified for preparation.
-  - Customer should receive a confirmation.
-
-## Key Domain Events
-- `ReservationCreated`: A new reservation is created by the customer.
-- `TableAssigned`: A table has been assigned to the reservation.
-- `KitchenNotified`: The kitchen has been notified for preparation.
-- `ReservationConfirmed`: The reservation is fully confirmed.
-
-## DDL Snippet
-```sql
-CREATE TABLE reservations (
-    reservation_id INT PRIMARY KEY,
-    customer_id INT,
-    party_size INT,
-    status VARCHAR(50) -- 'PENDING', 'CONFIRMED'
-);
-```
-
-## Context Relations
-- **Name**: ReservationToKitchen
-- **Type**: Pub/Sub
-- **Interaction**: Reservation Service publishes `ReservationConfirmed` events. The Kitchen Service subscribes to trigger preparation.
-- **Reason**: The kitchen needs to prepare for confirmed reservations.
+            "Functional Requirements": """1: # Functional Requirements: Restaurant Reservation System
+2: 
+3: ## User Story
+4: As a customer, I want to make a restaurant reservation and receive confirmation.
+5: - Acceptance Criteria:
+6:   - Reservation should be created with customer details and party size.
+7:   - System should automatically assign an appropriate table.
+8:   - Kitchen should be notified for preparation.
+9:   - Customer should receive a confirmation.
+10: 
+11: ## Key Domain Events
+12: - `ReservationCreated`: A new reservation is created by the customer.
+13: - `TableAssigned`: A table has been assigned to the reservation.
+14: - `KitchenNotified`: The kitchen has been notified for preparation.
+15: - `ReservationConfirmed`: The reservation is fully confirmed.
+16: 
+17: ## DDL Snippet
+18: ```sql
+19: CREATE TABLE reservations (
+20:     reservation_id INT PRIMARY KEY,
+21:     customer_id INT,
+22:     party_size INT,
+23:     status VARCHAR(50) -- 'PENDING', 'CONFIRMED'
+24: );
+25: ```
+26: 
+27: ## Context Relations
+28: - **Name**: ReservationToKitchen
+29: - **Type**: Pub/Sub
+30: - **Interaction**: Reservation Service publishes `ReservationConfirmed` events. The Kitchen Service subscribes to trigger preparation.
+31: - **Reason**: The kitchen needs to prepare for confirmed reservations.
 """
         }
 
@@ -264,9 +283,9 @@ CREATE TABLE reservations (
         return {
             "inference": """Based on the functional requirements and event storming model, two policies are derived to automate the reservation workflow. The user story requires automatic table assignment and kitchen notification. The 'ReservationToKitchen' context relation explicitly defines a Pub/Sub pattern where the Kitchen Service subscribes to `ReservationConfirmed` events.
 
-1.  **AutoTableAssignmentPolicy**: The requirement "System should automatically assign an appropriate table" implies that after a `ReservationCreated` event, a `TableAssigned` event should follow without manual intervention. This policy connects `evt-reservation-created` to `evt-table-assigned`, automating the process across the Reservation and Table bounded contexts.
+1.  **AutoTableAssignmentPolicy**: The requirement "System should automatically assign an appropriate table" (line 7) implies that after a `ReservationCreated` event, a `TableAssigned` event should follow without manual intervention. This policy connects `evt-reservation-created` to `evt-table-assigned`, automating the process across the Reservation and Table bounded contexts.
 
-2.  **KitchenPreparationPolicy**: The requirement "Kitchen should be notified for preparation" and the `ReservationToKitchen` context relation guide this policy. It listens for the `ReservationConfirmed` event and triggers the `KitchenPrepared` event in the Kitchen context. This directly implements the specified Pub/Sub interaction, ensuring the kitchen is notified to prepare for the confirmed reservation.""",
+2.  **KitchenPreparationPolicy**: The requirement "Kitchen should be notified for preparation" (line 8) and the `ReservationToKitchen` context relation (lines 28-31) guide this policy. It listens for the `ReservationConfirmed` event and triggers the `KitchenPrepared` event in the Kitchen context. This directly implements the specified Pub/Sub interaction, ensuring the kitchen is notified to prepare for the confirmed reservation.""",
             "result": {
                 "extractedPolicies": [
                     {
@@ -274,14 +293,16 @@ CREATE TABLE reservations (
                         "alias": "Automatic Table Assignment",
                         "reason": "Fulfills the requirement that when a customer creates a reservation, the system must automatically assign an appropriate table.",
                         "fromEventIds": ["evt-reservation-created"],
-                        "toEventIds": ["evt-table-assigned"]
+                        "toEventIds": ["evt-table-assigned"],
+                        "refs": [[[7, "automatically"], [7, "table"]]]
                     },
                     {
                         "name": "KitchenPreparation",
                         "alias": "Kitchen Preparation Notification",
                         "reason": "Implements a Pub/Sub pattern to notify the kitchen for preparation once a reservation is confirmed. This is defined in the relationship between the Reservation and Kitchen contexts.",
                         "fromEventIds": ["evt-reservation-confirmed"],
-                        "toEventIds": ["evt-kitchen-prepared"]
+                        "toEventIds": ["evt-kitchen-prepared"],
+                        "refs": [[[8, "Kitchen"], [8, "for"]], [[30, "publishes"], [30, "preparation"]]]
                     }
                 ]
             }
@@ -294,12 +315,16 @@ CREATE TABLE reservations (
 
             "Functional Requirements": inputs.get("description"),
 
-            "Final Check": """
+            "Final Check": f"""
 * Do not create a duplicate policy if there is already an existing policy connecting the same set of input and output events.
 * CRITICAL RULE: Do not create a policy where an Event triggers another Event within the same Aggregate. This is an invalid design, as such logic should be handled internally within the aggregate itself, not through a policy.
 * CRITICAL RULE: Every policy must have at least one target event. The `toEventIds` array cannot be empty.
 * CRITICAL RULE: A source event in `fromEventIds` cannot be the same as a target event in `toEventIds`. An event cannot trigger itself.
+* CRITICAL RULE: Policies must create NEW events, not republish the same event. If you see `evt-bookRegistered` in `fromEventIds`, then `evt-bookRegistered` MUST NOT appear in `toEventIds`.
+* VALIDATION CHECKPOINT: Before finalizing each policy, verify that ALL event IDs in `fromEventIds` are COMPLETELY DIFFERENT from ALL event IDs in `toEventIds`.
 * Ensure all policies that cross Aggregate or Bounded Context boundaries are justified by the requirements.
 * Verify that each policy serves a distinct business purpose and is not redundant.
+* Remember: Policies implement business workflows between different domains, not event forwarding within the same domain.
+[Please generate the response in {self.client.get("preferredLanguage")} while ensuring that all code elements (e.g., variable names, function names) remain in English.]
 """
         }

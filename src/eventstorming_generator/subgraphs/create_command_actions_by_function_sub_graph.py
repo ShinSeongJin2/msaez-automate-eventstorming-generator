@@ -4,6 +4,8 @@ from langgraph.graph import StateGraph, START
 import re
 
 from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
+from ..generators import CreateCommandActionsByFunction
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, EsTraceUtil
 from ..generators import CreateCommandActionsByFunction, AssignEventNamesToAggregateDraft
 from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
@@ -63,10 +65,12 @@ def prepare_command_actions_generation(state: State) -> State:
                     aggregates_in_bc.append(element)
                     
                     # 각 Aggregate에 대한 생성 상태 준비
+                    description = draft_option.get("description", "")
                     generation_state = CommandActionGenerationState(
                         target_bounded_context=bounded_context,
                         target_aggregate=element,
-                        description=draft_option.get("description", ""),
+                        description=description,
+                        original_description=description,
                     )
                     pending_generations.append(generation_state)
                     total_aggregates += 1
@@ -105,28 +109,52 @@ def assign_events_to_aggregates(state: State) -> State:
                 LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] No events to assign for bounded context '{bc_name}'")
                 continue
                 
-            # bc_events에서 이벤트 이름 추출
+
             event_names = []
             try:
-
-                event_names = re.findall(r'"name":"(.*?)"', bc_events)
-                event_names = [name for name in event_names if name]
-                    
+                event_names = re.findall(r'"name".*:.*"(.*?)"', bc_events)
+                event_names = [name for name in event_names if name]    
             except Exception as e:
                 LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to parse events for bounded context '{bc_name}': {e}")
                 continue
+
+            if not event_names:
+                continue
             
+
             # 해당 BC의 애그리거트 목록 수집
+            summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
+                state.outputs.esValue.model_dump(), [], EsAliasTransManager(state.outputs.esValue.model_dump())
+            )
+
             aggregates_in_bc = []
-            for element in state.outputs.esValue.elements.values():
-                if (element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and 
-                    element.get("boundedContext", {}).get("id") == bounded_context.get("id")):
-                    aggregates_in_bc.append(element)
+            for bc in summarized_es_value.get("boundedContexts", []):
+                if (bc and bc.get("name") != bc_name): continue
+
+                for agg in bc.get("aggregates", []):
+                    aggregate_info = {
+                        "id": agg.get("id"),
+                        "name": agg.get("name"),
+                        "properties": []
+                    }
+
+                    for prop in agg.get("properties", []):
+                        property_info = {
+                            "name": prop.get("name"),
+                            "type": prop.get("type") if prop.get("type") else "String"
+                        }
+                        if prop.get("isKey"):
+                            property_info["isKey"] = True
+                        aggregate_info["properties"].append(property_info)
+
+                    aggregates_in_bc.append(aggregate_info)
+                break
             
             if not aggregates_in_bc:
                 LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] No aggregates found for bounded context '{bc_name}'")
                 continue
-                
+            
+
             # 애그리거트가 1개인 경우 모든 이벤트를 해당 애그리거트에 할당
             if len(aggregates_in_bc) == 1:
                 aggregate_name = aggregates_in_bc[0].get("name", "")
@@ -134,7 +162,7 @@ def assign_events_to_aggregates(state: State) -> State:
                 
                 # 해당 애그리거트의 generation state 찾아서 이벤트 할당
                 for generation in model.pending_generations:
-                    if (generation.target_aggregate.get("id") == aggregates_in_bc[0].get("id")):
+                    if (generation.target_aggregate.get("name") == aggregates_in_bc[0].get("name")):
                         generation.required_event_names = event_names
                         break
             else:
@@ -242,6 +270,10 @@ def preprocess_command_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Starting preprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
+
+        # 기능 요구사항에 라인 번호 추가
+        if current.description:
+            current.description = EsTraceUtil.add_line_numbers_to_description(current.description)
 
         # 요약된 ES Value 생성
         summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
@@ -355,7 +387,7 @@ def generate_command_actions(state: State) -> State:
         
         # Generator 실행
         LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Executing command actions generation for aggregate '{aggregate_name}'")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 생성 결과가 있는지 확인
         if not result or not result.get("result"):
@@ -427,6 +459,14 @@ def postprocess_command_actions_generation(state: State) -> State:
 
         initial_action_count = len(current.created_actions)
         
+        # Refs 후처리
+        try:
+            EsTraceUtil.convert_refs_to_indexes(current.created_actions, current.original_description, state, "[COMMAND_ACTIONS_SUBGRAPH]")
+            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Successfully converted source references for aggregate '{aggregate_name}'")
+        except Exception as e:
+            LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to convert source references for aggregate '{aggregate_name}'", e)
+            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
+        
         # 유효한 액션만 필터링
         actions = filter_valid_actions(current.created_actions)
         LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Filtered {initial_action_count} -> {len(actions)} valid actions for aggregate '{aggregate_name}'")
@@ -492,6 +532,7 @@ def validate_command_actions_generation(state: State) -> State:
             current_gen.target_bounded_context = {}
             current_gen.target_aggregate = {}
             current_gen.description = ""
+            current_gen.original_description = ""
             current_gen.summarized_es_value = {}
             current_gen.created_actions = []
 
@@ -719,7 +760,7 @@ def create_command_actions_by_function_subgraph() -> Callable:
         서브그래프 실행 함수
         """
         # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
+        result = State(**compiled_subgraph.invoke(state, {"recursion_limit": 2147483647}))
         return result
     
     return run_subgraph

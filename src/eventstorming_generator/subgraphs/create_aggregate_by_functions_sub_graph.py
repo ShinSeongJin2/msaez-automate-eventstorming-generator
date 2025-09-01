@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Callable
 from copy import deepcopy
 from langgraph.graph import StateGraph, START
 import os
@@ -10,7 +10,7 @@ from ..models import (
 from ..generators import (
     CreateAggregateActionsByFunction, AssignFieldsToActionsGenerator
 )
-from ..utils import EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil, CaseConvertUtil
+from ..utils import EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil, CaseConvertUtil,  EsTraceUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -72,12 +72,13 @@ def prepare_aggregate_generation(state: State) -> State:
             # 해당 Bounded Context의 구조 정보를 처리
             for index, structure in enumerate(structures):
                 aggregate_name = structure.get("aggregate", {}).get("name", "Unknown")
-
+                description = bounded_context_data.get("description", {})
                 # 각 Aggregate 구조에 대한 생성 상태 초기화
                 generation_state = AggregateGenerationState(
                     target_bounded_context=target_bounded_context,
                     target_aggregate=structure.get("aggregate", {}),
-                    description=bounded_context_data.get("description", {}),
+                    description=description,
+                    original_description=description,
                     draft_option=[{
                         "aggregate": structure.get("aggregate", {}),
                         "enumerations": structure.get("enumerations", []),
@@ -170,6 +171,10 @@ def preprocess_aggregate_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Starting preprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
+        # 기능 요구사항에 라인 번호 추가
+        if current_gen.description:
+            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
+
         # 별칭 변환 관리자 생성
         es_alias_trans_manager = EsAliasTransManager(state.outputs.esValue.model_dump())
         
@@ -330,7 +335,7 @@ def generate_aggregate(state: State) -> State:
         
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Executing generation for '{aggregate_name}' with {token_count} tokens")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 액션 추출
         actions = []
@@ -344,7 +349,9 @@ def generate_aggregate(state: State) -> State:
         actionModels = [ActionModel(**action) for action in actions]
         for action in actionModels:
             action.type = "create"
-        
+            if action.objectType == "Aggregate":
+                action.args["description"] = result.get("inference", "")
+
         # 생성된 액션 저장
         current_gen.created_actions = actionModels
         LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Generated {len(actionModels)} actions for aggregate '{aggregate_name}' (aggregates: {len(result.get('result', {}).get('aggregateActions', []))}, VOs: {len(result.get('result', {}).get('valueObjectActions', []))}, enums: {len(result.get('result', {}).get('enumerationActions', []))})")
@@ -439,6 +446,14 @@ def postprocess_aggregate_generation(state: State) -> State:
                 es_value_to_modify
             )
         
+        # Refs 후처리
+        try:
+            EsTraceUtil.convert_refs_to_indexes(actions, current_gen.original_description, state, "[AGGREGATE_SUBGRAPH]")
+            LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Successfully converted source references for '{aggregate_name}'")
+        except Exception as e:
+            LogUtil.add_exception_object_log(state, f"[AGGREGATE_SUBGRAPH] Failed to convert source references for '{aggregate_name}'", e)
+            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
+
         updated_es_value = EsActionsUtil.apply_actions(
             es_value_to_modify,
             actions,
@@ -479,22 +494,48 @@ def assign_missing_fields(state: State) -> State:
         
 
         elementAliasToUUIDDic = {}
+        elementUUIDToAliasDic = {}
         existing_actions = []
         for action in current_gen.created_actions:
             if action.objectType == "Aggregate":
                 aggregate_alias = "agg-" + action.args["aggregateName"]
                 elementAliasToUUIDDic[aggregate_alias] = action.ids["aggregateId"]
+                elementUUIDToAliasDic[action.ids["aggregateId"]] = aggregate_alias
+
                 dumped_action = action.model_dump()
                 dumped_action["ids"]["aggregateId"] = aggregate_alias
-                del dumped_action["ids"]["boundedContextId"]
+                if "boundedContextId" in dumped_action["ids"]:
+                    del dumped_action["ids"]["boundedContextId"]
+                if "refs" in dumped_action["args"]:
+                    del dumped_action["args"]["refs"]
+                if "properties" in dumped_action["args"]:
+                    for prop in dumped_action["args"]["properties"]:
+                        if "refs" in prop:
+                            del prop["refs"]
+                if "description" in dumped_action["args"]:
+                    del dumped_action["args"]["description"]
                 existing_actions.append(dumped_action)
 
-            elif action.objectType == "ValueObject":
+        for action in current_gen.created_actions:
+            if action.objectType == "ValueObject":
                 value_object_alias = "vo-" + action.args["valueObjectName"]
                 elementAliasToUUIDDic[value_object_alias] = action.ids["valueObjectId"]
+                elementUUIDToAliasDic[action.ids["valueObjectId"]] = value_object_alias
+
                 dumped_action = action.model_dump()
                 dumped_action["ids"]["valueObjectId"] = value_object_alias
-                del dumped_action["ids"]["boundedContextId"]
+                if "boundedContextId" in dumped_action["ids"]:
+                    del dumped_action["ids"]["boundedContextId"]
+                if "refs" in dumped_action["args"]:
+                    del dumped_action["args"]["refs"]
+                if "properties" in dumped_action["args"]:
+                    for prop in dumped_action["args"]["properties"]:
+                        if "refs" in prop:
+                            del prop["refs"]
+
+                if elementUUIDToAliasDic[action.ids["aggregateId"]]:
+                    dumped_action["ids"]["aggregateId"] = elementUUIDToAliasDic[action.ids["aggregateId"]]
+
                 existing_actions.append(dumped_action)
 
 
@@ -509,7 +550,7 @@ def assign_missing_fields(state: State) -> State:
             client={"inputs": generator_inputs, "preferredLanguage": state.inputs.preferedLanguage}
         )
         
-        result = generator.generate()
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
 
 
         if not result or "result" not in result or "assignments" not in result["result"]:
@@ -595,6 +636,7 @@ def validate_aggregate_generation(state: State) -> State:
             current_gen.target_bounded_context = {}
             current_gen.target_aggregate = {}
             current_gen.description = ""
+            current_gen.original_description = ""
             current_gen.draft_option = []
             current_gen.summarized_es_value = {}
             current_gen.created_actions = []
@@ -813,6 +855,7 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         "assign_missing_fields",
         decide_next_step,
         {
+            "assign_missing_fields": "assign_missing_fields",
             "postprocess": "postprocess",
             "assign_missing_fields": "assign_missing_fields",
             "complete": "complete"
@@ -838,7 +881,7 @@ def create_aggregate_by_functions_subgraph() -> Callable:
         서브그래프 실행 함수
         """
         # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
+        result = State(**compiled_subgraph.invoke(state, {"recursion_limit": 2147483647}))
         return result
     
     return run_subgraph

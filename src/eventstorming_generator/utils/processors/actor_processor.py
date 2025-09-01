@@ -94,6 +94,7 @@ class ActorProcessor:
                 "view": [],
             },
             "name": actor_name,
+            "traceName": actor_name,
             "oldName": "",
             "rotateStatus": False
         }

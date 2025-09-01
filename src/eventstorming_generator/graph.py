@@ -28,7 +28,6 @@ def create_bounded_contexts(state: State):
     state.outputs.currentProgressCount = 0
 
     try :
-        created_bounded_contexts = {}
         context_count = len(state.inputs.selectedDraftOptions)
         LogUtil.add_info_log(state, f"[ROOT_GRAPH] Processing {context_count} bounded contexts for creation")
 
@@ -80,23 +79,18 @@ def create_bounded_contexts(state: State):
 
                 for element in state.outputs.esValue.elements.values():
                     if element.get("_type") == "org.uengine.modeling.model.BoundedContext" and element.get("name", "").lower() == bc_name.lower():
-                        created_bounded_contexts[bc_name] = element
+                        element["requirements"] = context.get("boundedContext", {}).get("requirements", {})
+                        context["boundedContext"] = element
                         LogUtil.add_info_log(state, f"[ROOT_GRAPH] Successfully created bounded context: '{bc_name}' with ID: '{element.get('id')}'")
                         break
             else:
                 LogUtil.add_info_log(state, f"[ROOT_GRAPH] Bounded context already exists: '{bc_name}'")
-        
-        # 생성된 내용으로 Boundconxt 내용을 교체하기
-        for context_name, context in state.inputs.selectedDraftOptions.items():
-            if context_name in created_bounded_contexts:
-                created_bounded_contexts[context_name]["requirements"] = context["boundedContext"].get("requirements", {})
-                context["boundedContext"] = created_bounded_contexts[context_name]
 
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[ROOT_GRAPH] Failed to create bounded contexts", e)
         return "complete"
 
-    LogUtil.add_info_log(state, f"[ROOT_GRAPH] Bounded context creation completed successfully. Created: {len(created_bounded_contexts)} contexts")
+    LogUtil.add_info_log(state, f"[ROOT_GRAPH] Bounded context creation completed successfully.")
     state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
     return state
 

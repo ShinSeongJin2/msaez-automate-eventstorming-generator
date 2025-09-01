@@ -90,6 +90,7 @@ class BoundedContextProcessor:
             },
             "members": [],
             "name": name,
+            "traceName": name,
             "displayName": display_name,
             "oldName": "",
             "policies": [],

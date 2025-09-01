@@ -318,7 +318,7 @@ def generate_gwt_generation(state: State) -> State:
         
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Executing GWT generation for aggregates '{aggregate_names}' ({len(current_gen.target_command_aliases)} commands)")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 GWT 추출 및 적용
         commands_to_replace = []
@@ -680,7 +680,7 @@ def create_gwt_generator_by_function_subgraph() -> Callable:
         서브그래프 실행 함수
         """
         # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
+        result = State(**compiled_subgraph.invoke(state, {"recursion_limit": 2147483647}))
         return result
     
     return run_subgraph

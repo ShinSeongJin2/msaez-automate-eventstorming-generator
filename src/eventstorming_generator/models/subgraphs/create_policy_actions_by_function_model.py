@@ -7,6 +7,7 @@ class PolicyActionGenerationState(BaseModelWithItem):
     """단일 Policy 액션 생성 처리 상태"""
     target_bounded_context: Dict[str, Any] = {}
     description: str = ""
+    original_description: str = ""
     summarized_es_value: Dict[str, Any] = {}
     is_accumulated: bool = False
     retry_count: int = 0

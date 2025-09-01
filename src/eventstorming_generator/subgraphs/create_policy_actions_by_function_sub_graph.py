@@ -5,7 +5,7 @@ from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreatePolicyActionsByFunction
-from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil, EsTraceUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -69,6 +69,7 @@ def prepare_policy_actions_generation(state: State) -> State:
             generation_state = PolicyActionGenerationState(
                 target_bounded_context=target_bounded_context,
                 description=bounded_context_data.get("description", ""),
+                original_description=bounded_context_data.get("description", ""),
                 retry_count=0,
                 generation_complete=False
             )
@@ -148,6 +149,9 @@ def preprocess_policy_actions_generation(state: State) -> State:
     LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting preprocessing for policy actions in bounded context: '{bc_name}'")
     
     try:
+        # 기능 요구사항에 라인 번호 추가
+        if current_gen.description:
+            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
 
         # 현재 ES 값의 복사본 생성
         es_value = state.outputs.esValue.model_dump()
@@ -265,7 +269,7 @@ def generate_policy_actions(state: State) -> State:
 
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Executing policy actions generation for bounded context '{bc_name}' with {token_count} tokens")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 Policy 추출
         policies = []
@@ -276,7 +280,8 @@ def generate_policy_actions(state: State) -> State:
         actions = _to_policy_creation_actions(
             policies, 
             EsAliasTransManager(es_value), 
-            es_value
+            es_value,
+            current_gen.target_bounded_context.get("id", "")
         )
         
         actionModels = [ActionModel(**action) for action in actions]
@@ -322,6 +327,14 @@ def postprocess_policy_actions_generation(state: State) -> State:
         
         LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Applying {len(current_gen.created_actions)} policy actions for bounded context: '{bc_name}'")
         
+        # Refs 후처리
+        try:
+            EsTraceUtil.convert_refs_to_indexes(current_gen.created_actions, current_gen.original_description, state, "[POLICY_ACTIONS_SUBGRAPH]")
+            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Successfully converted source references for '{bc_name}'")
+        except Exception as e:
+            LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to convert source references for '{bc_name}'", e)
+            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
+
         # ES 값의 복사본 생성
         es_value_to_modify = deepcopy(state.outputs.esValue)
         
@@ -588,7 +601,7 @@ def create_policy_actions_by_function_subgraph() -> Callable:
         서브그래프 실행 함수
         """
         # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
+        result = State(**compiled_subgraph.invoke(state, {"recursion_limit": 2147483647}))
         return result
     
     return run_subgraph
@@ -597,7 +610,8 @@ def create_policy_actions_by_function_subgraph() -> Callable:
 # 유틸리티 함수: Policy 생성 액션으로 변환
 def _to_policy_creation_actions(policies: List[Dict[str, Any]], 
                                 es_alias_trans_manager: Any, 
-                                es_value: Dict[str, Any]) -> List[Dict[str, Any]]:
+                                es_value: Dict[str, Any],
+                                sourceBoundedContextId: str) -> List[Dict[str, Any]]:
     """
     AI가 생성한 정책 정의를 새로운 Policy 생성 액션으로 변환합니다.
     - 중복 정책 생성을 방지하는 로직을 포함합니다.
@@ -693,7 +707,9 @@ def _to_policy_creation_actions(policies: List[Dict[str, Any]],
                 "policyAlias": policy.get("alias", ""),
                 "reason": policy.get("reason", ""),
                 "inputEventIds": list(from_event_uuids),
-                "outputEventIds": list(to_event_uuids)
+                "outputEventIds": list(to_event_uuids),
+                "refs": policy.get("refs"),
+                "sourceBoundedContextId": sourceBoundedContextId
             }
         })
         

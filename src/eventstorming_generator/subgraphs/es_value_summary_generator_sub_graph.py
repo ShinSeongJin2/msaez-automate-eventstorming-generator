@@ -129,7 +129,7 @@ def generate_es_value_summary(state: State) -> State:
         )
         
         # Generator 실행 결과
-        result_dict = generator.generate(current_gen.retry_count > 0)
+        result_dict = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 정렬된 요소 ID 추출
         if result_dict and "result" in result_dict and "sortedElementIds" in result_dict["result"]:
@@ -368,7 +368,7 @@ def create_es_value_summary_generator_subgraph() -> Callable:
         서브그래프 실행 함수
         """
         # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
+        result = State(**compiled_subgraph.invoke(state, {"recursion_limit": 2147483647}))
         return result
     
     return run_subgraph

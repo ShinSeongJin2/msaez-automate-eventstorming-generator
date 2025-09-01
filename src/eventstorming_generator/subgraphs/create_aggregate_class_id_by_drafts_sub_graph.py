@@ -295,7 +295,7 @@ def generate_class_id(state: State) -> State:
         
         # Generator 실행 결과
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Executing class ID generation for references: {', '.join(current_gen.target_references)}")
-        result = generator.generate(current_gen.retry_count > 0)
+        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
         
         # 결과에서 액션 추출
         actions = []
@@ -633,7 +633,7 @@ def create_aggregate_class_id_by_drafts_subgraph() -> Callable:
         서브그래프 실행 함수
         """
         # 서브그래프 실행
-        result = State(**compiled_subgraph.invoke(state))
+        result = State(**compiled_subgraph.invoke(state, {"recursion_limit": 2147483647}))
         return result
     
     return run_subgraph
@@ -728,6 +728,16 @@ def _filter_invalid_actions(actions: List[Dict[str, Any]], target_references: Li
                             break
                 if is_duplicate:
                     break
+        
+        # 참조하는 referenceClass 이름이 실제 Aggregate의 name으로 존재하는지 확인
+        is_reference_class_exists = False
+        for element in es_value["elements"].values():
+            if element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and element.get("name") == reference_class:
+                is_reference_class_exists = True
+                break
+        
+        if not is_reference_class_exists:
+            continue
         
         if not is_duplicate:
             filtered_actions.append(action)

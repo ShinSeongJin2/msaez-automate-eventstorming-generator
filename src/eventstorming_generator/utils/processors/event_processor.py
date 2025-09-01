@@ -24,10 +24,11 @@ class EventProcessor:
         bounded_context_id = action.get("ids", {}).get("boundedContextId", "")
         aggregate_id = action.get("ids", {}).get("aggregateId", "")
         event_id = action.get("ids", {}).get("eventId", "")
-        
+        refs = action.args.get("refs", [])
+
         # 기본 이벤트 객체 생성
         event_object = EventProcessor._get_event_base(
-            user_info, event_name, event_alias, bounded_context_id, aggregate_id, 0, 0, event_id
+            user_info, event_name, event_alias, bounded_context_id, aggregate_id, 0, 0, event_id, refs
         )
         
         # 유효한 위치 계산
@@ -64,7 +65,8 @@ class EventProcessor:
     @staticmethod
     def _get_event_base(user_info: Dict[str, Any], name: str, display_name: str, 
                        bounded_context_id: str, aggregate_id: str, 
-                       x: int, y: int, element_uuid: str = None) -> Dict[str, Any]:
+                       x: int, y: int, element_uuid: str = None, 
+                       refs: List[List[List[Any]]] = []) -> Dict[str, Any]:
         """이벤트 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -95,6 +97,7 @@ class EventProcessor:
                 "_type": "org.uengine.modeling.model.EventHexagonal"
             },
             "name": name,
+            "traceName": name,
             "displayName": display_name,
             "nameCamelCase": CaseConvertUtil.camel_case(name),
             "namePascalCase": CaseConvertUtil.pascal_case(name),
@@ -110,7 +113,8 @@ class EventProcessor:
             },
             "boundedContext": {
                 "id": bounded_context_id
-            }
+            },
+            "refs": refs
         }
         
     @staticmethod

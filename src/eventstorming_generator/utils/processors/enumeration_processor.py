@@ -26,17 +26,22 @@ class EnumerationProcessor:
             enumeration_alias = action.args.get("enumerationAlias", "")
             aggregate_id = action.ids.get("aggregateId", "")
             enumeration_id = action.ids.get("enumerationId", EsUtils.get_uuid())
-            
+            refs = action.args.get("refs", [])
+
             # Enumeration 값 목록 변환
             properties = action.args.get("properties", [])
-            items = [{"value": prop.get("name")} for prop in properties]
+            items = [{
+                "value": prop.get("name"),
+                "traceName": prop.get("name"),
+                "refs": prop.get("refs", [])
+            } for prop in properties]
             
             # Enumeration 객체 생성
             enumeration = EnumerationProcessor._get_enumeration_base(
                 enumeration_name, 
                 enumeration_alias,
                 items,
-                0, 0, enumeration_id
+                0, 0, enumeration_id, refs
             )
             
             # 위치 설정
@@ -70,7 +75,7 @@ class EnumerationProcessor:
             
             if action.args.get("properties"):
                 # 새 항목 추가
-                items = [{"value": prop.get("name")} for prop in action.args.get("properties", [])]
+                items = [{"value": prop.get("name"), "refs": prop.get("refs", [])} for prop in action.args.get("properties", [])]
                 target_enumeration["items"].extend(items)
                 target_aggregate["aggregateRoot"]["entities"]["elements"][action.ids.get("enumerationId", "")] = target_enumeration
         
@@ -79,7 +84,8 @@ class EnumerationProcessor:
     
     @staticmethod
     def _get_enumeration_base(name: str, display_name: str, items: List[Dict[str, str]], 
-                             x: int, y: int, element_uuid: str = None) -> Dict[str, Any]:
+                             x: int, y: int, element_uuid: str = None, 
+                             refs: List[List[List[Any]]] = []) -> Dict[str, Any]:
         """Enumeration 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -87,6 +93,7 @@ class EnumerationProcessor:
             "_type": "org.uengine.uml.model.enum",
             "id": element_uuid_to_use,
             "name": name,
+            "traceName": name,
             "displayName": display_name,
             "nameCamelCase": CaseConvertUtil.camel_case(name),
             "namePascalCase": CaseConvertUtil.pascal_case(name),
@@ -105,7 +112,8 @@ class EnumerationProcessor:
             "selected": False,
             "items": items,
             "useKeyValue": False,
-            "relations": []
+            "relations": [],
+            "refs": refs
         }
     
     @staticmethod

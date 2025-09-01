@@ -22,12 +22,14 @@ class AggregateProcessor:
         # 기본 Aggregate 객체 생성
         aggregate_name = action.args.get("aggregateName", f"Aggregate {action.ids.get('aggregateId', '')[:4]}")
         aggregate_alias = action.args.get("aggregateAlias", "")
+        aggregate_description = action.args.get("description", "")
         bounded_context_id = action.ids.get("boundedContextId", "")
         aggregate_id = action.ids.get("aggregateId", EsUtils.get_uuid())
+        refs = action.args.get("refs", [])
         
         # Aggregate 객체 생성
         aggregate_object = AggregateProcessor._get_aggregate_base(
-            user_info, aggregate_name, aggregate_alias, bounded_context_id, 0, 0, aggregate_id
+            user_info, aggregate_name, aggregate_alias, aggregate_description, bounded_context_id, 0, 0, aggregate_id, refs
         )
         
         # BoundedContext 레이아웃 조정
@@ -58,7 +60,8 @@ class AggregateProcessor:
             EsUtils.create_field_descriptors(
                 action.args.get("properties", []),
                 options={"is_root_aggregate": True}
-            )
+            ),
+            refs
         )
         aggregate_object["aggregateRoot"]["entities"]["elements"][root_aggregate_object["id"]] = root_aggregate_object
     
@@ -90,7 +93,8 @@ class AggregateProcessor:
     
     @staticmethod
     def _get_aggregate_base(user_info: Dict[str, Any], name: str, display_name: str, 
-                           bounded_context_id: str, x: int, y: int, element_uuid: str) -> Dict[str, Any]:
+                           description: str, bounded_context_id: str, x: int, y: int, element_uuid: str, 
+                           refs: List[List[List[Any]]]) -> Dict[str, Any]:
         """Aggregate 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -110,7 +114,7 @@ class AggregateProcessor:
                 "id": bounded_context_id
             },
             "commands": [],
-            "description": None,
+            "description": description,
             "id": element_uuid_to_use,
             "elementView": {
                 "_type": "org.uengine.modeling.model.Aggregate",
@@ -130,17 +134,19 @@ class AggregateProcessor:
                 "width": 0,
             },
             "name": name,
+            "traceName": name,
             "displayName": display_name,
             "nameCamelCase": CaseConvertUtil.camel_case(name),
             "namePascalCase": CaseConvertUtil.pascal_case(name),
             "namePlural": CaseConvertUtil.plural(name),
             "rotateStatus": False,
             "selected": False,
-            "_type": "org.uengine.modeling.model.Aggregate"
+            "_type": "org.uengine.modeling.model.Aggregate",
+            "refs": refs
         }
     
     @staticmethod
-    def _get_root_aggregate_base(name: str, aggregate_id: str, field_descriptors: List[Dict[str, Any]], element_uuid: str = None) -> Dict[str, Any]:
+    def _get_root_aggregate_base(name: str, aggregate_id: str, field_descriptors: List[Dict[str, Any]], refs: List[List[List[Any]]], element_uuid: str = None) -> Dict[str, Any]:
         """Root Aggregate 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -148,6 +154,7 @@ class AggregateProcessor:
             "_type": "org.uengine.uml.model.Class",
             "id": element_uuid_to_use,
             "name": name,
+            "traceName": name,
             "namePascalCase": CaseConvertUtil.pascal_case(name),
             "nameCamelCase": CaseConvertUtil.camel_case(name),
             "namePlural": CaseConvertUtil.plural(name),
@@ -174,7 +181,8 @@ class AggregateProcessor:
             "isAbstract": False,
             "isInterface": False,
             "isAggregateRoot": True,
-            "parentId": aggregate_id
+            "parentId": aggregate_id,
+            "refs": refs
         }
     
     @staticmethod

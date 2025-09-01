@@ -21,6 +21,8 @@ class PolicyProcessor:
         policy_alias = action.get("args", {}).get("policyAlias", "")
         reason = action.get("args", {}).get("reason", "")
         policy_id = action.get("ids", {}).get("policyId", "")
+        refs = action.args.get("refs", [])
+        source_bounded_context_id = action.args.get("sourceBoundedContextId", "")
         
         # boundedContextId, aggregateId는 outputEventIds를 통해 추론
         bounded_context_id = ""
@@ -37,7 +39,7 @@ class PolicyProcessor:
         # Policy 기본 객체 생성
         policy_object = PolicyProcessor._get_policy_base(
             user_info, policy_name, policy_alias, reason,
-            bounded_context_id, aggregate_id, 0, 0, policy_id
+            bounded_context_id, aggregate_id, 0, 0, policy_id, refs, source_bounded_context_id
         )
 
         # 위치 설정
@@ -57,7 +59,9 @@ class PolicyProcessor:
     @staticmethod
     def _get_policy_base(user_info: Dict[str, Any], name: str, display_name: str, reason: str,
                         bounded_context_id: str, aggregate_id: str, 
-                        x: int, y: int, element_uuid: str = None) -> Dict[str, Any]:
+                        x: int, y: int, element_uuid: str = None, 
+                        refs: List[List[List[Any]]] = [],
+                        source_bounded_context_id: str = "") -> Dict[str, Any]:
         """Policy 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -91,13 +95,16 @@ class PolicyProcessor:
             },
             "isSaga": False,
             "name": name,
+            "traceName": name,
             "displayName": display_name,
             "nameCamelCase": CaseConvertUtil.camel_case(name),
             "namePascalCase": CaseConvertUtil.pascal_case(name),
             "namePlural": CaseConvertUtil.plural(name),
             "oldName": "",
             "rotateStatus": False,
-            "_type": "org.uengine.modeling.model.Policy"
+            "_type": "org.uengine.modeling.model.Policy",
+            "refs": refs,
+            "sourceBoundedContextId": source_bounded_context_id
         }
     
     @staticmethod

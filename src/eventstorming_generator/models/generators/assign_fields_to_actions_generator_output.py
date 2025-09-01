@@ -1,11 +1,14 @@
 from pydantic import Field
-from typing import List, Optional
+from typing import List, Optional, Union
 from ..base import BaseModelWithItem
+
+Refs = Optional[List[List[List[Union[int, str]]]]]
 
 class PropertyAssignment(BaseModelWithItem):
     """Model representing a single property assignment"""
     name: str = Field(..., description="Name of the field to be added.")
     type: str = Field(..., description="Inferred data type for the field (e.g., String, Long, Date). Default to String if unsure.")
+    refs: Refs = Field(None, description="Source reference from the functional requirements")
 
 class ParentAssignment(BaseModelWithItem):
     """Model for assigning a list of properties to a specific parent (Aggregate or ValueObject)"""

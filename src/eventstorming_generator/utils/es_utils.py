@@ -7,7 +7,7 @@ class EsUtils:
     def get_uuid() -> str:
         """자바스크립트와 동일한 형식의 UUID 생성"""
         return str(uuid.uuid4())
-    
+      
     @staticmethod
     def get_all_bounded_contexts(es_value: Dict[str, Any]) -> List[Dict[str, Any]]:
         """es_value에서 모든 BoundedContext 요소 가져오기"""
@@ -401,12 +401,14 @@ class EsUtils:
                 "className": prop_type,
                 "isCopy": False,
                 "isKey": prop.get("isKey") or False,
-                "name": CaseConvertUtil.camel_case(name),
+                "name": name,
+                "traceName": name,
                 "nameCamelCase": CaseConvertUtil.camel_case(name),
                 "namePascalCase": CaseConvertUtil.pascal_case(name),
                 "displayName": prop.get("displayName", ""),
                 "_type": "org.uengine.model.FieldDescriptor",
-                "isList": ("list" in prop_type.lower()) or ("collection" in prop_type.lower())
+                "isList": ("list" in prop_type.lower()) or ("collection" in prop_type.lower()),
+                "refs": prop.get("refs", None)
             }
 
             if options.get("is_root_aggregate"):

@@ -1,11 +1,35 @@
+from __future__ import annotations
+from pydantic import BaseModel, Field, StringConstraints
+from typing import List, Optional
+from typing_extensions import Annotated
 from typing import Any, Dict, Optional, List
+
 from .base import BaseGenerator
 from ..models import AssignEventNamesToAggregateDraftOutput
+
 
 class AssignEventNamesToAggregateDraft(BaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         self.inputs_types_to_check = ["aggregates", "eventNames", "boundedContextName"]
         super().__init__(model_name, model_kwargs, client, structured_output_class=AssignEventNamesToAggregateDraftOutput)
+        self.__validate_inputs()
+    def __validate_inputs(self) -> None:
+        class Property(BaseModel):
+            name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+            type: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+            is_key: Optional[bool] = Field(None, alias='isKey')
+
+        class Aggregate(BaseModel):
+            id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+            name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+            properties: List[Property] = Field(min_length=1)
+
+        class AssignEventNamesToAggregateDraftInput(BaseModel):
+            bounded_context_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = Field(alias='boundedContextName')
+            aggregates: List[Aggregate] = Field(min_length=1)
+            event_names: List[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]] = Field(min_length=1, alias='eventNames')
+        
+        AssignEventNamesToAggregateDraftInput.model_validate(self.client.get("inputs"))
 
     def _build_agent_role_prompt(self) -> str:
         return """Role: Senior Domain-Driven Design Expert and Event Modeling Specialist
@@ -115,7 +139,6 @@ The goal is to assign each event name to the most appropriate aggregate based on
                 {
                     "id": "agg-order",
                     "name": "Order",
-                    "displayName": "주문",
                     "properties": [
                         {"name": "orderId", "type": "Long", "isKey": True},
                         {"name": "customerId", "type": "Long"},
@@ -126,7 +149,6 @@ The goal is to assign each event name to the most appropriate aggregate based on
                 {
                     "id": "agg-customer",
                     "name": "Customer", 
-                    "displayName": "고객",
                     "properties": [
                         {"name": "customerId", "type": "Long", "isKey": True},
                         {"name": "name", "type": "String"},
@@ -136,7 +158,6 @@ The goal is to assign each event name to the most appropriate aggregate based on
                 {
                     "id": "agg-payment",
                     "name": "Payment",
-                    "displayName": "결제",
                     "properties": [
                         {"name": "paymentId", "type": "Long", "isKey": True},
                         {"name": "orderId", "type": "Long"},
