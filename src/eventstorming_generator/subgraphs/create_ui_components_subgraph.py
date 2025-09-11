@@ -184,11 +184,16 @@ def preprocess_ui_components_generation(state: State) -> State:
                 additional_requirements = ""
                 if referenced_site_map_id and referenced_site_map_id in site_map_id_info_dict:
                     site_map_object = site_map_id_info_dict[referenced_site_map_id]
+                    current_gen.related_site_map_object = site_map_object
                     additional_requirements = f"""This UI is included as part of the given sitemap. Please create the UI with these points in mind.
 * SiteMap Info
-- Bounded Context: {site_map_object.get("boundedContext", {})}
-- Title: {site_map_object.get("title")}
-- Description: {site_map_object.get("description")}
+> Bounded Context: {site_map_object.get("boundedContext", {})}
+> Title: {site_map_object.get("title")}
+> Description: {site_map_object.get("description")}
+
+The following information details user requirements related to the provided Sitemap. Please proceed with UI generation, appropriately utilizing content related to the UI you intend to create.
+> User Requirements For SiteMap
+{site_map_object.get("uiRequirements")}
 """
                 
                 # AI 입력 데이터 구성
@@ -235,11 +240,16 @@ def preprocess_ui_components_generation(state: State) -> State:
                 additional_requirements = ""
                 if referenced_site_map_id and referenced_site_map_id in site_map_id_info_dict:
                     site_map_object = site_map_id_info_dict[referenced_site_map_id]
+                    current_gen.related_site_map_object = site_map_object
                     additional_requirements = f"""This UI is included as part of the given sitemap. Please create the UI with these points in mind.
 * SiteMap Info
-- Bounded Context: {site_map_object.get("boundedContext", {})}
-- Title: {site_map_object.get("title")}
-- Description: {site_map_object.get("description")}
+> Bounded Context: {site_map_object.get("boundedContext", {})}
+> Title: {site_map_object.get("title")}
+> Description: {site_map_object.get("description")}
+
+The following information details user requirements related to the provided Sitemap. Please proceed with UI generation, appropriately utilizing content related to the UI you intend to create.
+> User Requirements For SiteMap
+{site_map_object.get("uiRequirements")}
 """
                 
                 # AI 입력 데이터 구성
@@ -320,13 +330,26 @@ def generate_ui_components_generation(state: State) -> State:
         
         # HTML 결과 추출
         generated_html = result["result"]["html"]
+
+        action_description = ""
+        if current_gen.related_site_map_object:
+            site_map_title = current_gen.related_site_map_object.get("title", "")
+            if site_map_title:
+                action_description += "- Used SiteMap Title: " + site_map_title + "\n"
+
+            site_map_description = current_gen.related_site_map_object.get("description", "")
+            if site_map_description:
+                action_description += "- Used SiteMap Description: " + site_map_description + "\n"
+        
+        if result["inference"]:
+            action_description += "- Inference when generating the wireframe: " + result["inference"] + "\n"
         
         # ActionModel 생성 - UI 업데이트용
         ui_update_action = ActionModel(
             objectType="UI",
             type="update",
             ids={"uiId": current_gen.target_ui_component["id"]},
-            args={"runTimeTemplateHtml": generated_html}
+            args={"runTimeTemplateHtml": generated_html, "description": action_description}
         )
         
         # 생성된 액션 저장

@@ -28,11 +28,13 @@ class UIProcessor:
         ui_id = action.ids.get("uiId", EsUtils.get_uuid())
         referenced_site_map_id = action.args.get("referencedSiteMapId", None)
         run_time_template_html = action.args.get("runTimeTemplateHtml", "")
+        description = action.args.get("description", "")
 
         # UI 객체 생성
         ui_object = UIProcessor._get_ui_base(
             user_info, ui_name, ui_alias, bounded_context_id, 
-            aggregate_id, command_id, read_model_id, 0, 0, ui_id, referenced_site_map_id, run_time_template_html
+            aggregate_id, command_id, read_model_id, 0, 0, ui_id, referenced_site_map_id, run_time_template_html,
+            description
         )
         
         # 위치 설정 - Command 또는 ReadModel의 왼쪽에 배치
@@ -48,7 +50,8 @@ class UIProcessor:
                      bounded_context_id: str, aggregate_id: str, 
                      command_id: str = None, read_model_id: str = None,
                      x: int = 0, y: int = 0, element_uuid: str = None, 
-                     referenced_site_map_id: str = None, run_time_template_html: str = "") -> Dict[str, Any]:
+                     referenced_site_map_id: str = None, run_time_template_html: str = "",
+                     description: str = "") -> Dict[str, Any]:
         """UI 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
 
@@ -61,7 +64,7 @@ class UIProcessor:
             "namePascalCase": CaseConvertUtil.pascal_case(name),
             "nameCamelCase": CaseConvertUtil.camel_case(name),
             "namePlural": CaseConvertUtil.plural(name),
-            "description": None,
+            "description": description,
             "author": user_info.get("uid", ""),
             "boundedContext": {
                 "id": bounded_context_id
@@ -174,5 +177,8 @@ class UIProcessor:
         
         if action.args.get("runTimeTemplateHtml"):
             ui_object["runTimeTemplateHtml"] = action.args.get("runTimeTemplateHtml", "")
+
+        if action.args.get("description"):
+            ui_object["description"] = action.args.get("description", "")
         
         es_value["elements"][ui_id] = ui_object

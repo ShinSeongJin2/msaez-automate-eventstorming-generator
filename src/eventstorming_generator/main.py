@@ -1,6 +1,7 @@
 import asyncio
 import concurrent.futures
 import threading
+import multiprocessing
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -12,6 +13,22 @@ from eventstorming_generator.config import Config
 from eventstorming_generator.run_healcheck_server import run_healcheck_server
 from eventstorming_generator.simple_autoscaler import start_autoscaler
 from eventstorming_generator.utils.logging_util import LoggingUtil
+
+# 전역 job_manager 인스턴스 (process_job_async에서 접근하기 위함)
+_current_job_manager: DecentralizedJobManager = None
+
+def _run_graph_in_subprocess(state_dict):
+    """별도 프로세스에서 graph.invoke 실행 (이벤트 루프/GIL 간섭 방지)"""
+    from eventstorming_generator.models import State
+    from eventstorming_generator.utils import JobUtil
+    from eventstorming_generator.graph import graph
+
+    # 자식 프로세스 내에서 상태 복원 및 참조 추가
+    state = State(**state_dict)
+    state = JobUtil.add_element_ref_to_state(state)
+
+    # 실제 그래프 실행
+    graph.invoke(state, {"recursion_limit": 2147483647})
 
 async def main():
     """메인 함수 - Flask 서버, Job 모니터링, 자동 스케일러 동시 시작"""
@@ -37,6 +54,10 @@ async def main():
 
             pod_id = Config.get_pod_id()
             job_manager = DecentralizedJobManager(pod_id, process_job_async)
+            
+            # 전역 job_manager 설정
+            global _current_job_manager
+            _current_job_manager = job_manager
             
             if Config.is_local_run():
                 tasks.append(asyncio.create_task(job_manager.start_job_monitoring()))
@@ -101,7 +122,14 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             LoggingUtil.warning("main", f"Job 처리 오류: {job_id}, 유효하지 않음")
             return
         
-        job_data = FirebaseSystem.instance().get_data(Config.get_job_path(job_id))
+        # Firebase 데이터 로딩을 executor에서 실행하여 이벤트 루프 블록킹 방지
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as initial_executor:
+            job_data = await loop.run_in_executor(
+                initial_executor, 
+                lambda: FirebaseSystem.instance().get_data(Config.get_job_path(job_id))
+            )
+        
         if not job_data:
             LoggingUtil.warning("main", f"Job 처리 오류: {job_id}, 데이터 없음")
             return
@@ -112,19 +140,55 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             LoggingUtil.warning("main", f"Job 처리 오류: {job_id} - State 데이터 변환 실패")
             return False
         state = State(**state)
-        state = JobUtil.add_element_ref_to_state(state)
 
-        # 동기 함수를 스레드에서 실행
-        loop = asyncio.get_event_loop()
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            # 작업 실행을 태스크로 래핑하여 취소 가능하게 만듦
-            graph_task = loop.run_in_executor(
-                executor, 
-                lambda: graph.invoke(state, {"recursion_limit": 2147483647})
-            )
-            
-            # 작업 완료 대기 (취소 가능)
-            await graph_task
+        # 이벤트 루프 양보 - 모니터링 등 다른 태스크들이 실행될 수 있도록 함
+        await asyncio.sleep(0)
+
+        # 전역 job_manager에서 취소 이벤트 가져오기
+        global _current_job_manager
+        cancellation_event = None
+        if _current_job_manager:
+            cancellation_event = _current_job_manager.get_job_cancellation_event(job_id)
+
+        LoggingUtil.debug("main", f"Job {job_id} 데이터 로딩 및 전처리 완료, graph 실행 준비")
+        # 서브프로세스에서 그래프 실행을 비동기로 관리
+        LoggingUtil.debug("main", f"Job {job_id} graph 실행 대기 시작")
+        process = multiprocessing.Process(target=_run_graph_in_subprocess, args=(state.model_dump(),))
+        process.start()
+
+        try:
+            while process.is_alive():
+                await asyncio.sleep(0.1)
+
+                # 취소 신호 확인
+                cancellation_checks = []
+                current_task = asyncio.current_task()
+                if current_task and current_task.cancelled():
+                    cancellation_checks.append("current_task_cancelled")
+                if _current_job_manager and _current_job_manager.is_job_cancelled(job_id):
+                    cancellation_checks.append("job_manager_flag")
+                if cancellation_event and cancellation_event.is_set():
+                    cancellation_checks.append("cancellation_event")
+
+                if cancellation_checks:
+                    LoggingUtil.debug("main", f"Job {job_id} 취소 신호 감지 ({', '.join(cancellation_checks)}) - 서브프로세스 종료")
+                    try:
+                        process.terminate()
+                    except Exception:
+                        pass
+                    raise asyncio.CancelledError()
+
+            # 프로세스 종료 코드 확인
+            exitcode = process.exitcode
+            if exitcode not in (0, None):
+                raise RuntimeError(f"Graph subprocess exited with code {exitcode}")
+        finally:
+            if process.is_alive():
+                try:
+                    process.terminate()
+                except Exception:
+                    pass
+            process.join(timeout=1)
             
         LoggingUtil.debug("main", f"Job 완료: {job_id}")
         

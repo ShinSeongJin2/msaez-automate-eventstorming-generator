@@ -8,6 +8,7 @@ class CreateUiComponentsGenerationState(BaseModelWithItem):
     target_ui_component: Dict[str, Any] = {}
     ai_request_type: str = ""
     ai_input_data: Dict[str, Any] = {}
+    related_site_map_object: Dict[str, Any] = {}
     ui_replace_actions: List[ActionModel] = []
     retry_count: int = 0
     generation_complete: bool = False

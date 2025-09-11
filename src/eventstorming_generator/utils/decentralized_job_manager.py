@@ -19,6 +19,7 @@ class DecentralizedJobManager:
         self.shutdown_requested = False  # Graceful shutdown 플래그
         self.shutdown_event = asyncio.Event()  # Graceful shutdown 완료 이벤트
         self.job_removal_requested = False  # 현재 작업 제거 요청 플래그
+        self.job_cancellation_flags = {}  # 작업별 취소 플래그 {job_id: asyncio.Event}
         self.setup_signal_handlers()  # 신호 핸들러 설정
     
     def setup_signal_handlers(self):
@@ -61,12 +62,16 @@ class DecentralizedJobManager:
                 # 현재 처리 중인 Job의 heartbeat 전송
                 if self.current_job_id:
                     await self.send_heartbeat()
+                    LoggingUtil.debug("decentralized_job_manager", f"Job {self.current_job_id} heartbeat 전송 완료")
                 
                 # 대기 중인 작업들의 waitingJobCount 업데이트
                 await self.update_waiting_job_counts(requested_jobs)
                 
                 # 실패한 작업 복구 (다른 Pod의 실패 작업)
                 await self.recover_failed_jobs(requested_jobs)
+                
+                # 이벤트 루프 양보 - 다른 태스크들이 실행될 수 있도록 함
+                await asyncio.sleep(0.1)
                 
                 await asyncio.sleep(15)  # 15초마다 체크
                 
@@ -122,6 +127,16 @@ class DecentralizedJobManager:
         LoggingUtil.info("decentralized_job_manager", "프로세스를 종료합니다.")
         os._exit(0)
 
+    def is_job_cancelled(self, job_id: str) -> bool:
+        """특정 작업이 취소되었는지 확인"""
+        if job_id in self.job_cancellation_flags:
+            return self.job_cancellation_flags[job_id].is_set()
+        return False
+
+    def get_job_cancellation_event(self, job_id: str) -> Optional[asyncio.Event]:
+        """특정 작업의 취소 이벤트 반환"""
+        return self.job_cancellation_flags.get(job_id)
+
     async def _handle_completed_task(self):
         """완료된 작업 태스크 처리"""
         if self.current_task:
@@ -150,7 +165,9 @@ class DecentralizedJobManager:
                 success = await self.atomic_claim_job(job_id)
                 if success:
                     # 성공적으로 클레임한 경우 해당 Job 처리 시작
+                    LoggingUtil.debug("decentralized_job_manager", f"Job {job_id} 처리 시작 시도")
                     await self.start_job_processing(job_id)
+                    LoggingUtil.debug("decentralized_job_manager", f"Job {job_id} 처리 시작 완료, 모니터링 루프로 복귀")
                     break  # 하나만 처리하고 종료
 
     async def atomic_claim_job(self, job_id: str) -> bool:
@@ -199,10 +216,15 @@ class DecentralizedJobManager:
         self.current_job_id = job_id
         self.is_processing = True
         
+        # 작업별 취소 플래그 생성
+        self.job_cancellation_flags[job_id] = asyncio.Event()
+        
         LoggingUtil.debug("decentralized_job_manager", f"Job {job_id} 처리 시작")
         
-        # 실제 작업 수행
+        # 실제 작업 수행 - execute_job_logic은 태스크만 생성하고 즉시 리턴하므로 await 불필요
         await self.execute_job_logic(job_id)
+        
+        LoggingUtil.debug("decentralized_job_manager", f"Job {job_id} 백그라운드 태스크 생성 완료")
     
     async def execute_job_logic(self, job_id: str):
         """실제 Job 로직 실행 - 비동기로 백그라운드에서 실행"""
@@ -216,6 +238,10 @@ class DecentralizedJobManager:
     def complete_job(self):
         """Job 완료 처리"""
         LoggingUtil.debug("decentralized_job_manager", f"Job {self.current_job_id} 처리 완료")
+
+        # 취소 플래그 정리
+        if self.current_job_id in self.job_cancellation_flags:
+            del self.job_cancellation_flags[self.current_job_id]
 
         self.current_job_id = None
         self.is_processing = False
@@ -290,7 +316,8 @@ class DecentralizedJobManager:
                 # 다른 Pod가 할당했지만 5분간 heartbeat 없으면 실패로 간주
                 if (assigned_pod and 
                     current_time - last_heartbeat > 300 and
-                    job_data.get('status') == 'processing'):
+                    job_data.get('status') == 'processing' and 
+                    (not job_data.get('shutdownRequested'))):
                     
                     recovery_count = job_data.get('recoveryCount', 0)
                     LoggingUtil.warning("decentralized_job_manager", f"실패한 작업 감지: {job_id} (Pod: {assigned_pod}), 복구 시도 횟수: {recovery_count}")
@@ -420,6 +447,11 @@ class DecentralizedJobManager:
             # 작업 중단 플래그 설정
             self.job_removal_requested = True
             
+            # 취소 플래그 설정 (process_job_async에서 확인할 수 있도록)
+            if job_id in self.job_cancellation_flags:
+                self.job_cancellation_flags[job_id].set()
+                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 취소 플래그 설정")
+            
             # 현재 실행 중인 태스크가 있으면 취소
             if self.current_task and not self.current_task.done():
                 LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 태스크 취소 중...")
@@ -435,7 +467,10 @@ class DecentralizedJobManager:
             # 순차적으로 데이터 삭제: requestedJobs → jobs → jobStates
             await self.delete_job_data_sequentially(job_id, include_requested=True)
             
-            # 상태 초기화
+            # 상태 초기화 및 취소 플래그 정리
+            if job_id in self.job_cancellation_flags:
+                del self.job_cancellation_flags[job_id]
+            
             self.current_job_id = None
             self.is_processing = False
             self.current_task = None
