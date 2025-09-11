@@ -42,9 +42,9 @@ class ActorProcessor:
         es_value["elements"][actor_object["id"]] = actor_object
     
     @staticmethod
-    def make_actor_to_command(es_value: Dict[str, Any], action: Dict[str, Any], 
-                            command_object: Dict[str, Any], user_info: Dict[str, Any]) -> None:
-        """Command와 연결된 Actor를 생성합니다"""          
+    def make_actor_to_element(es_value: Dict[str, Any], action: Dict[str, Any], 
+                            element_object: Dict[str, Any], user_info: Dict[str, Any]) -> None:
+        """Element와 연결된 Actor를 생성합니다"""          
         # actor가 지정되지 않았으면 중단
         if not action.args.get("actor"):
             return
@@ -55,12 +55,13 @@ class ActorProcessor:
         )
         
         # 위치 계산
-        valid_position = ActorProcessor._get_valid_position(command_object, actor_base)
+        valid_position = ActorProcessor._get_valid_position(element_object, actor_base)
         actor_base["elementView"]["x"] = valid_position["x"]
         actor_base["elementView"]["y"] = valid_position["y"]
         
         # Actor 객체 추가
         es_value["elements"][actor_base["id"]] = actor_base
+        return actor_base
     
     @staticmethod
     def _get_actor_base(user_info: Dict[str, Any], actor_name: str, 
@@ -100,9 +101,9 @@ class ActorProcessor:
         }
     
     @staticmethod
-    def _get_valid_position(command_object: Dict[str, Any], actor_object: Dict[str, Any]) -> Dict[str, int]:
+    def _get_valid_position(element_object: Dict[str, Any], actor_object: Dict[str, Any]) -> Dict[str, int]:
         """Actor의 적절한 위치를 계산합니다"""
         return {
-            "x": command_object["elementView"]["x"] - int(command_object["elementView"]["width"]/2) - int(actor_object["elementView"]["width"]/2) + 19,
-            "y": command_object["elementView"]["y"]
+            "x": element_object["elementView"]["x"] - int(element_object["elementView"]["width"]/2) - int(actor_object["elementView"]["width"]/2) + 19,
+            "y": element_object["elementView"]["y"]
         }

@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 from ..models import EsValueModel, ActionModel
 from .es_utils import EsUtils
-from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, EventProcessor, ReadModelProcessor, PolicyProcessor
+from .processors import BoundedContextProcessor, AggregateProcessor, ValueObjectProcessor, EnumerationProcessor, CommandProcessor, EventProcessor, ReadModelProcessor, PolicyProcessor, UIProcessor
 from .es_restore_actions_util import EsRestoreActionsUtil
 
 class EsActionsUtil:
@@ -60,7 +60,8 @@ class EsActionsUtil:
             'Event': 6,
             'Command': 7,
             'ReadModel': 8,
-            'Policy': 9
+            'Policy': 9,
+            'UI': 10
         }
         
         return sorted(actions, key=lambda a: priority_map.get(a.objectType, 999))
@@ -139,5 +140,9 @@ class EsActionsUtil:
             )
         elif action.objectType == "ReadModel":
             ReadModelProcessor.get_action_applied_es_value(
+                action, user_info, information, es_value, callbacks
+            )
+        elif action.objectType == "UI":
+            UIProcessor.get_action_applied_es_value(
                 action, user_info, information, es_value, callbacks
             )

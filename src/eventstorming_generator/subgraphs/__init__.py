@@ -4,6 +4,7 @@ from .create_command_actions_by_function_sub_graph import create_command_actions
 from .create_policy_actions_by_function_sub_graph import create_policy_actions_by_function_subgraph
 from .create_gwt_generator_by_function_sub_graph import create_gwt_generator_by_function_subgraph
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from .create_ui_components_subgraph import create_ui_components_subgraph
 
 __all__ = [
     "create_aggregate_by_functions_subgraph",
@@ -11,5 +12,6 @@ __all__ = [
     "create_command_actions_by_function_subgraph",
     "create_policy_actions_by_function_subgraph",
     "create_gwt_generator_by_function_subgraph",
-    "create_es_value_summary_generator_subgraph"
+    "create_es_value_summary_generator_subgraph",
+    "create_ui_components_subgraph"
 ]

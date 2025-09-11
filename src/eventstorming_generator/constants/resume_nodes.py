@@ -5,6 +5,7 @@ ResumeNodes = {
         "CREATE_COMMAND_ACTIONS": "create_command_actions",
         "CREATE_POLICY_ACTIONS": "create_policy_actions",
         "CREATE_GWT": "create_gwt",
+        "CREATE_UI_COMPONENTS": "create_ui_components",
         "COMPLETE": "complete"
     },
 
@@ -61,5 +62,15 @@ ResumeNodes = {
         "VALIDATE": "validate",
         "COMPLETE": "complete",
         "ES_VALUE_SUMMARY_GENERATOR": "es_value_summary_generator"
+    },
+
+    "CREATE_UI_COMPONENTS": {
+        "PREPARE": "prepare",
+        "SELECT_NEXT": "select_next",
+        "PREPROCESS": "preprocess",
+        "GENERATE": "generate",
+        "POSTPROCESS": "postprocess",
+        "VALIDATE": "validate",
+        "COMPLETE": "complete"
     }
 }

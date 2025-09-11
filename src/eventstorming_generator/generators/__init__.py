@@ -10,6 +10,9 @@ from .extract_ddl_fields_generator import ExtractDDLFieldsGenerator
 from .assign_fields_to_actions_generator import AssignFieldsToActionsGenerator
 from .assign_ddl_fields_to_aggregate_draft import AssignDDLFieldsToAggregateDraft
 from .assign_event_names_to_aggregate_draft import AssignEventNamesToAggregateDraft
+from .assign_command_view_names_to_aggregate_draft import AssignCommandViewNamesToAggregateDraft
+from .create_command_wire_frame import CreateCommandWireFrame
+from .create_read_model_wire_frame import CreateReadModelWireFrame
 
 __all__ = [
     "BaseGenerator",
@@ -24,4 +27,7 @@ __all__ = [
     "AssignFieldsToActionsGenerator",
     "AssignDDLFieldsToAggregateDraft",
     "AssignEventNamesToAggregateDraft",
+    "AssignCommandViewNamesToAggregateDraft",
+    "CreateCommandWireFrame",
+    "CreateReadModelWireFrame",
 ]

@@ -193,9 +193,16 @@ class AggregateProcessor:
         
         if not aggregates:
             current_bounded_context = es_value["elements"].get(bounded_context_id, {})
+
+            bc_x_left = current_bounded_context.get("elementView", {}).get("x", 0) - current_bounded_context.get("elementView", {}).get("width", 0)/2
+            bc_y_top = current_bounded_context.get("elementView", {}).get("y", 0) - current_bounded_context.get("elementView", {}).get("height", 0)/2
+
+            agg_half_width = aggregate_object.get("elementView", {}).get("width", 0)/2
+            agg_half_height = aggregate_object.get("elementView", {}).get("height", 0)/2
+
             return {
-                "x": current_bounded_context.get("elementView", {}).get("x", 0),
-                "y": current_bounded_context.get("elementView", {}).get("y", 0)
+                "x": bc_x_left + agg_half_width + 280,
+                "y": bc_y_top + agg_half_height + 125
             }
         else:
             max_x = max(agg["elementView"]["x"] for agg in aggregates)
@@ -204,7 +211,7 @@ class AggregateProcessor:
             max_x_aggregate = next(agg for agg in aggregates if agg["elementView"]["x"] == max_x)
             
             return {
-                "x": max_x + max_x_aggregate["elementView"]["width"]//2 + aggregate_object["elementView"]["width"]//2 + 300,
+                "x": max_x + max_x_aggregate["elementView"]["width"]//2 + aggregate_object["elementView"]["width"]//2 + 375,
                 "y": min_y
             }
     
@@ -213,7 +220,7 @@ class AggregateProcessor:
         """BoundedContext 레이아웃을 조정합니다"""
         MIN_CONTEXT_HEIGHT = 590
         MIN_CONTEXT_WIDTH = 560
-        AGGREGATE_SPACING = 450
+        AGGREGATE_SPACING = 525
         
         bounded_context_id = action.ids.get("boundedContextId", "")
         target_bounded_context = es_value["elements"].get(bounded_context_id, {})

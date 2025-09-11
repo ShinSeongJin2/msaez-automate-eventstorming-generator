@@ -3,7 +3,7 @@ from typing import Dict, Any
 
 from eventstorming_generator.models import ActionModel, State
 from eventstorming_generator.utils import EsActionsUtil, JobUtil, LogUtil
-from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph, create_command_actions_by_function_subgraph, create_policy_actions_by_function_subgraph, create_gwt_generator_by_function_subgraph
+from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph, create_command_actions_by_function_subgraph, create_policy_actions_by_function_subgraph, create_gwt_generator_by_function_subgraph, create_ui_components_subgraph
 from eventstorming_generator.constants import ResumeNodes
 
 def resume_from_root_graph(state: State):
@@ -132,6 +132,14 @@ def route_after_create_gwt(state: State):
         return "complete"
     
     LogUtil.add_info_log(state, "[ROOT_GRAPH] GWT generation completed, proceeding to completion")
+    return "create_ui_components"
+
+def route_after_create_ui_components(state: State):
+    if state.subgraphs.createUiComponentsModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] UI components creation failed, terminating process")
+        return "complete"
+    
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] UI components creation completed, proceeding to completion")
     return "complete"
 
 def complete(state: State):
@@ -163,7 +171,7 @@ def get_total_global_progress_count(draftOptions: Dict[str, Any]):
 
     aggregateClassIDCount = _get_total_class_id_progress_count(draftOptions)
 
-    total_count = boundedContextCount + aggregateCount*3 + aggregateClassIDCount + 1
+    total_count = boundedContextCount + aggregateCount*3 + aggregateClassIDCount + 1 + 1
     return total_count
 
 def _get_total_class_id_progress_count(draft_options: Dict[str, Any]):
@@ -205,6 +213,7 @@ graph_builder.add_node("create_class_id", create_aggregate_class_id_by_drafts_su
 graph_builder.add_node("create_command_actions", create_command_actions_by_function_subgraph())
 graph_builder.add_node("create_policy_actions", create_policy_actions_by_function_subgraph())
 graph_builder.add_node("create_gwt", create_gwt_generator_by_function_subgraph())
+graph_builder.add_node("create_ui_components", create_ui_components_subgraph())
 graph_builder.add_node("complete", complete)
 
 graph_builder.add_conditional_edges(START, resume_from_root_graph, {
@@ -214,6 +223,7 @@ graph_builder.add_conditional_edges(START, resume_from_root_graph, {
     "create_command_actions": "create_command_actions",
     "create_policy_actions": "create_policy_actions",
     "create_gwt": "create_gwt",
+    "create_ui_components": "create_ui_components",
     "complete": "complete"
 })
 graph_builder.add_edge("create_bounded_contexts", "create_aggregates")
@@ -234,6 +244,10 @@ graph_builder.add_conditional_edges("create_policy_actions", route_after_create_
     "complete": "complete"
 })
 graph_builder.add_conditional_edges("create_gwt", route_after_create_gwt, {
+    "create_ui_components": "create_ui_components",
+    "complete": "complete"
+})
+graph_builder.add_conditional_edges("create_ui_components", route_after_create_ui_components, {
     "complete": "complete"
 })
 

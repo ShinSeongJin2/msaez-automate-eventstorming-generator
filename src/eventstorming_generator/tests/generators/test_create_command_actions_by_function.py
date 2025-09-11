@@ -13,7 +13,8 @@ def test_create_command_actions_by_function():
             "inputs": {
                 "summarizedESValue": create_command_actions_by_function_inputs["summarizedESValue"],
                 "description": create_command_actions_by_function_inputs["description"],
-                "targetAggregate": create_command_actions_by_function_inputs["targetAggregate"]
+                "targetAggregate": create_command_actions_by_function_inputs["targetAggregate"],
+                "extractedElementNames": create_command_actions_by_function_inputs["extractedElementNames"]
             }
         }).generate()
         TestUtils.save_dict_to_temp_file(result, "test_create_command_actions_by_function")

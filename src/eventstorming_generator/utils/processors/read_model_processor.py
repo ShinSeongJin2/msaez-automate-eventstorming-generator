@@ -23,12 +23,13 @@ class ReadModelProcessor:
         bounded_context_id = action["ids"].get("boundedContextId", "")
         aggregate_id = action["ids"].get("aggregateId", "")
         read_model_id = action["ids"].get("readModelId", EsUtils.get_uuid())
+        referenced_site_map_id = action["args"].get("referencedSiteMapId", None)
         refs = action.args.get("refs", [])
 
         # ReadModel 객체 생성
         read_model_object = ReadModelProcessor._get_read_model_base(
             user_info, read_model_name, read_model_alias, is_multiple_result,
-            bounded_context_id, aggregate_id, 0, 0, read_model_id, refs
+            bounded_context_id, aggregate_id, 0, 0, read_model_id, refs, referenced_site_map_id
         )
         
         # 위치 설정
@@ -36,12 +37,15 @@ class ReadModelProcessor:
         read_model_object["elementView"]["x"] = valid_position["x"]
         read_model_object["elementView"]["y"] = valid_position["y"]
         
-        # Actor-ReadModel 관계 설정
-        def make_actor_to_read_model(es_value: Dict[str, Any], user_info: Dict[str, Any], 
-                                   information: Dict[str, Any]) -> None:
+        # Actor-UI-ReadModel 관계 설정
+        def make_ui_and_actor_to_read_model(es_value: Dict[str, Any], user_info: Dict[str, Any], 
+                                information: Dict[str, Any]) -> None:
+            from .ui_processor import UIProcessor
             from .actor_processor import ActorProcessor
-            ActorProcessor.make_actor_to_command(es_value, action, read_model_object, user_info)
-        callbacks["afterAllRelationAppliedCallBacks"].append(make_actor_to_read_model)
+            
+            ui_object = UIProcessor.make_ui_to_element(es_value, action, read_model_object, user_info)
+            ActorProcessor.make_actor_to_element(es_value, action, ui_object, user_info)
+        callbacks["afterAllRelationAppliedCallBacks"].append(make_ui_and_actor_to_read_model)
         
         # 쿼리 파라미터 설정
         read_model_object["queryParameters"] = EsUtils.create_field_descriptors(action["args"].get("queryParameters", []))
@@ -57,7 +61,8 @@ class ReadModelProcessor:
                            is_multiple_result: bool, bounded_context_id: str, 
                            aggregate_id: str, x: int, y: int, 
                            element_uuid: str = None, 
-                           refs: List[List[List[Any]]] = []) -> Dict[str, Any]:
+                           refs: List[List[List[Any]]] = [],
+                           referenced_site_map_id: str = None) -> Dict[str, Any]:
         """ReadModel 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
         
@@ -171,7 +176,8 @@ class ReadModelProcessor:
             ],
             "rotateStatus": False,
             "definitionId": "",
-            "refs": refs
+            "refs": refs,
+            "referencedSiteMapId": referenced_site_map_id
         }
     
     @staticmethod

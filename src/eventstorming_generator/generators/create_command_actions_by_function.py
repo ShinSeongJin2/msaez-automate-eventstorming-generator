@@ -5,7 +5,7 @@ from ..models import CreateCommandActionsByFunctionOutput
 
 class CreateCommandActionsByFunction(BaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
-        self.inputs_types_to_check = ["summarizedESValue", "description", "targetAggregate"]
+        self.inputs_types_to_check = ["summarizedESValue", "description", "targetAggregate", "extractedElementNames"]
         super().__init__(model_name, model_kwargs, client, structured_output_class=CreateCommandActionsByFunctionOutput)
 
     def _build_agent_role_prompt(self) -> str:
@@ -488,12 +488,29 @@ IMPORTANT: If any of these required events are missing from the final result, th
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
+
+        additionalRequests = ""
+        if inputs.get("extractedElementNames"):
+            commandNames = []
+            readModelNames = []
+            for extractedElementName in inputs.get("extractedElementNames"):
+                if extractedElementName.get("commandName"):
+                    commandNames.append(extractedElementName.get("commandName"))
+                if extractedElementName.get("readModelName"):
+                    readModelNames.append(extractedElementName.get("readModelName"))
+            if commandNames:
+                additionalRequests += f"""* The following commands must be generated: {", ".join(commandNames)}\n"""
+            if readModelNames:
+                additionalRequests += f"""* The following read model must be generated: {", ".join(readModelNames)}\n"""
+
         return {
             "Summarized Existing EventStorming Model": inputs.get("summarizedESValue"),
 
             "Functional Requirements": inputs.get("description"),
 
             "Target Aggregate To Generate Actions": inputs.get("targetAggregate").get("name"),
+
+            "Additional Requirements": additionalRequests,
 
             "Final Check": f"""
 Data Validation:

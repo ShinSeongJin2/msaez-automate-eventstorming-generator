@@ -24,12 +24,13 @@ class CommandProcessor:
         bounded_context_id = action.ids.get("boundedContextId", "")
         aggregate_id = action.ids.get("aggregateId", "")
         command_id = action.ids.get("commandId", EsUtils.get_uuid())
+        referenced_site_map_id = action.args.get("referencedSiteMapId", None)
         refs = action.args.get("refs", [])
         
         # Command 객체 생성
         command_object = CommandProcessor._get_command_base(
             user_info, command_name, command_alias, api_verb, [], is_rest_repository,
-            bounded_context_id, aggregate_id, 0, 0, command_id, refs
+            bounded_context_id, aggregate_id, 0, 0, command_id, refs, referenced_site_map_id
         )
         
         # 출력 이벤트 설정
@@ -51,12 +52,15 @@ class CommandProcessor:
         command_object["elementView"]["x"] = valid_position["x"]
         command_object["elementView"]["y"] = valid_position["y"]
         
-        # Actor-Command 관계 설정
-        def make_actor_to_command(es_value: Dict[str, Any], user_info: Dict[str, Any], 
+        # Actor-UI-Command 관계 설정
+        def make_ui_and_actor_to_command(es_value: Dict[str, Any], user_info: Dict[str, Any], 
                                 information: Dict[str, Any]) -> None:
+            from .ui_processor import UIProcessor
             from .actor_processor import ActorProcessor
-            ActorProcessor.make_actor_to_command(es_value, action, command_object, user_info)
-        callbacks["afterAllRelationAppliedCallBacks"].append(make_actor_to_command)
+            
+            ui_object = UIProcessor.make_ui_to_element(es_value, action, command_object, user_info)
+            ActorProcessor.make_actor_to_element(es_value, action, ui_object, user_info)
+        callbacks["afterAllRelationAppliedCallBacks"].append(make_ui_and_actor_to_command)
         
         # 필드 설정
         command_object["fieldDescriptors"] = EsUtils.create_field_descriptors(action.args.get("properties", []))
@@ -71,7 +75,8 @@ class CommandProcessor:
     def _get_command_base(user_info: Dict[str, Any], name: str, display_name: str, 
                          api_verb: str, output_events: List[str], is_rest_repository: bool, 
                          bounded_context_id: str, aggregate_id: str, x: int, y: int, 
-                         element_uuid: str = None, refs: List[List[List[Any]]] = []) -> Dict[str, Any]:
+                         element_uuid: str = None, refs: List[List[List[Any]]] = [], 
+                         referenced_site_map_id: str = None) -> Dict[str, Any]:
         """Command 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
 
@@ -131,7 +136,8 @@ class CommandProcessor:
             "rotateStatus": False,
             "selected": False,
             "trigger": "@PrePersist",
-            "refs": refs
+            "refs": refs,
+            "referencedSiteMapId": referenced_site_map_id
         }
     
     @staticmethod

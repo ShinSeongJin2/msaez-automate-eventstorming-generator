@@ -15,6 +15,7 @@ class CommandActionGenerationState(BaseModelWithItem):
     generation_complete: bool = False
     is_token_over_limit: bool = False
     required_event_names: List[str] = []
+    extractedElementNames: List[Any] = []
 
 class CreateCommandActionsByFunctionModel(BaseModelWithItem):
     """Command 액션 생성 관련 상태 관리 모델"""

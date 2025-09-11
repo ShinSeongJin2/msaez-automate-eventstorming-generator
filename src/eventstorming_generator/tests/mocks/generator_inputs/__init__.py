@@ -8,6 +8,9 @@ from .extract_ddl_fields_generator_inputs import extract_ddl_fields_generator_in
 from .assign_fields_to_actions_generator_inputs import assign_fields_to_actions_generator_inputs
 from .assign_ddl_fields_to_aggregate_draft_generator_inputs import assign_ddl_fields_to_aggregate_draft_generator_inputs
 from .assign_event_names_to_aggregate_draft_generator_inputs import assign_event_names_to_aggregate_draft_generator_inputs
+from .assign_command_view_names_to_aggregate_draft_generator_inputs import assign_command_view_names_to_aggregate_draft_generator_inputs
+from .create_command_wire_frame_inputs import create_command_wire_frame_inputs
+from .create_read_model_wire_frame_inputs import create_read_model_wire_frame_inputs
 
 __all__ = [
     "create_aggregate_actions_by_function_inputs",
@@ -19,5 +22,8 @@ __all__ = [
     "extract_ddl_fields_generator_inputs",
     "assign_fields_to_actions_generator_inputs",
     "assign_ddl_fields_to_aggregate_draft_generator_inputs",
-    "assign_event_names_to_aggregate_draft_generator_inputs"
+    "assign_event_names_to_aggregate_draft_generator_inputs",
+    "assign_command_view_names_to_aggregate_draft_generator_inputs",
+    "create_command_wire_frame_inputs",
+    "create_read_model_wire_frame_inputs"
 ]

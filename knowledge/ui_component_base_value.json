@@ -1,0 +1,43 @@
+{
+    "_type": "org.uengine.modeling.model.UI",
+    "id": "613f35b1-1aac-e653-62ff-b84eb85d2419",
+    "name": "BookRegeistraionUI",
+    "oldName": "",
+    "displayName": "도서 등록 UI",
+    "namePascalCase": "",
+    "nameCamelCase": "",
+    "namePlural": "",
+    "description": null,
+    "author": "EYCl46CwWAWvpz2E1BCUpVgPIpa2",
+    "boundedContext": {
+        "id": "37d06671-7a75-408a-a055-c67d7da14de2"
+    },
+    "elementView": {
+        "_type": "org.uengine.modeling.model.UI",
+        "id": "613f35b1-1aac-e653-62ff-b84eb85d2419",
+        "x": 427.01754385964915,
+        "y": 240.2807034274989,
+        "width": 100,
+        "height": 100,
+        "style": "{}"
+    },
+    "uiType": "Chart",
+    "chart": {
+        "type": "",
+        "fieldMapping": {
+            "category": [],
+            "data": []
+        }
+    },
+    "grid": {
+        "columns": []
+    },
+    "card": {
+        "title": "",
+        "subtitle": "",
+        "text": ""
+    },
+    "runTimeTemplateHtml": "",
+    "rotateStatus": false,
+    "generateDescription": ""
+}

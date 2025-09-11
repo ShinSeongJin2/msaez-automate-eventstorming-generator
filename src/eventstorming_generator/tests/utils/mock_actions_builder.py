@@ -61,28 +61,54 @@ class MockActionBuilder:
 
         for i in range(1, count + 1):
             base_name = f"{self.current_agg_name}Pair{i}"
+
             cmd_name = f"Do{base_name}"
             evt_name = f"{base_name}Done"
+            read_model_name = f"Read{base_name}"
 
             cmd_id = f"cmd-{cmd_name.lower()}"
             evt_id = f"evt-{evt_name.lower()}"
+            read_model_id = f"read-model-{read_model_name.lower()}"
 
-            # Command
-            cmd_action = ActionModel(
-                objectType="Command",
-                type="create",
-                ids={
-                    "boundedContextId": self.current_bc_id,
-                    "aggregateId": self.current_agg_id,
-                    "commandId": cmd_id,
-                },
-                args={
-                    "commandName": cmd_name,
-                    "commandAlias": cmd_name,
-                    "outputEventIds": [evt_id],
-                },
-            )
-            self.actions.append(cmd_action)
+            if i % 2 == 0:
+                # Command
+                cmd_action = ActionModel(
+                    objectType="Command",
+                    type="create",
+                    ids={
+                        "boundedContextId": self.current_bc_id,
+                        "aggregateId": self.current_agg_id,
+                        "commandId": cmd_id,
+                    },
+                    args={
+                        "commandName": cmd_name,
+                        "commandAlias": cmd_name,
+                        "outputEventIds": [evt_id],
+                        "actor": "User",
+                        "api_verb": "POST",
+                        "properties": []
+                    },
+                )
+                self.actions.append(cmd_action)
+            else:
+                # ReadModel
+                read_model_action = ActionModel(
+                    objectType="ReadModel",
+                    type="create",
+                    ids={
+                        "boundedContextId": self.current_bc_id,
+                        "aggregateId": self.current_agg_id,
+                        "readModelId": read_model_id,
+                    },
+                    args={
+                        "readModelName": read_model_name,
+                        "readModelAlias": read_model_name,
+                        "isMultipleResult": False,
+                        "queryParameters": [],
+                        "actor": "User"
+                    },
+                )
+                self.actions.append(read_model_action)
 
             # Event
             evt_action = ActionModel(

@@ -5,7 +5,7 @@ from .create_command_actions_by_function_model import CreateCommandActionsByFunc
 from .create_policy_actions_by_function_model import CreatePolicyActionsByFunctionModel, PolicyActionGenerationState
 from .create_gwt_generator_by_function_model import CreateGwtGeneratorByFunctionModel, GWTGenerationState
 from .es_value_summary_generator_model import ESValueSummaryGeneratorModel
-
+from .create_ui_components_model import CreateUiComponentsModel, CreateUiComponentsGenerationState
 class SubgraphsModel(BaseModelWithItem):
     createAggregateByFunctionsModel: CreateAggregateByFunctionsModel = CreateAggregateByFunctionsModel()
     createAggregateClassIdByDraftsModel: CreateAggregateClassIdByDraftsModel = CreateAggregateClassIdByDraftsModel()
@@ -13,6 +13,7 @@ class SubgraphsModel(BaseModelWithItem):
     createPolicyActionsByFunctionModel: CreatePolicyActionsByFunctionModel = CreatePolicyActionsByFunctionModel()
     createGwtGeneratorByFunctionModel: CreateGwtGeneratorByFunctionModel = CreateGwtGeneratorByFunctionModel()
     esValueSummaryGeneratorModel: ESValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
+    createUiComponentsModel: CreateUiComponentsModel = CreateUiComponentsModel()
 
 __all__ = [
     "SubgraphsModel",
@@ -26,5 +27,7 @@ __all__ = [
     "PolicyActionGenerationState",
     "CreateGwtGeneratorByFunctionModel",
     "GWTGenerationState",
-    "ESValueSummaryGeneratorModel"
+    "ESValueSummaryGeneratorModel",
+    "CreateUiComponentsModel",
+    "CreateUiComponentsGenerationState"
 ]

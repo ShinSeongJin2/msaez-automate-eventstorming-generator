@@ -4,6 +4,7 @@ from .test_create_command_actions_by_function_sub_graph import test_create_comma
 from .test_create_policy_actions_by_function_sub_graph import test_create_policy_actions_by_function_sub_graph
 from .test_create_gwt_generator_by_function_sub_graph import test_create_gwt_generator_by_function_sub_graph
 from .test_es_value_summary_generator_sub_graph import test_es_value_summary_generator_sub_graph
+from .test_create_ui_components_subgraph import test_create_ui_components_subgraph
 
 __all__ = [
     "test_create_aggregate_by_functions_sub_graph",
@@ -11,6 +12,7 @@ __all__ = [
     "test_create_command_actions_by_function_sub_graph",
     "test_create_policy_actions_by_function_sub_graph",
     "test_create_gwt_generator_by_function_sub_graph",
-    "test_es_value_summary_generator_sub_graph"
+    "test_es_value_summary_generator_sub_graph",
+    "test_create_ui_components_subgraph"
 ]
 

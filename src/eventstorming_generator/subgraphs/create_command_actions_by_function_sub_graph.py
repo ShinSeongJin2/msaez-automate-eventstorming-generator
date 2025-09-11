@@ -4,10 +4,8 @@ from langgraph.graph import StateGraph, START
 import re
 
 from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
-from ..generators import CreateCommandActionsByFunction
-from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, EsTraceUtil
-from ..generators import CreateCommandActionsByFunction, AssignEventNamesToAggregateDraft
-from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil
+from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, EsTraceUtil, JsonUtil
+from ..generators import CreateCommandActionsByFunction, AssignEventNamesToAggregateDraft, AssignCommandViewNamesToAggregateDraft
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
 
@@ -57,12 +55,40 @@ def prepare_command_actions_generation(state: State) -> State:
             bounded_context = draft_option.get("boundedContext", {})
             bc_display_name = bounded_context.get("displayName", bc_name)
 
+            extractedElementNames = []
+            try :
+                siteMap = draft_option.get("boundedContext", None).get("requirements", None).get("siteMap", None)
+
+                aggregateDraft = []
+                for structure in draft_option.get("structure", []):
+                    aggregateDraft.append(structure.get("aggregate", {}))
+                
+                if siteMap and aggregateDraft and len(aggregateDraft) > 0:
+                    aiResponse = AssignCommandViewNamesToAggregateDraft(
+                        model_name=os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}",
+                        client={
+                            "inputs": {
+                                "aggregateDrafts": aggregateDraft,
+                                "siteMap": siteMap
+                            }
+                        }
+                    ).generate()
+                    extractedElementNames = aiResponse.get("result", {}).get("extractedCommands", []) + aiResponse.get("result", {}).get("extractedReadModels", [])
+            except Exception as e:
+                LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to extract element names for bounded context '{bc_name}':  {e}")
+
             # 현재 ES Value에서 해당 BoundedContext에 속한 Aggregate들을 찾음
             aggregates_in_bc = []
             for element in state.outputs.esValue.elements.values():
                 if (element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and 
                     element.get("boundedContext", {}).get("id") == bounded_context.get("id")):
                     aggregates_in_bc.append(element)
+
+                    extractedElementNamesForAggregate = []
+                    if extractedElementNames and len(extractedElementNames) > 0:
+                        for extractedElementName in extractedElementNames:
+                            if extractedElementName.get("aggregateName") == element.get("name", ""):
+                                extractedElementNamesForAggregate.append(extractedElementName)
                     
                     # 각 Aggregate에 대한 생성 상태 준비
                     description = draft_option.get("description", "")
@@ -71,6 +97,7 @@ def prepare_command_actions_generation(state: State) -> State:
                         target_aggregate=element,
                         description=description,
                         original_description=description,
+                        extractedElementNames=extractedElementNamesForAggregate
                     )
                     pending_generations.append(generation_state)
                     total_aggregates += 1
@@ -332,7 +359,8 @@ def generate_command_actions(state: State) -> State:
                     "summarizedESValue": current_gen.summarized_es_value,
                     "description": current_gen.description,
                     "targetAggregate": current_gen.target_aggregate,
-                    "requiredEventNames": current_gen.required_event_names
+                    "requiredEventNames": current_gen.required_event_names,
+                    "extractedElementNames": current_gen.extractedElementNames
                 },
                 "preferredLanguage": state.inputs.preferedLanguage
             }
@@ -355,7 +383,8 @@ def generate_command_actions(state: State) -> State:
                         "summarizedESValue": {},
                         "description": current_gen.description,
                         "targetAggregate": current_gen.target_aggregate,
-                        "requiredEventNames": current_gen.required_event_names
+                        "requiredEventNames": current_gen.required_event_names,
+                        "extractedElementNames": current_gen.extractedElementNames
                     },
                     "preferredLanguage": state.inputs.preferedLanguage
                 }
@@ -410,6 +439,18 @@ def generate_command_actions(state: State) -> State:
         actionModels = [ActionModel(**action) for action in actions]
         for action in actionModels:
             action.type = "create"
+
+            if action.objectType == "Command":
+                for extractedElementName in current_gen.extractedElementNames:
+                    if extractedElementName.get("commandName") == action.args.get("commandName"):
+                        action.args["referencedSiteMapId"] = extractedElementName.get("referencedId")
+                        break
+            
+            elif action.objectType == "ReadModel":
+                for extractedElementName in current_gen.extractedElementNames:
+                    if extractedElementName.get("readModelName") == action.args.get("readModelName"):
+                        action.args["referencedSiteMapId"] = extractedElementName.get("referencedId")
+                        break
         
         # 필수 이벤트 검증
         if current_gen.required_event_names:

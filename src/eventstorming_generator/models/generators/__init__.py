@@ -9,6 +9,9 @@ from .extract_ddl_fields_generator_output import ExtractDDLFieldsGeneratorOutput
 from .assign_fields_to_actions_generator_output import AssignFieldsToActionsGeneratorOutput
 from .assign_ddl_fields_to_aggregate_draft_output import AssignDDLFieldsToAggregateDraftOutput
 from .assign_event_names_to_aggregate_draft_output import AssignEventNamesToAggregateDraftOutput
+from .assign_command_view_names_to_aggregate_draft_output import AssignCommandViewNamesToAggregateDraftOutput
+from .create_command_wire_frame_output import CreateCommandWireFrameOutput
+from .create_read_model_wire_frame_output import CreateReadModelWireFrameOutput
 
 __all__ = [
     "SanityCheckGeneratorOutput",
@@ -22,6 +25,9 @@ __all__ = [
     "AssignFieldsToActionsGeneratorOutput",
     "AssignDDLFieldsToAggregateDraftOutput",
     "AssignEventNamesToAggregateDraftOutput",
+    "AssignCommandViewNamesToAggregateDraftOutput",
+    "CreateCommandWireFrameOutput",
+    "CreateReadModelWireFrameOutput",
 ]
 
 
