@@ -1,11 +1,11 @@
 from datetime import datetime
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from typing import Any, Dict, List, Optional
 
 from .base import BaseModelWithItem
 
 class LogModel(BaseModelWithItem):
-    created_at: str = datetime.now().isoformat()
+    created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     level: str = ""
     message: str = ""
     model_config = ConfigDict(extra="allow")
