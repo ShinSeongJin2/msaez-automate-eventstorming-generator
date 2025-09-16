@@ -5,6 +5,8 @@ import traceback
 class LogUtil:
     @staticmethod
     def add_log(state: State, message: str, level: str = "info"):
+        if len(state.outputs.logs) >= 500:
+            state.outputs.logs.pop(0)
         state.outputs.logs.append(LogModel(message=message, level=level))
 
     @staticmethod
