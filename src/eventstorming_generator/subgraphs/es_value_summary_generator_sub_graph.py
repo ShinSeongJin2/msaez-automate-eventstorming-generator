@@ -1,14 +1,13 @@
-import os
 from typing import Callable, Dict, Any, List
 from copy import deepcopy
 from langgraph.graph import StateGraph
 
-from ..utils import JsonUtil, ESValueSummarizeWithFilter, TokenCounter, LogUtil
+from ..utils import JsonUtil, ESValueSummarizeWithFilter, TokenCounter, LogUtil, XmlUtil
 from ..models import State
 from ..utils.es_alias_trans_manager import EsAliasTransManager
 from ..generators.es_value_summary_generator import ESValueSummaryGenerator
+from ..config import Config
 
-# 노드 정의: ES 값 요약 생성 준비
 def prepare_es_value_summary_generation(state: State) -> State:
     """
     ES 값 요약 생성을 위한 준비 작업 수행
@@ -40,7 +39,6 @@ def prepare_es_value_summary_generation(state: State) -> State:
     
     return state
 
-# 노드 정의: ES 값 요약 생성 전처리
 def preprocess_es_value_summary_generation(state: State) -> State:
     """
     ES 값 요약 생성을 위한 전처리 작업 수행
@@ -99,7 +97,6 @@ def preprocess_es_value_summary_generation(state: State) -> State:
     
     return state
 
-# 노드 정의: ES 값 요약 생성 실행
 def generate_es_value_summary(state: State) -> State:
     """
     ES 값 요약 생성 실행
@@ -112,7 +109,7 @@ def generate_es_value_summary(state: State) -> State:
     try:
 
         # 모델명 가져오기
-        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        model_name = Config.get_ai_model_light()
         
         LogUtil.add_info_log(state, f"[ES_SUMMARY_SUBGRAPH] Using AI model: {model_name} for {len(current_gen.element_ids)} elements")
         
@@ -145,7 +142,6 @@ def generate_es_value_summary(state: State) -> State:
     
     return state
 
-# 노드 정의: ES 값 요약 생성 후처리
 def postprocess_es_value_summary_generation(state: State) -> State:
     """
     ES 값 요약 생성 후처리 작업 수행
@@ -173,7 +169,8 @@ def postprocess_es_value_summary_generation(state: State) -> State:
             sorted_element_ids,
             current_gen.max_tokens,
             current_gen.token_calc_model_vendor,
-            current_gen.token_calc_model_name
+            current_gen.token_calc_model_name,
+            current_gen.is_xml_format
         )
         
         # 결과 저장
@@ -189,7 +186,6 @@ def postprocess_es_value_summary_generation(state: State) -> State:
     
     return state
 
-# 노드 정의: ES 값 요약 생성 검증
 def validate_es_value_summary_generation(state: State) -> State:
     """
     ES 값 요약 생성 결과 검증
@@ -217,7 +213,6 @@ def validate_es_value_summary_generation(state: State) -> State:
     
     return state
 
-# 노드 정의: 완료 처리
 def complete_processing(state: State) -> State:
     """
     ES 값 요약 생성 프로세스 완료
@@ -242,7 +237,7 @@ def complete_processing(state: State) -> State:
             subgraph_model.context = ""
             subgraph_model.keys_to_filter = []
             subgraph_model.summarized_es_value = {}
-            subgraph_model.element_ids = {}
+            subgraph_model.element_ids = []
             subgraph_model.sorted_element_ids = []
 
     except Exception as e:
@@ -251,7 +246,6 @@ def complete_processing(state: State) -> State:
     
     return state
 
-# 라우팅 함수: 다음 단계 결정
 def decide_next_step(state: State) -> str:
     """
     다음 실행할 단계 결정
@@ -291,7 +285,6 @@ def decide_next_step(state: State) -> str:
         LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during decide_next_step", e)
         return "complete"
 
-# 서브그래프 생성 함수
 def create_es_value_summary_generator_subgraph() -> Callable:
     """
     ES 값 요약 생성 서브그래프 생성
@@ -374,7 +367,6 @@ def create_es_value_summary_generator_subgraph() -> Callable:
     return run_subgraph
 
 
-# 유틸리티 함수: 우선순위 기반 요소 ID 재정렬
 def _resort_with_priority(summarized_es_value: Dict[str, Any], sorted_element_ids: List[str]) -> List[str]:
     """
     그룹화 기반 우선순위 재정렬
@@ -441,9 +433,8 @@ def _resort_with_priority(summarized_es_value: Dict[str, Any], sorted_element_id
     
     return result
 
-# 유틸리티 함수: 토큰 제한 내에서 요약된 ES 값 생성
 def _get_summary_within_token_limit(summarized_es_value: Dict[str, Any], sorted_element_ids: List[str], 
-                                   max_tokens: int, token_calc_model_vendor: str, token_calc_model_name: str) -> Dict[str, Any]:
+                                   max_tokens: int, token_calc_model_vendor: str, token_calc_model_name: str, is_xml_format: bool) -> Dict[str, Any]:
     """
     토큰 제한 내에서 요약된 ES 값 생성
     - 요소 우선순위에 따라 요약 수준 조정
@@ -483,9 +474,14 @@ def _get_summary_within_token_limit(summarized_es_value: Dict[str, Any], sorted_
     while left <= right:
         mid = (left + right) // 2
         filtered = filter_by_priority(deepcopy(summarized_es_value), mid)
-        json_string = JsonUtil.convert_to_json(filtered)
+
+        check_string = ""
+        if is_xml_format:
+            check_string = XmlUtil.from_dict(filtered)
+        else:
+            check_string = JsonUtil.convert_to_json(filtered)
         
-        token_count = TokenCounter.get_token_count(json_string, token_calc_model_vendor, token_calc_model_name)
+        token_count = TokenCounter.get_token_count(check_string, token_calc_model_vendor, token_calc_model_name)
         if token_count <= max_tokens:
             result = filtered
             left = mid + 1

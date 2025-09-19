@@ -2,23 +2,33 @@ from pydantic import Field
 from typing import List, Dict, Any
 from ..base import BaseModelWithItem
 
-class GWTStep(BaseModelWithItem):
-    """Represents a single step in a Given-When-Then scenario"""
-    name: str = Field(description="Name of the step (Aggregate, Command, or Event name)")
-    values: Dict[str, Any] = Field(description="Attribute values for the step, can contain actual values, null, or 'N/A'")
+class GivenStep(BaseModelWithItem):
+    """Represents the Given step in a GWT scenario with Aggregate information"""
+    aggregateName: str = Field(description="Name of the Aggregate")
+    aggregateValues: Dict[str, Any] = Field(description="Attribute values for the Aggregate, must be a non-empty dictionary with actual values")
+
+class WhenStep(BaseModelWithItem):
+    """Represents the When step in a GWT scenario with Command information"""
+    commandName: str = Field(description="Name of the Command")
+    commandValues: Dict[str, Any] = Field(description="Parameter values for the Command, must be a non-empty dictionary with actual values")
+
+class ThenStep(BaseModelWithItem):
+    """Represents the Then step in a GWT scenario with Event information"""
+    eventName: str = Field(description="Name of the Event")
+    eventValues: Dict[str, Any] = Field(description="Property values for the Event, must be a non-empty dictionary with actual values")
 
 class GWTScenario(BaseModelWithItem):
     """Represents a complete Given-When-Then test scenario"""
-    given: GWTStep = Field(description="Given step representing the initial Aggregate state")
-    when: GWTStep = Field(description="When step representing the Command being executed")
-    then: GWTStep = Field(description="Then step representing the expected Event outcome")
+    scenario: str = Field(description="Brief description of what business scenario this GWT test validates")
+    given: GivenStep = Field(description="Given step representing the initial Aggregate state")
+    when: WhenStep = Field(description="When step representing the Command being executed")
+    then: ThenStep = Field(description="Then step representing the expected Event outcome")
 
-class CommandGWT(BaseModelWithItem):
-    """Represents GWT scenarios for a specific target command"""
-    targetCommandId: str = Field(description="ID of the target command for which GWT scenarios are generated")
-    gwts: List[GWTScenario] = Field(description="List of GWT scenarios for the target command")
+class GWTResult(BaseModelWithItem):
+    """Represents GWT scenarios for a single command"""
+    gwts: List[GWTScenario] = Field(description="List of GWT scenarios for the command")
 
 class CreateGWTGeneratorByFunctionOutput(BaseModelWithItem):
     """Output model for CreateGWTGeneratorByFunction containing inference and GWT scenarios"""
     inference: str = Field(description="Detailed reasoning and analysis behind the generated GWT scenarios")
-    result: List[CommandGWT] = Field(description="List of commands with their associated GWT scenarios")
+    result: GWTResult = Field(description="GWT scenarios for the command")

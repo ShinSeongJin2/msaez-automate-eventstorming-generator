@@ -1,140 +1,104 @@
 from typing import Any, Dict, Optional
-from .base import BaseGenerator
-from ..utils import ESValueSummarizeWithFilter
+from .xml_base import XmlBaseGenerator
 from ..models import CreateGWTGeneratorByFunctionOutput
+from ..utils import XmlUtil
 
-class CreateGWTGeneratorByFunction(BaseGenerator):
+class CreateGWTGeneratorByFunction(XmlBaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
-        self.inputs_types_to_check = ["summarizedESValue", "description", "targetCommandAliases"]
-        super().__init__(model_name, model_kwargs, client, structured_output_class=CreateGWTGeneratorByFunctionOutput)
+        self.inputs_types_to_check = ["summarizedESValue", "description", "targetCommandAlias"]
+        super().__init__(model_name, CreateGWTGeneratorByFunctionOutput, model_kwargs, client)
 
-    def _build_agent_role_prompt(self) -> str:
-        return """Role: Senior Domain-Driven Design (DDD) Expert and Test Engineering Specialist
-
-Goal: To create precise, comprehensive Given-When-Then (GWT) scenarios that validate domain behaviors in event-driven architectures while transforming business requirements into structured, executable acceptance criteria.
-
-Backstory: With extensive experience in behavior-driven development, I've mastered the art of identifying and testing domain invariants, business constraints, and state transitions across aggregate lifecycles. My approach combines rigorous technical precision with business readability, enabling me to detect edge cases and boundary conditions that might compromise domain integrity. I excel at maintaining consistency between commands, events, and aggregate states, ensuring proper causality and temporal relationships throughout the testing process.
-
-Operational Guidelines:
-* Craft GWT scenarios that precisely validate domain behaviors and business rules
-* Identify and test all invariants and business constraints within bounded contexts
-* Create test scenarios that verify correct state transitions across aggregate lifecycles
-* Ensure complete command-event flow validation with proper causality relationships
-* Design test cases that maintain consistency between commands, events, and aggregate states
-* Detect and address edge cases and boundary conditions that might compromise domain integrity
-* Capture complex business process validations through meaningful test examples
-* Balance technical precision with business readability in all test specifications
-* Implement best practices from Behavior-Driven Development (BDD) and Test-Driven Development (TDD)
-* Transform abstract business requirements into concrete, executable acceptance criteria"""
-
-    def _build_task_guidelines_prompt(self) -> str:
-        return f"""You need to extract the right GWT (Given, When, Then) cases from the user's requirements and add them to the right commands in the given bounded context.
-
-Please follow these rules:
-1. Requirements Analysis:
-   - Extract all relevant GWT scenarios from the provided requirements
-   - Each GWT must be directly related to the specified command IDs
-   - Ensure full coverage of acceptance criteria and business rules
-   - Consider domain events and their business meanings for comprehensive test coverage
-   - Take into account context relationships when designing cross-boundary scenarios
-
-2. GWT Structure:
-   - Given: Must reference valid Aggregate state with realistic property values
-   - When: Must match Command properties exactly as defined in the schema
-   - Then: Must include all mandatory Event properties with expected outcomes
-   - Leverage event definitions to ensure proper event property mapping
-
-3. Quality Guidelines:
-   - Generate unique, non-duplicated GWT scenarios
-   - Each scenario should test a specific aspect or business rule
-   - Include both positive and negative test scenarios
-   - Ensure property values are realistic and type-compatible
-   - Consider event descriptions and business meanings for realistic test data
-
-4. Property Mapping:
-   - Given: Use only properties defined in the Aggregate
-   - When: Include all required Command parameters
-   - Then: Map to all relevant Event properties using event definitions
-   - Use "N/A" only for truly unrelated properties
-
-5. Validation Rules:
-   - Verify all business constraints are covered
-   - Include boundary conditions and edge cases
-   - Consider state transitions and their validity
-   - Check for proper error scenarios
-   - Incorporate context relationship patterns when applicable
-
-6. Event-Driven Considerations:
-   - Use provided event definitions to understand expected outcomes
-   - Ensure Then scenarios align with event descriptions and display names
-   - Consider event-driven workflows and state changes
-
-7. Context Boundary Awareness:
-   - Be mindful of context relationships when designing scenarios
-   - Consider how external context interactions might affect test scenarios
-   - Include scenarios that validate proper boundary interactions
-
-8. Output Format:
-   - Provide clean JSON without comments
-   - Use consistent property naming
-   - Ensure all required fields are populated
-   - Maintain proper value types for each property"""
-
-    def _build_inference_guidelines_prompt(self) -> str:
-        return """
-Inference Guidelines:
-1. The process of reasoning should be directly related to the output result, not a reference to a general strategy.
-2. Context Assessment: Evaluate the provided business requirements, domain context, and target command details to determine the core testing scenarios.
-3. Validation & Mapping: Ensure that the inferred GWT scenarios accurately map Aggregates, Commands, and Events based on the business rules and domain constraints.
-4. Synthesis & Decision Making: Integrate domain expertise to synthesize concise and precise GWT scenarios from the analyzed inputs, while considering edge cases, error handling, and consistency.
-"""
-
-    def _build_request_format_prompt(self) -> str:
-        return ESValueSummarizeWithFilter.get_guide_prompt()
-
-    def _build_json_response_format(self) -> str:
-        return """
-{
-   "inference": "<inference>",
-   "result": [
-        {
-            "targetCommandId": "<targetCommandId>",
-            "gwts": [
-                {
-                    "given": {
-                        "name": "<givenName>", // You can write the name of Aggregate
-                        "values": {
-                            // There are three types of attribute values you can write.
-                            // 1. Write an actual possible value(You can write String, Number, Boolean, Array, Object, etc.)
-                            // 2. If the current value is empty, write null.
-                            // 3. If the attribute seems unrelated to this GWT, write "N/A".
-                            "<attributeName>": <attributeValue|null|"N/A">
-                        }
-                    },
-
-                    "when": {
-                        "name": "<whenName>", // You can write the name of Command
-                        "values": {
-                            "<attributeName>": <attributeValue|null|"N/A">
-                        }
-                    },
-
-                    "then": {
-                        "name": "<thenName>", // You can write the name of Event
-                        "values": {
-                            "<attributeName>": <attributeValue|null|"N/A">
-                        }
-                    }
-                }
-            ]
+    def _build_persona_info(self) -> Dict[str, str]:
+        return {
+            "persona": "Senior Domain-Driven Design (DDD) Expert and Test Engineering Specialist",
+            "goal": "To create precise, comprehensive Given-When-Then (GWT) scenarios that validate domain behaviors in event-driven architectures while transforming business requirements into structured, executable acceptance criteria.",
+            "backstory": "With extensive experience in behavior-driven development, I've mastered the art of identifying and testing domain invariants, business constraints, and state transitions across aggregate lifecycles. My approach combines rigorous technical precision with business readability, enabling me to detect edge cases and boundary conditions that might compromise domain integrity. I excel at maintaining consistency between commands, events, and aggregate states, ensuring proper causality and temporal relationships throughout the testing process."
         }
-    ]
-}
-"""
 
+    def _build_task_instruction_prompt(self) -> str:
+        return f"""<instruction>
+    <core_instructions>
+        <title>GWT Scenario Generation Task</title>
+        <task_description>You need to extract the right GWT (Given, When, Then) cases from the user's requirements and add them to the right commands in the given bounded context.</task_description>
+        
+        <output_rules>
+            <title>Output Format</title>
+            <rule id="json_structure">The output must be a JSON object with two keys: "inference" and "result".</rule>
+            <rule id="inference">The "inference" value should contain detailed reasoning about the GWT design decisions, focusing on domain logic, test coverage, and adherence to requirements. It should not be a reference to general strategies.</rule>
+            <rule id="result">The "result" value must be an object containing a "gwts" key, which is a list of GWT scenarios.</rule>
+        </output_rules>
+
+        <operational_guidelines>
+            <title>Operational Guidelines</title>
+            <rule id="validation">Craft GWT scenarios that precisely validate domain behaviors and business rules.</rule>
+            <rule id="invariants">Identify and test all invariants and business constraints within bounded contexts.</rule>
+            <rule id="state_transitions">Create test scenarios that verify correct state transitions across aggregate lifecycles.</rule>
+            <rule id="flow_validation">Ensure complete command-event flow validation with proper causality relationships.</rule>
+            <rule id="consistency">Design test cases that maintain consistency between commands, events, and aggregate states.</rule>
+            <rule id="edge_cases">Detect and address edge cases and boundary conditions that might compromise domain integrity.</rule>
+            <rule id="complexity">Capture complex business process validations through meaningful test examples.</rule>
+            <rule id="readability">Balance technical precision with business readability in all test specifications.</rule>
+            <rule id="best_practices">Implement best practices from Behavior-Driven Development (BDD) and Test-Driven Development (TDD).</rule>
+            <rule id="requirements_transformation">Transform abstract business requirements into concrete, executable acceptance criteria.</rule>
+        </operational_guidelines>
+
+        <gwt_rules>
+            <title>GWT Generation Rules</title>
+            <rule id="analysis">
+                <title>Requirements Analysis</title>
+                <item>Extract all relevant GWT scenarios from the provided requirements.</item>
+                <item>Each GWT must be directly related to the specified command ID.</item>
+                <item>Ensure full coverage of acceptance criteria and business rules.</item>
+                <item>Consider domain events and their business meanings for comprehensive test coverage.</item>
+                <item>Take into account context relationships when designing cross-boundary scenarios.</item>
+            </rule>
+            <rule id="structure">
+                <title>GWT Structure</title>
+                <item>Scenario: A brief, descriptive text explaining what business scenario or validation rule this GWT test covers (e.g., "Valid stock addition to existing product", "Rejection of negative stock quantity", "Error when adding stock to discontinued product").</item>
+                <item>Given: For update/delete commands, this must reference a valid Aggregate state. For a create command, `aggregateValues` should be empty (`{{}}`) for a successful creation. For a failure scenario (e.g., duplicate key), it should contain only the minimal conflicting properties.</item>
+                <item>When: Must match Command properties exactly as defined in the schema.</item>
+                <item>Then: For a positive scenario, this must include all mandatory Event properties with expected outcomes. For a negative scenario, `eventValues` should contain an `error` key with a descriptive error code string (e.g., `{{"error": "PRODUCT_IS_DISCONTINUED"}}`).</item>
+            </rule>
+            <rule id="quality">
+                <title>Quality Guidelines</title>
+                <item>Generate multiple unique, non-duplicated GWT scenarios, each testing a specific aspect or rule.</item>
+                <item>CRITICAL: Include both positive (happy-path) and negative scenarios. Negative scenarios should cover validation rules (e.g., invalid input), business constraint violations, and boundary/edge cases.</item>
+                <item>Use realistic, concrete data for property values (e.g., "Clean Code" instead of "Sample Product"), not generic placeholders.</item>
+                <item>Ensure property values are realistic and type-compatible.</item>
+            </rule>
+            <rule id="mapping">
+                <title>Property Mapping and Value Assignment</title>
+                <item>Given: Use only properties defined in the Aggregate.</item>
+                <item>When: Include all required Command parameters.</item>
+                <item>Then: Map to all relevant Event properties using event definitions.</item>
+                <item>CRITICAL: `aggregateValues`, `commandValues`, and `eventValues` must be valid dictionaries with meaningful, actual values. NEVER use `null` or empty values. Exclude irrelevant properties entirely rather than using "N/A".</item>
+            </rule>
+            <rule id="validation_rules">
+                <title>Validation Rules</title>
+                <item>Verify all business constraints are covered, including boundary conditions and edge cases.</item>
+                <item>Consider state transitions and their validity, including proper error scenarios.</item>
+                <item>Incorporate context relationship patterns when applicable.</item>
+            </rule>
+            <rule id="event_driven">
+                <title>Event-Driven Considerations</title>
+                <item>Use provided event definitions to understand expected outcomes and ensure `Then` scenarios align with event details.</item>
+                <item>Consider event-driven workflows and state changes.</item>
+            </rule>
+        </gwt_rules>
+
+        <inference_guidelines>
+            <title>Inference Guidelines</title>
+            <rule id="relevance">The process of reasoning must be directly related to the output result, not a reference to a general strategy.</rule>
+            <rule id="assessment">Evaluate the provided business requirements, domain context, and target command details to determine the core testing scenarios.</rule>
+            <rule id="mapping_validation">Ensure that the inferred GWT scenarios accurately map Aggregates, Commands, and Events based on the business rules and domain constraints.</rule>
+            <rule id="synthesis">Integrate domain expertise to synthesize concise and precise GWT scenarios from the analyzed inputs, while considering edge cases, error handling, and consistency.</rule>
+        </inference_guidelines>
+    </core_instructions>
+</instruction>"""
+    
     def _build_json_example_input_format(self) -> Optional[Dict[str, Any]]:
         return {
-            "Current Bounded Context": {
+            "current_bounded_context": XmlUtil.from_dict({
                 "deletedProperties": [],
                 "boundedContexts": [
                     {
@@ -286,9 +250,9 @@ Inference Guidelines:
                         ]
                     }
                 ]
-            },
+            }),
             
-            "Functional Requirements": """# Bounded Context Overview: Inventory Management
+            "functional_requirements": """# Bounded Context Overview: Inventory Management
 
 ## Role
 Manages product stock levels, including additions, and discontinuations. The primary user is an inventory manager responsible for maintaining accurate inventory records.
@@ -352,92 +316,99 @@ CREATE TABLE categories (
 - **Interaction Pattern:** The inventory context publishes stock change events (e.g., stock added/decreased), which are subscribed to by the sales system.
 """,
             
-            "Target Command Ids": "cmd-addStock, cmd-discontinueProduct"
+            "target_command_id": "cmd-addStock"
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": """The generated output scenarios are based on a detailed analysis of the provided aggregate, command, and event definitions within the current bounded context. For 'cmd-addStock', the inference emphasizes that the 'Product' aggregate starts with specific attributes (e.g., productId, name, initial quantity, and status) and reflects a successful stock update when the 'AddStock' command is executed, resulting in a 'StockAdded' event with an updated total quantity. For 'cmd-discontinueProduct', the scenario verifies that an appropriate state transition occurs by incorporating a valid discontinuation reason and recording a discontinuation date in the 'ProductDiscontinued' event. This systematic approach ensures that each command's GWT scenario correctly captures both the intended business logic and the underlying domain constraints, providing robust and comprehensive test coverage.""",
-            "result": [
-                {
-                    "targetCommandId": "cmd-addStock",
-                    "gwts": [
-                        {
-                            "given": {
-                                "name": "Product",
-                                "values": {
-                                    "productId": "PROD-001",
-                                    "name": "Sample Product",
-                                    "quantity": 100,
-                                    "status": "AVAILABLE"
-                                }
-                            },
-                            "when": {
-                                "name": "AddStock",
-                                "values": {
-                                    "productId": "PROD-001",
-                                    "quantity": 50
-                                }
-                            },
-                            "then": {
-                                "name": "StockAdded",
-                                "values": {
-                                    "productId": "PROD-001",
-                                    "quantity": 50,
-                                    "newTotalQuantity": 150
-                                }
+            "inference": """The generated output scenarios are based on a detailed analysis of the provided aggregate, command, and event definitions within the current bounded context. For 'cmd-addStock', the inference emphasizes that the 'Product' aggregate starts with specific attributes (e.g., productId, name, initial quantity, and status) and reflects a successful stock update when the 'AddStock' command is executed, resulting in a 'StockAdded' event with an updated total quantity. This systematic approach ensures that the command's GWT scenario correctly captures the intended business logic and the underlying domain constraints, providing robust and comprehensive test coverage.""",
+            "result": {
+                "gwts": [
+                    {
+                        "scenario": "Valid stock addition to existing product",
+                        "given": {
+                            "aggregateName": "Product",
+                            "aggregateValues": {
+                                "productId": "PROD-001",
+                                "name": "High-Performance Gaming Mouse",
+                                "quantity": 100,
+                                "status": "AVAILABLE"
+                            }
+                        },
+                        "when": {
+                            "commandName": "AddStock",
+                            "commandValues": {
+                                "productId": "PROD-001",
+                                "quantity": 50
+                            }
+                        },
+                        "then": {
+                            "eventName": "StockAdded",
+                            "eventValues": {
+                                "productId": "PROD-001",
+                                "quantity": 50,
+                                "newTotalQuantity": 150
                             }
                         }
-                    ]
-                },
-                {
-                    "targetCommandId": "cmd-discontinueProduct",
-                    "gwts": [
-                        {
-                            "given": {
-                                "name": "Product",
-                                "values": {
-                                    "productId": "PROD-001",
-                                    "name": "Sample Product",
-                                    "status": "AVAILABLE"
-                                }
-                            },
-                            "when": {
-                                "name": "DiscontinueProduct",
-                                "values": {
-                                    "productId": "PROD-001",
-                                    "reason": "Product replaced by newer model"
-                                }
-                            },
-                            "then": {
-                                "name": "ProductDiscontinued",
-                                "values": {
-                                    "productId": "PROD-001",
-                                    "reason": "Product replaced by newer model",
-                                    "discontinuedDate": "2024-03-20T00:00:00Z"
-                                }
+                    },
+                    {
+                        "scenario": "Rejection of negative stock quantity",
+                        "given": {
+                            "aggregateName": "Product",
+                            "aggregateValues": {
+                                "productId": "PROD-001",
+                                "name": "High-Performance Gaming Mouse",
+                                "quantity": 100,
+                                "status": "AVAILABLE"
+                            }
+                        },
+                        "when": {
+                            "commandName": "AddStock",
+                            "commandValues": {
+                                "productId": "PROD-001",
+                                "quantity": -10
+                            }
+                        },
+                        "then": {
+                            "eventName": "StockAdded",
+                            "eventValues": {
+                                "error": "INVALID_STOCK_QUANTITY"
                             }
                         }
-                    ]
-                }
-            ]
+                    },
+                    {
+                        "scenario": "Error when adding stock to discontinued product",
+                        "given": {
+                            "aggregateName": "Product",
+                            "aggregateValues": {
+                                "productId": "PROD-002",
+                                "name": "Vintage Mechanical Keyboard",
+                                "quantity": 15,
+                                "status": "DISCONTINUED"
+                            }
+                        },
+                        "when": {
+                            "commandName": "AddStock",
+                            "commandValues": {
+                                "productId": "PROD-002",
+                                "quantity": 50
+                            }
+                        },
+                        "then": {
+                            "eventName": "StockAdded",
+                            "eventValues": {
+                                "error": "PRODUCT_IS_DISCONTINUED"
+                            }
+                        }
+                    }
+                ]
+            }
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
         return {
-            "Current Bounded Context": inputs.get("summarizedESValue"),
-
-            "Functional Requirements": inputs.get("description"),
-
-            "Target Command Ids": ", ".join(inputs.get("targetCommandAliases")),
-
-            "Final Check List": """
-* Make sure each command has an appropriate GWT from the user's requirements.
-* Make sure your scenarios reflect the best use of GWT in your code generation.
-* The generated GWT must have the properties found in the Aggregate, Command, and Event presented.
-* Consider the provided event definitions and their business meanings when creating Then scenarios.
-* Take into account context relationships and their interaction patterns when designing cross-boundary test scenarios.
-* Ensure event-driven workflows are properly validated through the GWT scenarios.
-"""
+            "current_bounded_context": XmlUtil.from_dict(inputs.get("summarizedESValue")),
+            "functional_requirements": inputs.get("description"),
+            "target_command_id": inputs.get("targetCommandAlias"),
         }

@@ -74,3 +74,45 @@ class Config:
             return os.getenv('LOG_LEVEL', 'DEBUG')  # 로컬에서는 DEBUG 기본
         else:
             return os.getenv('LOG_LEVEL', 'INFO')   # Pod에서는 INFO 기본
+    
+
+    @staticmethod
+    def get_ai_model() -> str:
+        return os.getenv('AI_MODEL')
+    
+    @staticmethod
+    def get_ai_model_vendor() -> str:
+        return Config.get_ai_model().split(':')[0]
+    
+    @staticmethod
+    def get_ai_model_name() -> str:
+        return Config.get_ai_model().split(':')[1]
+    
+    @staticmethod
+    def get_ai_model_max_input_limit() -> int:
+        return int(os.getenv('AI_MODEL_MAX_INPUT_LIMIT'))
+    
+    @staticmethod
+    def get_ai_model_max_batch_size() -> int:
+        return int(os.getenv('AI_MODEL_MAX_BATCH_SIZE'))
+    
+
+    @staticmethod
+    def get_ai_model_light() -> str:
+        return os.getenv('AI_MODEL_LIGHT')
+    
+    @staticmethod
+    def get_ai_model_light_vendor() -> str:
+        return Config.get_ai_model_light().split(':')[0]
+    
+    @staticmethod
+    def get_ai_model_light_name() -> str:
+        return Config.get_ai_model_light().split(':')[1]
+
+    @staticmethod
+    def get_ai_model_light_max_input_limit() -> int:
+        return int(os.getenv('AI_MODEL_LIGHT_MAX_INPUT_LIMIT'))
+    
+    @staticmethod
+    def get_ai_model_light_max_batch_size() -> int:
+        return int(os.getenv('AI_MODEL_LIGHT_MAX_BATCH_SIZE'))

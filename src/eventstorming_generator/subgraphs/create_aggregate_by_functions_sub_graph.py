@@ -1,7 +1,7 @@
+import time
 from typing import Dict, Any, List, Callable
 from copy import deepcopy
 from langgraph.graph import StateGraph, START
-import os
 
 from ..models import (
     AggregateGenerationState, State, ActionModel, EsValueModel, 
@@ -10,14 +10,16 @@ from ..models import (
 from ..generators import (
     CreateAggregateActionsByFunction, AssignFieldsToActionsGenerator
 )
-from ..utils import EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil, CaseConvertUtil,  EsTraceUtil
+from ..utils import JsonUtil, EsActionsUtil, EsAliasTransManager, ESValueSummarizeWithFilter, JobUtil, LogUtil, CaseConvertUtil, EsTraceUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
+from ..config import Config
 
 
 def resume_from_create_aggregates(state: State):
     try :
 
+        state.subgraphs.createAggregateByFunctionsModel.start_time = time.time()
         if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_AGGREGATES"] and state.outputs.lastCompletedSubGraphNode:
             if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_AGGREGATES"].values():
                 LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
@@ -270,7 +272,7 @@ def generate_aggregate(state: State) -> State:
             LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Applied summarized ES value for '{aggregate_name}' from summary generator")
 
         # 모델명 가져오기
-        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        model_name = Config.get_ai_model()
 
         # Generator 생성
         generator = CreateAggregateActionsByFunction(
@@ -290,7 +292,7 @@ def generate_aggregate(state: State) -> State:
         
         # 토큰 초과 체크
         token_count = generator.get_token_count()
-        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        model_max_input_limit = Config.get_ai_model_max_input_limit()
         
         if token_count > model_max_input_limit:
             LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Token limit exceeded for '{aggregate_name}' ({token_count} > {model_max_input_limit}), requesting ES value summary")
@@ -324,8 +326,8 @@ def generate_aggregate(state: State) -> State:
                 context=_build_request_context(current_gen),
                 keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
                 max_tokens=left_token_count,
-                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
-                token_calc_model_name=state.inputs.llmModel.model_name
+                token_calc_model_vendor=Config.get_ai_model_vendor(),
+                token_calc_model_name=Config.get_ai_model_name()
             )
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
@@ -350,7 +352,7 @@ def generate_aggregate(state: State) -> State:
         for action in actionModels:
             action.type = "create"
             if action.objectType == "Aggregate":
-                action.args["description"] = result.get("inference", "")
+                action.args["description"] = "* Inference(When generating the aggregate)\n" + result.get("inference", "") + "\n"
 
         # 생성된 액션 저장
         current_gen.created_actions = actionModels
@@ -490,8 +492,7 @@ def assign_missing_fields(state: State) -> State:
     LogUtil.add_info_log(state, f"[AGGREGATE_SUBGRAPH] Starting assignment for {len(current_gen.missing_ddl_fields)} missing fields for aggregate '{aggregate_name}'")
 
     try:
-        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
-        
+        model_name = Config.get_ai_model()
 
         elementAliasToUUIDDic = {}
         elementUUIDToAliasDic = {}
@@ -637,9 +638,13 @@ def validate_aggregate_generation(state: State) -> State:
             current_gen.target_aggregate = {}
             current_gen.description = ""
             current_gen.original_description = ""
+            current_gen.requirements = {}
             current_gen.draft_option = []
             current_gen.summarized_es_value = {}
             current_gen.created_actions = []
+            current_gen.extracted_ddl_fields = []
+            current_gen.missing_ddl_fields = []
+            current_gen.ddl_fields = []
 
             # 완료된 작업을 완료 목록에 추가
             state.subgraphs.createAggregateByFunctionsModel.completed_generations.append(current_gen)
@@ -685,6 +690,10 @@ def complete_processing(state: State) -> State:
             subgraph_model.current_generation = None
             subgraph_model.completed_generations = []
             subgraph_model.pending_generations = []
+            subgraph_model.all_ddl_fields = []
+        
+        state.subgraphs.createAggregateByFunctionsModel.end_time = time.time()
+        state.subgraphs.createAggregateByFunctionsModel.total_seconds = state.subgraphs.createAggregateByFunctionsModel.end_time - state.subgraphs.createAggregateByFunctionsModel.start_time
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[AGGREGATE_SUBGRAPH] Failed during process completion", e)

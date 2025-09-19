@@ -26,26 +26,20 @@ class AggregateGenerationState(BaseModelWithItem):
 
 class CreateAggregateByFunctionsModel(BaseModelWithItem):
     """Aggregate 생성 관련 상태 관리 모델"""
-    # 현재 처리 중인 Aggregate 상태
     current_generation: Optional[AggregateGenerationState] = None
-    
-    # 처리 완료된 Aggregate 목록
     completed_generations: List[AggregateGenerationState] = Field(default_factory=list)
-    
-    # 처리 대기 중인 Aggregate 목록
     pending_generations: List[AggregateGenerationState] = Field(default_factory=list)
     
-    # 전체 진행 상태
     is_processing: bool = False
     all_complete: bool = False
     
-    # 최대 재시도 횟수
     max_retry_count: int = 3
-
-    # 최종적으로 실행 실패 여부
     is_failed: bool = False
     
-    # DDL 처리 관련 상태
     ddl_extraction_complete: bool = False
     ddl_assignment_complete: bool = False
-    all_ddl_fields: List[str] = Field(default_factory=list)  # BC에서 추출된 전체 DDL 필드
+    all_ddl_fields: List[str] = Field(default_factory=list)
+
+    total_seconds: float = 0.0
+    start_time: float = 0.0
+    end_time: float = 0.0

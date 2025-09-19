@@ -171,7 +171,7 @@ def get_total_global_progress_count(draftOptions: Dict[str, Any]):
 
     aggregateClassIDCount = _get_total_class_id_progress_count(draftOptions)
 
-    total_count = boundedContextCount + aggregateCount*3 + aggregateClassIDCount + 1 + 1
+    total_count = boundedContextCount + aggregateCount*2 + aggregateClassIDCount + 1 + 1
     return total_count
 
 def _get_total_class_id_progress_count(draft_options: Dict[str, Any]):

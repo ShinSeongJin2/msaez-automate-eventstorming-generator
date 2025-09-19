@@ -1,18 +1,20 @@
-import os
+import time
 from typing import Callable, Dict, Any, List
 from copy import deepcopy
 from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
 from ..generators import CreatePolicyActionsByFunction
-from ..utils import ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil, EsTraceUtil
+from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil, EsTraceUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
+from ..config import Config
 
 
 def resume_from_create_policy_actions(state: State):
     try :
 
+        state.subgraphs.createPolicyActionsByFunctionModel.start_time = time.time()
         if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
             if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_POLICY_ACTIONS"].values():
                 LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
@@ -209,7 +211,7 @@ def generate_policy_actions(state: State) -> State:
             LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Applied summarized ES value for bounded context: '{bc_name}' from summary generator")
 
         # 모델명 가져오기
-        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        model_name = Config.get_ai_model()
         
         # Generator 생성
         generator = CreatePolicyActionsByFunction(
@@ -225,7 +227,7 @@ def generate_policy_actions(state: State) -> State:
         
         # 토큰 초과 체크
         token_count = generator.get_token_count()
-        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        model_max_input_limit = Config.get_ai_model_max_input_limit()
         
         LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Token usage for bounded context '{bc_name}': {token_count}/{model_max_input_limit}")
         
@@ -258,8 +260,8 @@ def generate_policy_actions(state: State) -> State:
                 keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateInnerStickers"] + 
                                ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["detailedProperties"],
                 max_tokens=left_token_count,
-                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
-                token_calc_model_name=state.inputs.llmModel.model_name
+                token_calc_model_vendor=Config.get_ai_model_vendor(),
+                token_calc_model_name=Config.get_ai_model_name()
             )
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
@@ -382,8 +384,10 @@ def validate_policy_actions_generation(state: State) -> State:
             # 변수 정리
             current_gen.target_bounded_context = {}
             current_gen.description = ""
+            current_gen.original_description = ""
             current_gen.summarized_es_value = {}
             current_gen.created_actions = []
+            current_gen.subject_text = ""
 
             # 완료된 작업을 완료 목록에 추가
             state.subgraphs.createPolicyActionsByFunctionModel.completed_generations.append(current_gen)
@@ -435,6 +439,9 @@ def complete_processing(state: State) -> State:
             subgraph_model.current_generation = None
             subgraph_model.completed_generations = []
             subgraph_model.pending_generations = []
+        
+        state.subgraphs.createPolicyActionsByFunctionModel.end_time = time.time()
+        state.subgraphs.createPolicyActionsByFunctionModel.total_seconds = state.subgraphs.createPolicyActionsByFunctionModel.end_time - state.subgraphs.createPolicyActionsByFunctionModel.start_time
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during policy actions generation process completion", e)

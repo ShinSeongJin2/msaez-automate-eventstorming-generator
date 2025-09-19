@@ -1,4 +1,4 @@
-from .inputs import InputsModel, InformationModel, UserInfoModel, LLMModel
+from .inputs import InputsModel, InformationModel, UserInfoModel
 from .outputs import OutputsModel, EsValueModel, LogModel
 from .action_model import ActionModel
 from .base import BaseModelWithItem
@@ -10,7 +10,6 @@ __all__ = [
     "InputsModel",
     "InformationModel",
     "UserInfoModel",
-    "LLMModel",
     "OutputsModel",
     "EsValueModel",
     "LogModel",

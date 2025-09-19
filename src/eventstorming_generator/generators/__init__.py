@@ -1,4 +1,5 @@
 from .base import BaseGenerator
+from .xml_base import XmlBaseGenerator
 from .sanity_check_generator import SanityCheckGenerator
 from .create_aggregate_actions_by_function import CreateAggregateActionsByFunction
 from .create_aggregate_class_id_by_drafts import CreateAggregateClassIdByDrafts
@@ -16,6 +17,7 @@ from .create_read_model_wire_frame import CreateReadModelWireFrame
 
 __all__ = [
     "BaseGenerator",
+    "XmlBaseGenerator",
     "SanityCheckGenerator",
     "CreateAggregateActionsByFunction",
     "CreateAggregateClassIdByDrafts",

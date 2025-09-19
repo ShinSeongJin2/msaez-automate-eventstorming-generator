@@ -8,7 +8,10 @@ def test_create_ui_components_subgraph():
 
         run_subgraph = create_ui_components_subgraph()
         result = run_subgraph(create_ui_components_subgraph_inputs)
-        TestUtils.save_dict_to_temp_file(result.outputs.esValue, "test_create_ui_components_subgraph")
+        TestUtils.save_dict_to_temp_file({
+            "esValue": result.outputs.esValue,
+            "totalSeconds": result.subgraphs.createUiComponentsModel.total_seconds
+        }, "test_create_ui_components_subgraph")
         TestUtils.save_es_summarize_result_to_temp_file(result.outputs.esValue, "test_create_ui_components_subgraph")
         
     except Exception as e:

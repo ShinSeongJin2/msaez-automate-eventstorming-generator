@@ -11,6 +11,7 @@ from .job_util import JobUtil
 from .log_util import LogUtil
 from .decentralized_job_manager import DecentralizedJobManager
 from .logging_util import LoggingUtil
+from .xml_util import XmlUtil
 
 __all__ = [
     "EsUtils",
@@ -25,5 +26,6 @@ __all__ = [
     "JobUtil",
     "LogUtil",
     "DecentralizedJobManager",
-    "LoggingUtil"
+    "LoggingUtil",
+    "XmlUtil"
 ]

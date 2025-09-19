@@ -24,6 +24,18 @@ spec:
         env:
         - name: AI_MODEL
           value: "openai:gpt-4.1-2025-04-14"
+        - name: AI_MODEL_MAX_INPUT_LIMIT
+          value: "962429"
+        - name: AI_MODEL_MAX_BATCH_SIZE
+          value: "3"
+
+        - name: AI_MODEL_LIGHT
+          value: "openai:gpt-4.1-mini-2025-04-14"
+        - name: AI_MODEL_LIGHT_MAX_INPUT_LIMIT
+          value: "962429"
+        - name: AI_MODEL_LIGHT_MAX_BATCH_SIZE
+          value: "15"
+
         - name: OPENAI_API_KEY
           valueFrom:
             secretKeyRef:

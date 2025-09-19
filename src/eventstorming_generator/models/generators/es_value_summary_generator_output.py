@@ -4,9 +4,8 @@ from ..base import BaseModelWithItem
 
 class ESValueSummaryResult(BaseModelWithItem):
     """Result model for Event Storming value summary generation containing sorted element IDs"""
-    sorted_element_ids: List[str] = Field(
-        ..., 
-        alias="sortedElementIds",
+    sortedElementIds: List[str] = Field(
+        ...,
         description="List of Event Storming element IDs sorted by relevance to the given context"
     )
 

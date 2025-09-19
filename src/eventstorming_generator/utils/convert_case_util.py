@@ -1,4 +1,4 @@
-from convert_case import camel_case, pascal_case
+from convert_case import camel_case, pascal_case, snake_case
 from pluralizer import Pluralizer
 
 pluralizer = Pluralizer()
@@ -23,6 +23,13 @@ class CaseConvertUtil:
                 return text
             return ''.join(word.capitalize() for word in words)
     
+    @staticmethod
+    def snake_case(text: str) -> str:
+        try:
+            return snake_case(text)
+        except Exception as e:
+            return text.replace('-', '_')
+
     @staticmethod
     def plural(text: str) -> str:
         try:

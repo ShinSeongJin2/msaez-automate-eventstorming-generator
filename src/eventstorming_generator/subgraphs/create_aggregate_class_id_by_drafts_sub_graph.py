@@ -1,17 +1,19 @@
+import time
 from typing import Dict, Any, List, Optional, Callable
 from langgraph.graph import StateGraph, START
-import os
 
 from ..models import ClassIdGenerationState, State, ActionModel, ESValueSummaryGeneratorModel
 from ..generators import CreateAggregateClassIdByDrafts
-from ..utils import EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsUtils, CaseConvertUtil, LogUtil, JobUtil
+from ..utils import JsonUtil, EsActionsUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsUtils, CaseConvertUtil, LogUtil, JobUtil
 from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
 from ..constants import ResumeNodes
+from ..config import Config
 
 
 def resume_from_create_class_id(state: State):
     try :
 
+        state.subgraphs.createAggregateClassIdByDraftsModel.start_time = time.time()
         if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"] and state.outputs.lastCompletedSubGraphNode:
             if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_CLASS_ID"].values():
                 LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
@@ -234,7 +236,7 @@ def generate_class_id(state: State) -> State:
             current_gen.is_token_over_limit = False
         
         # 모델명 가져오기
-        model_name = os.getenv("AI_MODEL") or f"{state.inputs.llmModel.model_vendor}:{state.inputs.llmModel.model_name}"
+        model_name = Config.get_ai_model()
         
         # Generator 생성
         generator = CreateAggregateClassIdByDrafts(
@@ -251,7 +253,7 @@ def generate_class_id(state: State) -> State:
         
         # 토큰 초과 체크
         token_count = generator.get_token_count()
-        model_max_input_limit = state.inputs.llmModel.model_max_input_limit
+        model_max_input_limit = Config.get_ai_model_max_input_limit()
         
         LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Token usage for references {', '.join(current_gen.target_references)}: {token_count}/{model_max_input_limit}")
         
@@ -284,8 +286,8 @@ def generate_class_id(state: State) -> State:
                 context=_build_request_context(current_gen),
                 keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
                 max_tokens=left_token_count,
-                token_calc_model_vendor=state.inputs.llmModel.model_vendor,
-                token_calc_model_name=state.inputs.llmModel.model_name
+                token_calc_model_vendor=Config.get_ai_model_vendor(),
+                token_calc_model_name=Config.get_ai_model_name()
             )
             
             # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
@@ -464,6 +466,9 @@ def complete_processing(state: State) -> State:
             subgraph_model.completed_generations = []
             subgraph_model.pending_generations = []
     
+        state.subgraphs.createAggregateClassIdByDraftsModel.end_time = time.time()
+        state.subgraphs.createAggregateClassIdByDraftsModel.total_seconds = state.subgraphs.createAggregateClassIdByDraftsModel.end_time - state.subgraphs.createAggregateClassIdByDraftsModel.start_time
+
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[CLASS_ID_SUBGRAPH] Failed during process completion", e)
         state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True

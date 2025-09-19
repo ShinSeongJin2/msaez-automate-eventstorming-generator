@@ -1,11 +1,10 @@
+import os
 from typing import Dict, List, Any, Optional, Union, Type
 from abc import ABC, abstractmethod
 from langchain.chat_models import init_chat_model
 from langchain.schema import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langchain_community.cache import SQLiteCache
 from langchain_core.globals import set_llm_cache
-import os
-import uuid
 
 from ..models import BaseModelWithItem
 from ..utils import JsonUtil
@@ -22,7 +21,7 @@ if Config.is_local_run():
     init_cache()
 
 
-class BaseGenerator(ABC):
+class XmlBaseGenerator(ABC):
     """
     프롬프트 구성 및 LLM 호출을 위한 기본 생성기 클래스
     
@@ -31,9 +30,9 @@ class BaseGenerator(ABC):
     일관된 프롬프트 형식을 제공합니다.
     """
     
-    def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None, structured_output_class: Optional[Type] = None):
+    def __init__(self, model_name: str, structured_output_class: Type, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         """
-        BaseGenerator 초기화
+        XmlBaseGenerator 초기화
         
         Args:
             model_name: 모델 이름
@@ -41,6 +40,9 @@ class BaseGenerator(ABC):
             client: 클라이언트
             structured_output_class: 구조화된 출력을 위한 Pydantic 모델 클래스
         """
+        if not model_name or not structured_output_class:
+            raise ValueError("model_name and structured_output_class are required")
+        
         if model_kwargs is None: model_kwargs = {}
         if model_kwargs.get("temperature") is None: 
             if "gpt-4.1" in model_name:
@@ -57,8 +59,8 @@ class BaseGenerator(ABC):
                     raise ValueError(f"{input_type} is required")
 
         self.structured_output_class = structured_output_class
-        self.set_model(model_name, model_kwargs)
         self.client = client
+        self.set_model(model_name, model_kwargs)
 
     def assemble_prompt(self) -> Dict[str, Union[str, List[str]]]:
         """
@@ -75,31 +77,31 @@ class BaseGenerator(ABC):
     
     def _build_system_prompt(self) -> str:
         """시스템 프롬프트 빌드"""
-        return self._build_agent_role_prompt()
+        persona_info = self._build_persona_info()
+        if persona_info["persona"] and persona_info["goal"] and persona_info["backstory"]:
+            return f"""<persona_and_role>
+    <persona>{persona_info["persona"]}</persona>
+    <goal>{persona_info["goal"]}</goal>
+    <backstory>{persona_info["backstory"]}</backstory>
+</persona_and_role>"""
+        else:
+            return ""
     
     def _build_user_prompt(self) -> List[str]:
         """유저 프롬프트 빌드"""
         prompts = []
         
-        guidelines = [
-            self._build_task_guidelines_prompt(),
-            self._build_inference_guidelines_prompt(),
-            self._build_request_format_prompt(),
-            self._build_response_format_prompt()
-        ]
-        
-        # 빈 문자열 필터링
-        guidelines = [p for p in guidelines if p]
-        
+        instruction_prompt = self._build_task_instruction_prompt()
         example_inputs = self._build_json_example_input_format()
         user_inputs = self._build_json_user_query_input_format()
         
+        approve_request = "<request>This is the entire guideline. When you're ready, please output 'Approved.' Then I will begin user input.</request>"
         if example_inputs and user_inputs:
-            prompts.append("\n\n".join(guidelines) + "\n\nThis is the entire guideline.\nWhen you're ready, please output 'Approved.' Then I will begin user input.")
+            prompts.append(instruction_prompt + "\n\n" + approve_request)
             prompts.append(self._inputs_to_string(example_inputs))
             prompts.append(self._inputs_to_string(user_inputs))
         elif user_inputs:
-            prompts.append("\n\n".join(guidelines) + "\n\nThis is the entire guideline.\nWhen you're ready, please output 'Approved.' Then I will begin user input.")
+            prompts.append(instruction_prompt + "\n\n" + approve_request)
             prompts.append(self._inputs_to_string(user_inputs))
         
         return prompts
@@ -110,7 +112,7 @@ class BaseGenerator(ABC):
         if not example_outputs:
             return []
         
-        return ["Approved.", f"```json\n{JsonUtil.convert_to_json(example_outputs, 4)}\n```"]
+        return ["Approved.", JsonUtil.convert_to_json(example_outputs, 4)]
     
     def _inputs_to_string(self, inputs: Dict[str, Any]) -> str:
         """입력 파라미터를 문자열로 변환"""
@@ -118,30 +120,9 @@ class BaseGenerator(ABC):
         
         for key, value in inputs.items():
             formatted_value = value if isinstance(value, str) else JsonUtil.convert_to_json(value, 0)
-            result.append(f"- {key.strip()}\n{formatted_value.strip()}")
+            result.append(f"<{key.strip()}>{formatted_value.strip()}</{key.strip()}>")
             
-        return "\n\n".join(result)
-    
-    def _build_response_format_prompt(self) -> str:
-        """응답 형식 프롬프트 빌드"""
-        if self.structured_output_class:
-            return ""
-
-
-        json_format = self._build_json_response_format()
-        after_json_format = self._build_after_json_response_format()
-        
-        if not json_format:
-            return ""
-            
-        return f"""You should return a list containing pretty-printed JSON objects for performing specific actions.
-The returned format should be as follows.
-```json
-{json_format.strip()}
-```
-
-{after_json_format.strip()}
-"""
+        return "<inputs>\n" + "\n".join(result) + "\n</inputs>"
     
     def generate(self, bypass_cache: bool = False, retry_count: int = 0) -> Any:
         """
@@ -159,25 +140,17 @@ The returned format should be as follows.
             bypass_cache = False
 
         messages = self._get_messages(bypass_cache, retry_count)
-        
-        # 구조화된 출력이 설정된 경우 with_structured_output 사용
-        if self.structured_output_class:
-            structured_model = self.model.with_structured_output(
-                self.structured_output_class,
-                method="function_calling"
-            )
-            result = structured_model.invoke(messages)
-            result = self._post_process_to_structured_output(result)
-            if isinstance(result, BaseModelWithItem):
-                return result.model_dump()
-            else:
-                return result
+        structured_model = self.model.with_structured_output(
+            self.structured_output_class,
+            method="function_calling"
+        )
+        result = structured_model.invoke(messages)
+        result = self._post_process_to_structured_output(result)
+
+        if isinstance(result, BaseModelWithItem):
+            return result.model_dump()
         else:
-            ai_message = self.model.invoke(messages)
-            if ai_message.response_metadata["finish_reason"] == "stop":
-                return ai_message.content
-            else:
-                raise ValueError("예측하지 못한 Base Generator 종료 이유: " + ai_message.response_metadata["finish_reason"])
+            return result
 
     def _post_process_to_structured_output(self, structured_output: BaseModelWithItem) -> BaseModelWithItem:
         return structured_output
@@ -190,7 +163,7 @@ The returned format should be as follows.
         if promptsToBuild["system"]:
             system_content = promptsToBuild["system"]
             if bypass_cache:
-                system_content += f"\n<!-- Cache bypass: {retry_count} -->"
+                system_content += f"<cache_bypass retry_count=\"{retry_count}\"/>"
             messages.append(SystemMessage(content=system_content))
 
         for i in range(len(promptsToBuild["user"])):
@@ -211,7 +184,7 @@ The returned format should be as follows.
         promptsToBuild["system"] = createPromptWithRoles["system"]
         promptsToBuild["user"] = createPromptWithRoles["user"]
         if(promptsToBuild["user"] and len(promptsToBuild["user"]) > 0 and not self.client.get("disableLanguageGuide")):
-            promptsToBuild["user"][len(promptsToBuild["user"]) - 1] += "\n[Please generate the response in " + self.client.get("preferredLanguage") + " while ensuring that all code elements (e.g., variable names, function names) remain in English.]"
+            promptsToBuild["user"][len(promptsToBuild["user"]) - 1] += "\n<language_guide>Please generate the response in " + self.client.get("preferredLanguage") + " while ensuring that all code elements (e.g., variable names, function names) remain in English.</language_guide>"
         
         promptsToBuild["assistant"] = createPromptWithRoles["assistant"]
 
@@ -246,62 +219,30 @@ The returned format should be as follows.
         """
         messages = self._get_messages()
         return "\n---------\n".join([message.content for message in messages])
-
+    
     # 아래 메서드들은 상속 클래스에서 구현해야 함
     
     @abstractmethod
-    def _build_agent_role_prompt(self) -> str:
+    def _build_persona_info(self) -> Dict[str, str]:
         """
         AI 에이전트의 역할 및 전문 분야 정의
         
         Returns:
             str: 에이전트 역할 프롬프트
         """
-        return ""
+        return {
+            "persona": "",
+            "goal": "",
+            "backstory": ""
+        }
     
     @abstractmethod
-    def _build_task_guidelines_prompt(self) -> str:
+    def _build_task_instruction_prompt(self) -> str:
         """
         작업 수행을 위한 가이드라인 정의
         
         Returns:
             str: 작업 가이드라인 프롬프트
-        """
-        return ""
-    
-    def _build_inference_guidelines_prompt(self) -> str:
-        """
-        추론 모델을 위한 가이드라인 정의 (선택적 구현)
-        
-        Returns:
-            str: 추론 가이드라인 프롬프트
-        """
-        return ""
-    
-    def _build_request_format_prompt(self) -> str:
-        """
-        요청 형식 정의 (선택적 구현)
-        
-        Returns:
-            str: 요청 형식 프롬프트
-        """
-        return ""
-    
-    def _build_json_response_format(self) -> str:
-        """
-        JSON 응답 형식 정의 (선택적 구현)
-        
-        Returns:
-            str: JSON 응답 형식
-        """
-        return ""
-    
-    def _build_after_json_response_format(self) -> str:
-        """
-        JSON 응답 이후 추가 안내 정의 (선택적 구현)
-        
-        Returns:
-            str: JSON 응답 이후 안내 문구
         """
         return ""
     

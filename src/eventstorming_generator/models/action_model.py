@@ -1,4 +1,4 @@
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from typing import Dict, Any, Optional
 
 from .base import BaseModelWithItem
@@ -15,6 +15,6 @@ class ActionModel(BaseModelWithItem):
     """
     objectType: str
     type: Optional[str] = None
-    ids: Dict[str, str] = {}
-    args: Dict[str, Any] = {}
+    ids: Dict[str, str] = Field(default_factory=dict)
+    args: Dict[str, Any] = Field(default_factory=dict)
     model_config = ConfigDict(extra="allow") 

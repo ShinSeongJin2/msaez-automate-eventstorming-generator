@@ -11,15 +11,15 @@ class LogModel(BaseModelWithItem):
     model_config = ConfigDict(extra="allow")
 
 class EsValueModel(BaseModelWithItem):
-    elements: Dict[str, Any] = {}
-    relations: Dict[str, Any] = {}
+    elements: Dict[str, Any] = Field(default_factory=dict)
+    relations: Dict[str, Any] = Field(default_factory=dict)
     model_config = ConfigDict(extra="allow")
 
 class OutputsModel(BaseModelWithItem):
     esValue: EsValueModel = EsValueModel()
     isCompleted: bool = False
     isFailed: bool = False
-    logs: List[LogModel] = []
+    logs: List[LogModel] = Field(default_factory=list)
     totalProgressCount: int = 0
     currentProgressCount: int = 0
     lastCompletedRootGraphNode: Optional[str] = None
