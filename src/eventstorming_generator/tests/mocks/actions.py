@@ -204,6 +204,1356 @@ actions_for_fake_test = [
 ]
 
 total_action_test = {
-    "esValue": EsValueModel(elements={'8a9d2422-87e9-4aa9-9087-30e9ef26d202': {'_type': 'org.uengine.modeling.model.BoundedContext', 'aggregates': [{'id': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70'}], 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'description': '# Bounded Context Overview: BookManagement (도서 관리)\n\n## Role\n도서의 등록, 상태 관리, 폐기, 상태 변경 및 도서별 이력 관리를 담당한다. 도서의 상태는 대출/반납/예약/폐기 등 이벤트에 따라 자동으로 변경되며, 도서별 대출 및 상태 변경 이력을 추적할 수 있다.\n\n## Key Events\n- BookRegistered\n- BookDiscarded\n- BookStatusChanged\n\n# Requirements\n\n## userStory\n\n도서 관리\' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해. 도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해. 등록된 도서는 처음에 \'대출가능\' 상태가 되고, 이후 대출/반납 상황에 따라 \'대출중\', \'예약중\' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 \'폐기\' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야\n\n도서별로 대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할\n\n## DDL\n\n```sql\nCREATE TABLE books (\n    book_id INT AUTO_INCREMENT PRIMARY KEY,\n    title VARCHAR(500) NOT NULL,\n    isbn VARCHAR(13) UNIQUE NOT NULL,\n    author VARCHAR(200) NOT NULL,\n    publisher VARCHAR(200) NOT NULL,\n    category ENUM(\'소설\', \'비소설\', \'학술\', \'잡지\') NOT NULL,\n    status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') DEFAULT \'대출가능\',\n    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    disposal_date DATETIME NULL,\n    disposal_reason TEXT NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    INDEX idx_title (title),\n    INDEX idx_isbn (isbn),\n    INDEX idx_status (status),\n    INDEX idx_category (category)\n);\n```\n```sql\nCREATE TABLE book_status_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    book_id INT NOT NULL,\n    previous_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\'),\n    new_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') NOT NULL,\n    change_reason VARCHAR(200),\n    changed_by VARCHAR(100),\n    change_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_change_date (change_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "BookRegistered",\n  "displayName": "도서 등록됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "관리자가 새로운 도서를 도서관 시스템에 등록함. 등록 시 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받고, ISBN 중복 및 유효성 검증이 완료됨.",\n  "inputs": [\n    "도서명",\n    "ISBN(13자리)",\n    "저자",\n    "출판사",\n    "카테고리(소설/비소설/학술/잡지)"\n  ],\n  "outputs": [\n    "신규 도서 생성",\n    "도서 상태 \'대출가능\'으로 설정"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookStatusChanged",\n  "displayName": "도서 상태 변경됨",\n  "actor": "System",\n  "level": 2,\n  "description": "도서의 대출/반납/예약/폐기 등 상황에 따라 도서 상태가 자동으로 변경됨.",\n  "inputs": [\n    "도서 상태 변경 트리거(대출, 반납, 예약, 폐기 등)"\n  ],\n  "outputs": [\n    "도서 상태(대출가능, 대출중, 예약중, 폐기)"\n  ],\n  "nextEvents": [\n    "BookDiscarded",\n    "LoanRequested",\n    "BookReturned",\n    "BookReserved"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookDiscarded",\n  "displayName": "도서 폐기됨",\n  "actor": "Librarian",\n  "level": 3,\n  "description": "도서가 훼손되거나 분실된 경우 관리자가 해당 도서를 폐기 처리함. 폐기된 도서는 더 이상 대출이 불가능함.",\n  "inputs": [\n    "도서 훼손/분실 사유",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "도서 상태 \'폐기\'로 변경"\n  ],\n  "nextEvents": []\n}\n```\n\n```json\n{\n  "name": "BookHistoryChecked",\n  "displayName": "도서 이력 조회됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "관리자가 도서별 대출 이력과 상태 변경 이력을 조회함.",\n  "inputs": [\n    "도서 식별자"\n  ],\n  "outputs": [\n    "대출 이력",\n    "상태 변경 이력"\n  ],\n  "nextEvents": []\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanProcess\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출/반납 프로세스 (LoanProcess)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### LoanProcess-BookManagement\n- **Type**: Pub/Sub\n- **Direction**: receives from 대출/반납 프로세스 (LoanProcess)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### BookManagement-LoanStatusInquiry\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출 현황 및 이력 조회 (LoanStatusInquiry)\n- **Reason**: 도서의 상태 변경 및 이력 이벤트가 발생하면 현황 및 이력 조회 컨텍스트가 이를 구독하여 도서별 이력 정보를 제공한다.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생할 때마다 현황 및 이력 조회 컨텍스트가 도서별 이력 정보를 갱신한다.', 'id': '8a9d2422-87e9-4aa9-9087-30e9ef26d202', 'elementView': {'_type': 'org.uengine.modeling.model.BoundedContext', 'height': 590, 'id': '8a9d2422-87e9-4aa9-9087-30e9ef26d202', 'style': '{}', 'width': 560, 'x': 600, 'y': 450}, 'gitURL': None, 'hexagonalView': {'_type': 'org.uengine.modeling.model.BoundedContextHexagonal', 'height': 350, 'id': '8a9d2422-87e9-4aa9-9087-30e9ef26d202', 'style': '{}', 'width': 350, 'x': 235, 'y': 365}, 'members': [], 'name': 'BookManagement', 'traceName': 'BookManagement', 'displayName': '도서 관리', 'oldName': '', 'policies': [], 'portGenerated': 8080, 'preferredPlatform': 'template-spring-boot', 'preferredPlatformConf': {}, 'rotateStatus': False, 'tempId': '', 'templatePerElements': {}, 'views': [], 'definitionId': '163972132_es_67fb9986e803876cbd31740034550bd2', 'requirements': {'ddl': "CREATE TABLE books (\n    book_id INT AUTO_INCREMENT PRIMARY KEY,\n    title VARCHAR(500) NOT NULL,\n    isbn VARCHAR(13) UNIQUE NOT NULL,\n    author VARCHAR(200) NOT NULL,\n    publisher VARCHAR(200) NOT NULL,\n    category ENUM('소설', '비소설', '학술', '잡지') NOT NULL,\n    status ENUM('대출가능', '대출중', '예약중', '폐기') DEFAULT '대출가능',\n    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    disposal_date DATETIME NULL,\n    disposal_reason TEXT NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    INDEX idx_title (title),\n    INDEX idx_isbn (isbn),\n    INDEX idx_status (status),\n    INDEX idx_category (category)\n);\nCREATE TABLE book_status_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    book_id INT NOT NULL,\n    previous_status ENUM('대출가능', '대출중', '예약중', '폐기'),\n    new_status ENUM('대출가능', '대출중', '예약중', '폐기') NOT NULL,\n    change_reason VARCHAR(200),\n    changed_by VARCHAR(100),\n    change_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_change_date (change_date)\n);\nCREATE TABLE books (\n    book_id INT AUTO_INCREMENT PRIMARY KEY,\n    title VARCHAR(500) NOT NULL,\n    isbn VARCHAR(13) UNIQUE NOT NULL,\n    author VARCHAR(200) NOT NULL,\n    publisher VARCHAR(200) NOT NULL,\n    category ENUM('소설', '비소설', '학술', '잡지') NOT NULL,\n    status ENUM('대출가능', '대출중', '예약중', '폐기') DEFAULT '대출가능',\n    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    disposal_date DATETIME NULL,\n    disposal_reason TEXT NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    INDEX idx_title (title),\n    INDEX idx_isbn (isbn),\n    INDEX idx_status (status),\n    INDEX idx_category (category)\n);\nCREATE TABLE book_status_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    book_id INT NOT NULL,\n    previous_status ENUM('대출가능', '대출중', '예약중', '폐기'),\n    new_status ENUM('대출가능', '대출중', '예약중', '폐기') NOT NULL,\n    change_reason VARCHAR(200),\n    changed_by VARCHAR(100),\n    change_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_change_date (change_date)\n);", 'ddlFields': [{'fieldName': 'book_id', 'refs': [[[26, 5], [26, 38]], [[87, 5], [87, 24]], [[140, 5], [140, 38]], [[201, 5], [201, 24]]]}, {'fieldName': 'title', 'refs': [[[27, 5], [27, 31]], [[141, 5], [141, 31]]]}, {'fieldName': 'isbn', 'refs': [[[28, 5], [28, 36]], [[142, 5], [142, 36]]]}, {'fieldName': 'author', 'refs': [[[29, 5], [29, 32]], [[143, 5], [143, 32]]]}, {'fieldName': 'publisher', 'refs': [[[30, 5], [30, 35]], [[144, 5], [144, 35]]]}, {'fieldName': 'registration_date', 'refs': [[[33, 5], [33, 56]], [[147, 5], [147, 56]]]}, {'fieldName': 'disposal_date', 'refs': [[[34, 5], [34, 31]], [[148, 5], [148, 31]]]}, {'fieldName': 'disposal_reason', 'refs': [[[35, 5], [35, 29]], [[149, 5], [149, 29]]]}, {'fieldName': 'created_at', 'refs': [[[36, 5], [36, 49]], [[150, 5], [150, 49]]]}, {'fieldName': 'updated_at', 'refs': [[[37, 5], [37, 49]], [[151, 5], [151, 49]]]}, {'fieldName': 'history_id', 'refs': [[[86, 5], [86, 41]], [[200, 5], [200, 41]]]}, {'fieldName': 'change_reason', 'refs': [[[90, 5], [90, 30]], [[204, 5], [204, 30]]]}, {'fieldName': 'changed_by', 'refs': [[[91, 5], [91, 27]], [[205, 5], [205, 27]]]}, {'fieldName': 'change_date', 'refs': [[[92, 5], [92, 50]], [[206, 5], [206, 50]]]}], 'description': '# Bounded Context Overview: BookManagement (도서 관리)\n\n## Role\n도서의 등록, 상태 관리, 폐기, 상태 변경 및 도서별 이력 관리를 담당한다. 도서의 상태는 대출/반납/예약/폐기 등 이벤트에 따라 자동으로 변경되며, 도서별 대출 및 상태 변경 이력을 추적할 수 있다.\n\n## Key Events\n- BookRegistered\n- BookDiscarded\n- BookStatusChanged\n\n# Requirements\n\n## userStory\n\n도서 관리\' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해. 도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해. 등록된 도서는 처음에 \'대출가능\' 상태가 되고, 이후 대출/반납 상황에 따라 \'대출중\', \'예약중\' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 \'폐기\' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야\n\n도서별로 대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할\n\n## DDL\n\n```sql\nCREATE TABLE books (\n    book_id INT AUTO_INCREMENT PRIMARY KEY,\n    title VARCHAR(500) NOT NULL,\n    isbn VARCHAR(13) UNIQUE NOT NULL,\n    author VARCHAR(200) NOT NULL,\n    publisher VARCHAR(200) NOT NULL,\n    category ENUM(\'소설\', \'비소설\', \'학술\', \'잡지\') NOT NULL,\n    status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') DEFAULT \'대출가능\',\n    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    disposal_date DATETIME NULL,\n    disposal_reason TEXT NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    INDEX idx_title (title),\n    INDEX idx_isbn (isbn),\n    INDEX idx_status (status),\n    INDEX idx_category (category)\n);\n```\n```sql\nCREATE TABLE book_status_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    book_id INT NOT NULL,\n    previous_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\'),\n    new_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') NOT NULL,\n    change_reason VARCHAR(200),\n    changed_by VARCHAR(100),\n    change_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_change_date (change_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "BookRegistered",\n  "displayName": "도서 등록됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "관리자가 새로운 도서를 도서관 시스템에 등록함. 등록 시 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받고, ISBN 중복 및 유효성 검증이 완료됨.",\n  "inputs": [\n    "도서명",\n    "ISBN(13자리)",\n    "저자",\n    "출판사",\n    "카테고리(소설/비소설/학술/잡지)"\n  ],\n  "outputs": [\n    "신규 도서 생성",\n    "도서 상태 \'대출가능\'으로 설정"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookStatusChanged",\n  "displayName": "도서 상태 변경됨",\n  "actor": "System",\n  "level": 2,\n  "description": "도서의 대출/반납/예약/폐기 등 상황에 따라 도서 상태가 자동으로 변경됨.",\n  "inputs": [\n    "도서 상태 변경 트리거(대출, 반납, 예약, 폐기 등)"\n  ],\n  "outputs": [\n    "도서 상태(대출가능, 대출중, 예약중, 폐기)"\n  ],\n  "nextEvents": [\n    "BookDiscarded",\n    "LoanRequested",\n    "BookReturned",\n    "BookReserved"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookDiscarded",\n  "displayName": "도서 폐기됨",\n  "actor": "Librarian",\n  "level": 3,\n  "description": "도서가 훼손되거나 분실된 경우 관리자가 해당 도서를 폐기 처리함. 폐기된 도서는 더 이상 대출이 불가능함.",\n  "inputs": [\n    "도서 훼손/분실 사유",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "도서 상태 \'폐기\'로 변경"\n  ],\n  "nextEvents": []\n}\n```\n\n```json\n{\n  "name": "BookHistoryChecked",\n  "displayName": "도서 이력 조회됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "관리자가 도서별 대출 이력과 상태 변경 이력을 조회함.",\n  "inputs": [\n    "도서 식별자"\n  ],\n  "outputs": [\n    "대출 이력",\n    "상태 변경 이력"\n  ],\n  "nextEvents": []\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanProcess\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출/반납 프로세스 (LoanProcess)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### LoanProcess-BookManagement\n- **Type**: Pub/Sub\n- **Direction**: receives from 대출/반납 프로세스 (LoanProcess)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### BookManagement-LoanStatusInquiry\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출 현황 및 이력 조회 (LoanStatusInquiry)\n- **Reason**: 도서의 상태 변경 및 이력 이벤트가 발생하면 현황 및 이력 조회 컨텍스트가 이를 구독하여 도서별 이력 정보를 제공한다.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생할 때마다 현황 및 이력 조회 컨텍스트가 도서별 이력 정보를 갱신한다.', 'event': '{\n  "name": "BookRegistered",\n  "displayName": "도서 등록됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "관리자가 새로운 도서를 도서관 시스템에 등록함. 등록 시 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받고, ISBN 중복 및 유효성 검증이 완료됨.",\n  "inputs": [\n    "도서명",\n    "ISBN(13자리)",\n    "저자",\n    "출판사",\n    "카테고리(소설/비소설/학술/잡지)"\n  ],\n  "outputs": [\n    "신규 도서 생성",\n    "도서 상태 \'대출가능\'으로 설정"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ],\n  "refs": [\n    [\n      [\n        3,\n        57\n      ],\n      [\n        3,\n        100\n      ]\n    ],\n    [\n      [\n        3,\n        105\n      ],\n      [\n        3,\n        128\n      ]\n    ],\n    [\n      [\n        3,\n        87\n      ],\n      [\n        3,\n        163\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookStatusChanged",\n  "displayName": "도서 상태 변경됨",\n  "actor": "System",\n  "level": 2,\n  "description": "도서의 대출/반납/예약/폐기 등 상황에 따라 도서 상태가 자동으로 변경됨.",\n  "inputs": [\n    "도서 상태 변경 트리거(대출, 반납, 예약, 폐기 등)"\n  ],\n  "outputs": [\n    "도서 상태(대출가능, 대출중, 예약중, 폐기)"\n  ],\n  "nextEvents": [\n    "BookDiscarded",\n    "LoanRequested",\n    "BookReturned",\n    "BookReserved"\n  ],\n  "refs": [\n    [\n      [\n        3,\n        172\n      ],\n      [\n        3,\n        238\n      ]\n    ],\n    [\n      [\n        3,\n        264\n      ],\n      [\n        3,\n        302\n      ]\n    ],\n    [\n      [\n        7,\n        133\n      ],\n      [\n        7,\n        167\n      ]\n    ],\n    [\n      [\n        7,\n        167\n      ],\n      [\n        7,\n        175\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookDiscarded",\n  "displayName": "도서 폐기됨",\n  "actor": "Librarian",\n  "level": 3,\n  "description": "도서가 훼손되거나 분실된 경우 관리자가 해당 도서를 폐기 처리함. 폐기된 도서는 더 이상 대출이 불가능함.",\n  "inputs": [\n    "도서 훼손/분실 사유",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "도서 상태 \'폐기\'로 변경"\n  ],\n  "nextEvents": [],\n  "refs": [\n    [\n      [\n        3,\n        264\n      ],\n      [\n        3,\n        302\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookHistoryChecked",\n  "displayName": "도서 이력 조회됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "관리자가 도서별 대출 이력과 상태 변경 이력을 조회함.",\n  "inputs": [\n    "도서 식별자"\n  ],\n  "outputs": [\n    "대출 이력",\n    "상태 변경 이력"\n  ],\n  "nextEvents": [],\n  "refs": [\n    [\n      [\n        9,\n        8\n      ],\n      [\n        9,\n        67\n      ]\n    ]\n  ]\n}', 'eventNames': 'BookRegistered, BookDiscarded, BookStatusChanged 이벤트가 발생할 수 있어.', 'siteMap': [{'boundedContext': 'BookManagement', 'description': '도서 등록, 상태 관리, 폐기 및 도서별 이력 관리', 'id': 'book-management', 'title': '도서 관리', 'uiRequirements': "'도서 관리' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해. 도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해. 등록된 도서는 처음에 '대출가능' 상태가 되고, 이후 대출/반납 상황에 따라 '대출중', '예약중' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 '폐기' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야 해."}, {'boundedContext': 'BookManagement', 'description': '새로운 도서 등록', 'id': 'book-registration', 'title': '도서 등록', 'uiRequirements': '도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해.'}, {'boundedContext': 'BookManagement', 'description': '보유 도서의 상태 변경 및 폐기 처리', 'id': 'book-status-management', 'title': '도서 상태 관리', 'uiRequirements': "등록된 도서는 처음에 '대출가능' 상태가 되고, 이후 대출/반납 상황에 따라 '대출중', '예약중' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 '폐기' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야 해."}, {'boundedContext': 'BookManagement', 'description': '도서별 대출 및 상태 변경 이력 조회', 'id': 'book-history', 'title': '도서 이력 조회', 'uiRequirements': '각 도서별로 대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할 수 있어야 해.'}], 'userStory': "도서 관리' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해. 도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해. 등록된 도서는 처음에 '대출가능' 상태가 되고, 이후 대출/반납 상황에 따라 '대출중', '예약중' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 '폐기' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야\n도서별로 대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할"}}, 'ed555041-74d2-46e4-9124-ac2bc94931bd': {'_type': 'org.uengine.modeling.model.BoundedContext', 'aggregates': [{'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288'}, {'id': '8f0391f5-4e51-4159-a8d9-1ef319822db5'}], 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'description': '# Bounded Context Overview: LoanProcess (대출/반납 프로세스)\n\n## Role\n회원의 도서 대출 신청, 승인, 예약, 연장, 반납 등 대출/반납 전반의 프로세스를 관리한다. 대출 신청 시 회원 인증, 도서 검색, 대출 기간 선택, 예약 처리, 반납 및 연장 기능을 제공한다.\n\n## Key Events\n- LoanRequested\n- LoanApproved\n- BookReserved\n- LoanExtended\n- BookReturned\n\n# Requirements\n\n## userStory\n\n도서관의 도서 관리와 대출/반납을 통합적으로 관리하는\n\n\'대출/반납\' 화면에서는 회원이 도서를 대출하고 반납하는 것을 관리할 수 있어야 해. 대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할 도서를 선택해야 해. 도서는 도서명이나 ISBN으로 검색할 수 있어야 해. 대출 기간은 7일/14일/30일 중에서 선택할 수 있어. 만약 대출하려는 도서가 이미 대출 중이라면, 예약 신청이 가능해야 해. 대출이 완료되면 해당 도서의 상태는 자동으로 \'대출중\'으로 변경되어야\n\n대출 현황 화면에서는 현재 대출 중인 도서들의 목록을 볼 수 있어야 해. 각 대출 건에 대해 대출일, 반납예정일, 현재 상태(대출중/연체/반납완료)를 확인할 수 있어야 하고, 대출 중인 도서는 연장이나 반납 처리가 가능해야 해. 도서가 반납되면 자동으로 해당 도서의 상태가 \'대출가능\'으로 변경되어야\n\n대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할\n\n## DDL\n\n```sql\n-- 대출 테이블\nCREATE TABLE loans (\n    loan_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    loan_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    due_date DATETIME NOT NULL,\n    return_date DATETIME NULL,\n    loan_period_days INT NOT NULL CHECK (loan_period_days IN (7, 14, 30)),\n    status ENUM(\'대출중\', \'연체\', \'반납완료\', \'연장\') DEFAULT \'대출중\',\n    extension_count INT DEFAULT 0,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_due_date (due_date)\n);\n```\n```sql\n-- 예약 테이블\nCREATE TABLE reservations (\n    reservation_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    reservation_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status ENUM(\'예약중\', \'예약완료\', \'예약취소\', \'예약만료\') DEFAULT \'예약중\',\n    notification_sent BOOLEAN DEFAULT FALSE,\n    expiry_date DATETIME NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_reservation_date (reservation_date)\n);\n```\n```sql\n-- 대출 이력 테이블 (모든 대출 활동의 상세 로그)\nCREATE TABLE loan_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    loan_id INT NOT NULL,\n    action_type ENUM(\'대출\', \'반납\', \'연장\', \'연체알림\', \'분실신고\') NOT NULL,\n    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    previous_due_date DATETIME NULL,\n    new_due_date DATETIME NULL,\n    notes TEXT,\n    processed_by VARCHAR(100),\n    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),\n    INDEX idx_loan_id (loan_id),\n    INDEX idx_action_type (action_type),\n    INDEX idx_action_date (action_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "LoanRequested",\n  "displayName": "대출 신청됨",\n  "actor": "Member",\n  "level": 1,\n  "description": "회원이 도서 대출을 신청함. 회원번호와 이름으로 회원 확인 후, 대출할 도서를 선택함.",\n  "inputs": [\n    "회원번호",\n    "이름",\n    "도서명/ISBN",\n    "대출 기간(7/14/30일)"\n  ],\n  "outputs": [\n    "대출 신청 생성",\n    "회원 인증 완료"\n  ],\n  "nextEvents": [\n    "LoanApproved",\n    "BookReserved"\n  ]\n}\n```\n\n```json\n{\n  "name": "LoanApproved",\n  "displayName": "대출 승인됨",\n  "actor": "Librarian",\n  "level": 2,\n  "description": "도서가 대출 가능 상태일 때 대출이 승인되고, 도서 상태가 \'대출중\'으로 변경됨.",\n  "inputs": [\n    "대출 신청",\n    "도서 상태 \'대출가능\'"\n  ],\n  "outputs": [\n    "대출 기록 생성",\n    "도서 상태 \'대출중\'으로 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookReserved",\n  "displayName": "도서 예약됨",\n  "actor": "Member",\n  "level": 2,\n  "description": "대출하려는 도서가 이미 대출 중인 경우, 회원이 해당 도서를 예약함.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "도서 상태 \'대출중\'"\n  ],\n  "outputs": [\n    "예약 기록 생성",\n    "도서 상태 \'예약중\'으로 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "LoanExtended",\n  "displayName": "대출 연장됨",\n  "actor": "Member",\n  "level": 3,\n  "description": "회원이 대출 중인 도서의 대출 기간을 연장함.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "연장 요청"\n  ],\n  "outputs": [\n    "대출 기간 연장",\n    "대출 기록 갱신"\n  ],\n  "nextEvents": []\n}\n```\n\n```json\n{\n  "name": "BookReturned",\n  "displayName": "도서 반납됨",\n  "actor": "Member",\n  "level": 2,\n  "description": "회원이 대출한 도서를 반납함. 반납 시 도서 상태가 자동으로 \'대출가능\' 또는 예약자가 있으면 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "반납 요청"\n  ],\n  "outputs": [\n    "반납 기록 생성",\n    "도서 상태 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanProcess\n- **Type**: Pub/Sub\n- **Direction**: receives from 도서 관리 (BookManagement)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### LoanProcess-BookManagement\n- **Type**: Pub/Sub\n- **Direction**: sends to 도서 관리 (BookManagement)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### LoanProcess-LoanStatusInquiry\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출 현황 및 이력 조회 (LoanStatusInquiry)\n- **Reason**: 대출/반납/연장 등 이벤트 발생 시 현황 및 이력 조회 컨텍스트가 이를 구독하여 최신 현황과 이력을 제공할 수 있도록 한다.\n- **Interaction Pattern**: 대출/반납/연장 이벤트가 발생할 때마다 현황 및 이력 조회 컨텍스트가 관련 정보를 갱신한다.', 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'elementView': {'_type': 'org.uengine.modeling.model.BoundedContext', 'height': 590, 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'style': '{}', 'width': 1010, 'x': 1410.0, 'y': 450}, 'gitURL': None, 'hexagonalView': {'_type': 'org.uengine.modeling.model.BoundedContextHexagonal', 'height': 350, 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'style': '{}', 'width': 350, 'x': 235, 'y': 365}, 'members': [], 'name': 'LoanProcess', 'traceName': 'LoanProcess', 'displayName': '대출/반납 프로세스', 'oldName': '', 'policies': [], 'portGenerated': 8081, 'preferredPlatform': 'template-spring-boot', 'preferredPlatformConf': {}, 'rotateStatus': False, 'tempId': '', 'templatePerElements': {}, 'views': [], 'definitionId': '163972132_es_67fb9986e803876cbd31740034550bd2', 'requirements': {'ddl': "-- 대출 테이블\nCREATE TABLE loans (\n    loan_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    loan_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    due_date DATETIME NOT NULL,\n    return_date DATETIME NULL,\n    loan_period_days INT NOT NULL CHECK (loan_period_days IN (7, 14, 30)),\n    status ENUM('대출중', '연체', '반납완료', '연장') DEFAULT '대출중',\n    extension_count INT DEFAULT 0,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_due_date (due_date)\n);\n-- 예약 테이블\nCREATE TABLE reservations (\n    reservation_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    reservation_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status ENUM('예약중', '예약완료', '예약취소', '예약만료') DEFAULT '예약중',\n    notification_sent BOOLEAN DEFAULT FALSE,\n    expiry_date DATETIME NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_reservation_date (reservation_date)\n);\n-- 대출 이력 테이블 (모든 대출 활동의 상세 로그)\nCREATE TABLE loan_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    loan_id INT NOT NULL,\n    action_type ENUM('대출', '반납', '연장', '연체알림', '분실신고') NOT NULL,\n    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    previous_due_date DATETIME NULL,\n    new_due_date DATETIME NULL,\n    notes TEXT,\n    processed_by VARCHAR(100),\n    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),\n    INDEX idx_loan_id (loan_id),\n    INDEX idx_action_type (action_type),\n    INDEX idx_action_date (action_date)\n);\n-- 대출 테이블\nCREATE TABLE loans (\n    loan_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    loan_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    due_date DATETIME NOT NULL,\n    return_date DATETIME NULL,\n    loan_period_days INT NOT NULL CHECK (loan_period_days IN (7, 14, 30)),\n    status ENUM('대출중', '연체', '반납완료', '연장') DEFAULT '대출중',\n    extension_count INT DEFAULT 0,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_due_date (due_date)\n);\n-- 예약 테이블\nCREATE TABLE reservations (\n    reservation_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    reservation_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status ENUM('예약중', '예약완료', '예약취소', '예약만료') DEFAULT '예약중',\n    notification_sent BOOLEAN DEFAULT FALSE,\n    expiry_date DATETIME NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_reservation_date (reservation_date)\n);\n-- 대출 이력 테이블 (모든 대출 활동의 상세 로그)\nCREATE TABLE loan_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    loan_id INT NOT NULL,\n    action_type ENUM('대출', '반납', '연장', '연체알림', '분실신고') NOT NULL,\n    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    previous_due_date DATETIME NULL,\n    new_due_date DATETIME NULL,\n    notes TEXT,\n    processed_by VARCHAR(100),\n    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),\n    INDEX idx_loan_id (loan_id),\n    INDEX idx_action_type (action_type),\n    INDEX idx_action_date (action_date)\n);", 'ddlFields': [{'fieldName': 'loan_id', 'refs': [[[46, 5], [46, 42]], [[101, 5], [101, 24]], [[160, 5], [160, 42]], [[215, 5], [215, 24]]]}, {'fieldName': 'member_id', 'refs': [[[47, 5], [47, 34]], [[68, 5], [68, 34]], [[161, 5], [161, 34]], [[182, 5], [182, 34]]]}, {'fieldName': 'book_id', 'refs': [[[48, 5], [48, 24]], [[69, 5], [69, 24]], [[162, 5], [162, 24]], [[183, 5], [183, 24]]]}, {'fieldName': 'loan_date', 'refs': [[[49, 5], [49, 48]], [[163, 5], [163, 48]]]}, {'fieldName': 'due_date', 'refs': [[[50, 5], [50, 30]], [[164, 5], [164, 30]]]}, {'fieldName': 'return_date', 'refs': [[[51, 5], [51, 29]], [[165, 5], [165, 29]]]}, {'fieldName': 'loan_period_days', 'refs': [[[52, 5], [52, 23]], [[166, 5], [166, 23]]]}, {'fieldName': 'status', 'refs': [[[53, 5], [53, 50]], [[71, 5], [71, 54]], [[167, 5], [167, 50]], [[185, 5], [185, 54]]]}, {'fieldName': 'extension_count', 'refs': [[[54, 5], [54, 33]], [[168, 5], [168, 33]]]}, {'fieldName': 'created_at', 'refs': [[[55, 5], [55, 49]], [[74, 5], [74, 49]], [[169, 5], [169, 49]], [[188, 5], [188, 49]]]}, {'fieldName': 'updated_at', 'refs': [[[56, 5], [56, 49]], [[75, 5], [75, 49]], [[170, 5], [170, 49]], [[189, 5], [189, 49]]]}, {'fieldName': 'reservation_id', 'refs': [[[67, 5], [67, 49]], [[181, 5], [181, 49]]]}, {'fieldName': 'reservation_date', 'refs': [[[70, 5], [70, 55]], [[184, 5], [184, 55]]]}, {'fieldName': 'notification_sent', 'refs': [[[72, 5], [72, 43]], [[186, 5], [186, 43]]]}, {'fieldName': 'expiry_date', 'refs': [[[73, 5], [73, 29]], [[187, 5], [187, 29]]]}, {'fieldName': 'history_id', 'refs': [[[100, 5], [100, 45]], [[214, 5], [214, 45]]]}, {'fieldName': 'action_type', 'refs': [[[102, 5], [102, 63]], [[216, 5], [216, 63]]]}, {'fieldName': 'action_date', 'refs': [[[103, 5], [103, 50]], [[217, 5], [217, 50]]]}, {'fieldName': 'previous_due_date', 'refs': [[[104, 5], [104, 35]], [[218, 5], [218, 35]]]}, {'fieldName': 'new_due_date', 'refs': [[[105, 5], [105, 30]], [[219, 5], [219, 30]]]}, {'fieldName': 'notes', 'refs': [[[106, 5], [106, 14]], [[220, 5], [220, 14]]]}, {'fieldName': 'processed_by', 'refs': [[[107, 5], [107, 29]], [[221, 5], [221, 29]]]}], 'description': '# Bounded Context Overview: LoanProcess (대출/반납 프로세스)\n\n## Role\n회원의 도서 대출 신청, 승인, 예약, 연장, 반납 등 대출/반납 전반의 프로세스를 관리한다. 대출 신청 시 회원 인증, 도서 검색, 대출 기간 선택, 예약 처리, 반납 및 연장 기능을 제공한다.\n\n## Key Events\n- LoanRequested\n- LoanApproved\n- BookReserved\n- LoanExtended\n- BookReturned\n\n# Requirements\n\n## userStory\n\n도서관의 도서 관리와 대출/반납을 통합적으로 관리하는\n\n\'대출/반납\' 화면에서는 회원이 도서를 대출하고 반납하는 것을 관리할 수 있어야 해. 대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할 도서를 선택해야 해. 도서는 도서명이나 ISBN으로 검색할 수 있어야 해. 대출 기간은 7일/14일/30일 중에서 선택할 수 있어. 만약 대출하려는 도서가 이미 대출 중이라면, 예약 신청이 가능해야 해. 대출이 완료되면 해당 도서의 상태는 자동으로 \'대출중\'으로 변경되어야\n\n대출 현황 화면에서는 현재 대출 중인 도서들의 목록을 볼 수 있어야 해. 각 대출 건에 대해 대출일, 반납예정일, 현재 상태(대출중/연체/반납완료)를 확인할 수 있어야 하고, 대출 중인 도서는 연장이나 반납 처리가 가능해야 해. 도서가 반납되면 자동으로 해당 도서의 상태가 \'대출가능\'으로 변경되어야\n\n대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할\n\n## DDL\n\n```sql\n-- 대출 테이블\nCREATE TABLE loans (\n    loan_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    loan_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    due_date DATETIME NOT NULL,\n    return_date DATETIME NULL,\n    loan_period_days INT NOT NULL CHECK (loan_period_days IN (7, 14, 30)),\n    status ENUM(\'대출중\', \'연체\', \'반납완료\', \'연장\') DEFAULT \'대출중\',\n    extension_count INT DEFAULT 0,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_due_date (due_date)\n);\n```\n```sql\n-- 예약 테이블\nCREATE TABLE reservations (\n    reservation_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    reservation_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status ENUM(\'예약중\', \'예약완료\', \'예약취소\', \'예약만료\') DEFAULT \'예약중\',\n    notification_sent BOOLEAN DEFAULT FALSE,\n    expiry_date DATETIME NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_reservation_date (reservation_date)\n);\n```\n```sql\n-- 대출 이력 테이블 (모든 대출 활동의 상세 로그)\nCREATE TABLE loan_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    loan_id INT NOT NULL,\n    action_type ENUM(\'대출\', \'반납\', \'연장\', \'연체알림\', \'분실신고\') NOT NULL,\n    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    previous_due_date DATETIME NULL,\n    new_due_date DATETIME NULL,\n    notes TEXT,\n    processed_by VARCHAR(100),\n    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),\n    INDEX idx_loan_id (loan_id),\n    INDEX idx_action_type (action_type),\n    INDEX idx_action_date (action_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "LoanRequested",\n  "displayName": "대출 신청됨",\n  "actor": "Member",\n  "level": 1,\n  "description": "회원이 도서 대출을 신청함. 회원번호와 이름으로 회원 확인 후, 대출할 도서를 선택함.",\n  "inputs": [\n    "회원번호",\n    "이름",\n    "도서명/ISBN",\n    "대출 기간(7/14/30일)"\n  ],\n  "outputs": [\n    "대출 신청 생성",\n    "회원 인증 완료"\n  ],\n  "nextEvents": [\n    "LoanApproved",\n    "BookReserved"\n  ]\n}\n```\n\n```json\n{\n  "name": "LoanApproved",\n  "displayName": "대출 승인됨",\n  "actor": "Librarian",\n  "level": 2,\n  "description": "도서가 대출 가능 상태일 때 대출이 승인되고, 도서 상태가 \'대출중\'으로 변경됨.",\n  "inputs": [\n    "대출 신청",\n    "도서 상태 \'대출가능\'"\n  ],\n  "outputs": [\n    "대출 기록 생성",\n    "도서 상태 \'대출중\'으로 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookReserved",\n  "displayName": "도서 예약됨",\n  "actor": "Member",\n  "level": 2,\n  "description": "대출하려는 도서가 이미 대출 중인 경우, 회원이 해당 도서를 예약함.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "도서 상태 \'대출중\'"\n  ],\n  "outputs": [\n    "예약 기록 생성",\n    "도서 상태 \'예약중\'으로 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "LoanExtended",\n  "displayName": "대출 연장됨",\n  "actor": "Member",\n  "level": 3,\n  "description": "회원이 대출 중인 도서의 대출 기간을 연장함.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "연장 요청"\n  ],\n  "outputs": [\n    "대출 기간 연장",\n    "대출 기록 갱신"\n  ],\n  "nextEvents": []\n}\n```\n\n```json\n{\n  "name": "BookReturned",\n  "displayName": "도서 반납됨",\n  "actor": "Member",\n  "level": 2,\n  "description": "회원이 대출한 도서를 반납함. 반납 시 도서 상태가 자동으로 \'대출가능\' 또는 예약자가 있으면 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "반납 요청"\n  ],\n  "outputs": [\n    "반납 기록 생성",\n    "도서 상태 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanProcess\n- **Type**: Pub/Sub\n- **Direction**: receives from 도서 관리 (BookManagement)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### LoanProcess-BookManagement\n- **Type**: Pub/Sub\n- **Direction**: sends to 도서 관리 (BookManagement)\n- **Reason**: 도서 상태 변경 등 이벤트가 발생하면 대출/반납 프로세스에서 이를 구독하여 처리할 수 있도록 느슨한 결합을 유지하기 위함.\n- **Interaction Pattern**: 도서 등록, 폐기, 상태 변경 이벤트가 발생하면 대출/반납 프로세스에서 해당 이벤트를 구독하여 대출 가능 여부 등을 판단한다.\n\n### LoanProcess-LoanStatusInquiry\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출 현황 및 이력 조회 (LoanStatusInquiry)\n- **Reason**: 대출/반납/연장 등 이벤트 발생 시 현황 및 이력 조회 컨텍스트가 이를 구독하여 최신 현황과 이력을 제공할 수 있도록 한다.\n- **Interaction Pattern**: 대출/반납/연장 이벤트가 발생할 때마다 현황 및 이력 조회 컨텍스트가 관련 정보를 갱신한다.', 'event': '{\n  "name": "LoanRequested",\n  "displayName": "대출 신청됨",\n  "actor": "Member",\n  "level": 1,\n  "description": "회원이 도서 대출을 신청함. 회원번호와 이름으로 회원 확인 후, 대출할 도서를 선택함.",\n  "inputs": [\n    "회원번호",\n    "이름",\n    "도서명/ISBN",\n    "대출 기간(7/14/30일)"\n  ],\n  "outputs": [\n    "대출 신청 생성",\n    "회원 인증 완료"\n  ],\n  "nextEvents": [\n    "LoanApproved",\n    "BookReserved"\n  ],\n  "refs": [\n    [\n      [\n        5,\n        49\n      ],\n      [\n        5,\n        91\n      ]\n    ],\n    [\n      [\n        5,\n        59\n      ],\n      [\n        5,\n        77\n      ]\n    ],\n    [\n      [\n        5,\n        126\n      ],\n      [\n        5,\n        152\n      ]\n    ]\n  ]\n}\n{\n  "name": "LoanApproved",\n  "displayName": "대출 승인됨",\n  "actor": "Librarian",\n  "level": 2,\n  "description": "도서가 대출 가능 상태일 때 대출이 승인되고, 도서 상태가 \'대출중\'으로 변경됨.",\n  "inputs": [\n    "대출 신청",\n    "도서 상태 \'대출가능\'"\n  ],\n  "outputs": [\n    "대출 기록 생성",\n    "도서 상태 \'대출중\'으로 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ],\n  "refs": [\n    [\n      [\n        5,\n        198\n      ],\n      [\n        5,\n        235\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookReserved",\n  "displayName": "도서 예약됨",\n  "actor": "Member",\n  "level": 2,\n  "description": "대출하려는 도서가 이미 대출 중인 경우, 회원이 해당 도서를 예약함.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "도서 상태 \'대출중\'"\n  ],\n  "outputs": [\n    "예약 기록 생성",\n    "도서 상태 \'예약중\'으로 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ],\n  "refs": [\n    [\n      [\n        5,\n        183\n      ],\n      [\n        5,\n        193\n      ]\n    ],\n    [\n      [\n        7,\n        167\n      ],\n      [\n        7,\n        175\n      ]\n    ]\n  ]\n}\n{\n  "name": "LoanExtended",\n  "displayName": "대출 연장됨",\n  "actor": "Member",\n  "level": 3,\n  "description": "회원이 대출 중인 도서의 대출 기간을 연장함.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "연장 요청"\n  ],\n  "outputs": [\n    "대출 기간 연장",\n    "대출 기록 갱신"\n  ],\n  "nextEvents": [],\n  "refs": [\n    [\n      [\n        7,\n        109\n      ],\n      [\n        7,\n        124\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookReturned",\n  "displayName": "도서 반납됨",\n  "actor": "Member",\n  "level": 2,\n  "description": "회원이 대출한 도서를 반납함. 반납 시 도서 상태가 자동으로 \'대출가능\' 또는 예약자가 있으면 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "반납 요청"\n  ],\n  "outputs": [\n    "반납 기록 생성",\n    "도서 상태 변경"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ],\n  "refs": [\n    [\n      [\n        7,\n        133\n      ],\n      [\n        7,\n        167\n      ]\n    ],\n    [\n      [\n        7,\n        167\n      ],\n      [\n        7,\n        175\n      ]\n    ]\n  ]\n}', 'eventNames': 'LoanRequested, LoanApproved, BookReserved, LoanExtended, BookReturned 이벤트가 발생할 수 있어.', 'siteMap': [{'boundedContext': 'LoanProcess', 'description': '도서 대출, 반납, 예약 및 연장 처리', 'id': 'loan-process', 'title': '대출/반납', 'uiRequirements': "'대출/반납' 화면에서는 회원이 도서를 대출하고 반납하는 것을 관리할 수 있어야 해. 대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할 도서를 선택해야 해. 도서는 도서명이나 ISBN으로 검색할 수 있어야 해. 대출 기간은 7일/14일/30일 중에서 선택할 수 있어. 만약 대출하려는 도서가 이미 대출 중이라면, 예약 신청이 가능해야 해. 대출이 완료되면 해당 도서의 상태는 자동으로 '대출중'으로 변경되어야 해."}, {'boundedContext': 'LoanProcess', 'description': '회원 인증 및 도서 대출 신청', 'id': 'loan-application', 'title': '대출 신청', 'uiRequirements': '대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할 도서를 선택해야 해. 도서는 도서명이나 ISBN으로 검색할 수 있어야 해. 대출 기간은 7일/14일/30일 중에서 선택할 수 있어. 만약 대출하려는 도서가 이미 대출 중이라면, 예약 신청이 가능해야 해.'}, {'boundedContext': 'LoanProcess', 'description': '도서 반납 및 상태 변경', 'id': 'return-process', 'title': '반납 처리', 'uiRequirements': "대출이 완료되면 해당 도서의 상태는 자동으로 '대출중'으로 변경되어야 해."}], 'userStory': "도서관의 도서 관리와 대출/반납을 통합적으로 관리하는\n'대출/반납' 화면에서는 회원이 도서를 대출하고 반납하는 것을 관리할 수 있어야 해. 대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할 도서를 선택해야 해. 도서는 도서명이나 ISBN으로 검색할 수 있어야 해. 대출 기간은 7일/14일/30일 중에서 선택할 수 있어. 만약 대출하려는 도서가 이미 대출 중이라면, 예약 신청이 가능해야 해. 대출이 완료되면 해당 도서의 상태는 자동으로 '대출중'으로 변경되어야\n대출 현황 화면에서는 현재 대출 중인 도서들의 목록을 볼 수 있어야 해. 각 대출 건에 대해 대출일, 반납예정일, 현재 상태(대출중/연체/반납완료)를 확인할 수 있어야 하고, 대출 중인 도서는 연장이나 반납 처리가 가능해야 해. 도서가 반납되면 자동으로 해당 도서의 상태가 '대출가능'으로 변경되어야\n대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할"}}, '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70': {'aggregateRoot': {'_type': 'org.uengine.modeling.model.AggregateRoot', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[23, 5], [23, 38]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'title', 'traceName': 'title', 'nameCamelCase': 'title', 'namePascalCase': 'Title', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'isbn', 'traceName': 'isbn', 'nameCamelCase': 'isbn', 'namePascalCase': 'Isbn', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[25, 5], [25, 31]], [[66, 6], [66, 9]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'author', 'traceName': 'author', 'nameCamelCase': 'author', 'namePascalCase': 'Author', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[26, 5], [26, 27]], [[67, 6], [67, 7]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'publisher', 'traceName': 'publisher', 'nameCamelCase': 'publisher', 'namePascalCase': 'Publisher', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[27, 5], [27, 30]], [[68, 6], [68, 8]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'BookCategory', 'isCopy': False, 'isKey': False, 'name': 'category', 'traceName': 'category', 'nameCamelCase': 'category', 'namePascalCase': 'Category', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 22]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'BookStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[29, 5], [29, 51]], [[73, 6], [73, 22]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'registrationDate', 'traceName': 'registrationDate', 'nameCamelCase': 'registrationDate', 'namePascalCase': 'RegistrationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 56]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'disposalDate', 'traceName': 'disposalDate', 'nameCamelCase': 'disposalDate', 'namePascalCase': 'DisposalDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 31]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'disposalReason', 'traceName': 'disposalReason', 'nameCamelCase': 'disposalReason', 'namePascalCase': 'DisposalReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 29]], [[111, 9], [111, 16]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'changeDate', 'traceName': 'changeDate', 'nameCamelCase': 'changeDate', 'namePascalCase': 'ChangeDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[49, 5], [49, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changeReason', 'traceName': 'changeReason', 'nameCamelCase': 'changeReason', 'namePascalCase': 'ChangeReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[47, 5], [47, 25]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changedBy', 'traceName': 'changedBy', 'nameCamelCase': 'changedBy', 'namePascalCase': 'ChangedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[48, 5], [48, 22]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[43, 5], [43, 41]]], 'referenceClass': None, 'isOverrideField': False}], 'entities': {'elements': {'1c0b547d-3b80-441c-b1d6-452c68dfe450': {'_type': 'org.uengine.uml.model.Class', 'id': '1c0b547d-3b80-441c-b1d6-452c68dfe450', 'name': 'Book', 'traceName': 'Book', 'namePascalCase': 'Book', 'nameCamelCase': 'book', 'namePlural': 'books', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[23, 5], [23, 38]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'title', 'traceName': 'title', 'nameCamelCase': 'title', 'namePascalCase': 'Title', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'isbn', 'traceName': 'isbn', 'nameCamelCase': 'isbn', 'namePascalCase': 'Isbn', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[25, 5], [25, 31]], [[66, 6], [66, 9]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'author', 'traceName': 'author', 'nameCamelCase': 'author', 'namePascalCase': 'Author', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[26, 5], [26, 27]], [[67, 6], [67, 7]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'publisher', 'traceName': 'publisher', 'nameCamelCase': 'publisher', 'namePascalCase': 'Publisher', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[27, 5], [27, 30]], [[68, 6], [68, 8]]], 'inputUI': None, 'options': None}, {'className': 'BookCategory', 'isCopy': False, 'isKey': False, 'name': 'category', 'traceName': 'category', 'nameCamelCase': 'category', 'namePascalCase': 'Category', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 22]]], 'inputUI': None, 'options': None}, {'className': 'BookStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[29, 5], [29, 51]], [[73, 6], [73, 22]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'registrationDate', 'traceName': 'registrationDate', 'nameCamelCase': 'registrationDate', 'namePascalCase': 'RegistrationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 56]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'disposalDate', 'traceName': 'disposalDate', 'nameCamelCase': 'disposalDate', 'namePascalCase': 'DisposalDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 31]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'disposalReason', 'traceName': 'disposalReason', 'nameCamelCase': 'disposalReason', 'namePascalCase': 'DisposalReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 29]], [[111, 9], [111, 16]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'changeDate', 'traceName': 'changeDate', 'nameCamelCase': 'changeDate', 'namePascalCase': 'ChangeDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[49, 5], [49, 50]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changeReason', 'traceName': 'changeReason', 'nameCamelCase': 'changeReason', 'namePascalCase': 'ChangeReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[47, 5], [47, 25]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changedBy', 'traceName': 'changedBy', 'nameCamelCase': 'changedBy', 'namePascalCase': 'ChangedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[48, 5], [48, 22]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[43, 5], [43, 41]]], 'inputUI': None, 'options': None}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.Class', 'id': '1c0b547d-3b80-441c-b1d6-452c68dfe450', 'x': 200, 'y': 200, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 120, 'fieldH': 90, 'methodH': 30}, 'selected': False, 'relations': [], 'parentOperations': [], 'relationType': None, 'isVO': False, 'isAbstract': False, 'isInterface': False, 'isAggregateRoot': True, 'parentId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'refs': [[[4, 1], [4, 13]]]}, 'e0fc7abe-6217-49f0-a5df-01faaf85c40b': {'_type': 'org.uengine.uml.model.enum', 'id': 'e0fc7abe-6217-49f0-a5df-01faaf85c40b', 'name': 'BookStatus', 'traceName': 'BookStatus', 'displayName': '도서 상태', 'nameCamelCase': 'bookStatus', 'namePascalCase': 'BookStatus', 'namePlural': 'bookStatuses', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': 'e0fc7abe-6217-49f0-a5df-01faaf85c40b', 'x': 700, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'AVAILABLE', 'traceName': 'AVAILABLE', 'refs': [[[29, 18], [29, 21]]]}, {'value': 'ON_LOAN', 'traceName': 'ON_LOAN', 'refs': [[[29, 26], [29, 28]]]}, {'value': 'RESERVED', 'traceName': 'RESERVED', 'refs': [[[29, 33], [29, 35]]]}, {'value': 'DISCARDED', 'traceName': 'DISCARDED', 'refs': [[[29, 40], [29, 41]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[29, 5], [29, 51]], [[92, 6], [92, 29]]]}, 'e121e110-ce49-40eb-91c4-5a7a6890769f': {'_type': 'org.uengine.uml.model.enum', 'id': 'e121e110-ce49-40eb-91c4-5a7a6890769f', 'name': 'BookCategory', 'traceName': 'BookCategory', 'displayName': '도서 카테고리', 'nameCamelCase': 'bookCategory', 'namePascalCase': 'BookCategory', 'namePlural': 'bookCategories', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': 'e121e110-ce49-40eb-91c4-5a7a6890769f', 'x': 950, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'NOVEL', 'traceName': 'NOVEL', 'refs': [[[28, 20], [28, 21]]]}, {'value': 'NONFICTION', 'traceName': 'NONFICTION', 'refs': [[[28, 26], [28, 28]]]}, {'value': 'ACADEMIC', 'traceName': 'ACADEMIC', 'refs': [[[28, 33], [28, 34]]]}, {'value': 'MAGAZINE', 'traceName': 'MAGAZINE', 'refs': [[[28, 39], [28, 40]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 22]]]}}, 'relations': {}}, 'operations': []}, 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'boundedContext': {'name': '8a9d2422-87e9-4aa9-9087-30e9ef26d202', 'id': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, 'commands': [], 'description': 'BookManagement 컨텍스트의 도메인 요구사항과 DDL, 이벤트, 컨텍스트 통합 패턴을 분석한 결과, Book 집계는 도서의 라이프사이클 전체(등록, 상태 관리, 폐기, 상태 변경, 이력 추적)를 책임진다. 상태와 카테고리는 각각 BookStatus, BookCategory 열거형으로 정의하여 도메인 불변식과 상태 전이를 명확히 한다. DDL의 모든 필수 필드는 Book 집계에 포함되며, 이력 관리(상태 변경, 폐기 등)는 외부 컨텍스트와의 Pub/Sub 연동을 고려해 상태 및 이력 관련 속성을 포함한다. ValueObject는 요구된 구조상 생성하지 않는다. 집계 내 속성들은 이벤트 소싱 및 외부 시스템 연동(이벤트 발행/구독)에 필요한 정보를 모두 포함한다.', 'id': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'elementView': {'_type': 'org.uengine.modeling.model.Aggregate', 'id': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'x': 600, 'y': 450, 'width': 130, 'height': 400}, 'events': [], 'hexagonalView': {'_type': 'org.uengine.modeling.model.AggregateHexagonal', 'id': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'x': 0, 'y': 0, 'subWidth': 0, 'width': 0}, 'name': 'Book', 'traceName': 'Book', 'displayName': '도서', 'nameCamelCase': 'book', 'namePascalCase': 'Book', 'namePlural': 'books', 'rotateStatus': False, 'selected': False, '_type': 'org.uengine.modeling.model.Aggregate', 'refs': [[[4, 1], [4, 13]]]}, 'f85a7e02-d046-4ecb-9d63-040d853c5288': {'aggregateRoot': {'_type': 'org.uengine.modeling.model.AggregateRoot', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'loanId', 'traceName': 'loanId', 'nameCamelCase': 'loanId', 'namePascalCase': 'LoanId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 38]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'BookId', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 19]]], 'referenceClass': 'Book', 'isOverrideField': True}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'loanDate', 'traceName': 'loanDate', 'nameCamelCase': 'loanDate', 'namePascalCase': 'LoanDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 48]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'dueDate', 'traceName': 'dueDate', 'nameCamelCase': 'dueDate', 'namePascalCase': 'DueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 25]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'returnDate', 'traceName': 'returnDate', 'nameCamelCase': 'returnDate', 'namePascalCase': 'ReturnDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[35, 5], [35, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'loanPeriodDays', 'traceName': 'loanPeriodDays', 'nameCamelCase': 'loanPeriodDays', 'namePascalCase': 'LoanPeriodDays', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[36, 5], [36, 39]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'LoanStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[37, 5], [37, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'extensionCount', 'traceName': 'extensionCount', 'nameCamelCase': 'extensionCount', 'namePascalCase': 'ExtensionCount', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[38, 5], [38, 31]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[39, 5], [39, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[40, 5], [40, 59]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[72, 5], [72, 41]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'LoanActionType', 'isCopy': False, 'isKey': False, 'name': 'actionType', 'traceName': 'actionType', 'nameCamelCase': 'actionType', 'namePascalCase': 'ActionType', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[74, 5], [74, 58]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'actionDate', 'traceName': 'actionDate', 'nameCamelCase': 'actionDate', 'namePascalCase': 'ActionDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[75, 5], [75, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'previousDueDate', 'traceName': 'previousDueDate', 'nameCamelCase': 'previousDueDate', 'namePascalCase': 'PreviousDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[76, 5], [76, 35]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'newDueDate', 'traceName': 'newDueDate', 'nameCamelCase': 'newDueDate', 'namePascalCase': 'NewDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[77, 5], [77, 30]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'notes', 'traceName': 'notes', 'nameCamelCase': 'notes', 'namePascalCase': 'Notes', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[78, 5], [78, 14]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'processedBy', 'traceName': 'processedBy', 'nameCamelCase': 'processedBy', 'namePascalCase': 'ProcessedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[79, 5], [79, 24]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'ReservationId', 'isCopy': False, 'isKey': False, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Reservation', 'isOverrideField': True}], 'entities': {'elements': {'3b489dc2-6a9f-413a-8ed9-cc8c5c55febd': {'_type': 'org.uengine.uml.model.Class', 'id': '3b489dc2-6a9f-413a-8ed9-cc8c5c55febd', 'name': 'Loan', 'traceName': 'Loan', 'namePascalCase': 'Loan', 'nameCamelCase': 'loan', 'namePlural': 'loans', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'loanId', 'traceName': 'loanId', 'nameCamelCase': 'loanId', 'namePascalCase': 'LoanId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 38]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 29]]], 'inputUI': None, 'options': None}, {'className': 'BookId', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 19]]], 'inputUI': None, 'options': None, 'referenceClass': 'Book', 'isOverrideField': True}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'loanDate', 'traceName': 'loanDate', 'nameCamelCase': 'loanDate', 'namePascalCase': 'LoanDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 48]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'dueDate', 'traceName': 'dueDate', 'nameCamelCase': 'dueDate', 'namePascalCase': 'DueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 25]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'returnDate', 'traceName': 'returnDate', 'nameCamelCase': 'returnDate', 'namePascalCase': 'ReturnDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[35, 5], [35, 29]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'loanPeriodDays', 'traceName': 'loanPeriodDays', 'nameCamelCase': 'loanPeriodDays', 'namePascalCase': 'LoanPeriodDays', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[36, 5], [36, 39]]], 'inputUI': None, 'options': None}, {'className': 'LoanStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[37, 5], [37, 50]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'extensionCount', 'traceName': 'extensionCount', 'nameCamelCase': 'extensionCount', 'namePascalCase': 'ExtensionCount', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[38, 5], [38, 31]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[39, 5], [39, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[40, 5], [40, 59]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[72, 5], [72, 41]]], 'inputUI': None, 'options': None}, {'className': 'LoanActionType', 'isCopy': False, 'isKey': False, 'name': 'actionType', 'traceName': 'actionType', 'nameCamelCase': 'actionType', 'namePascalCase': 'ActionType', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[74, 5], [74, 58]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'actionDate', 'traceName': 'actionDate', 'nameCamelCase': 'actionDate', 'namePascalCase': 'ActionDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[75, 5], [75, 50]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'previousDueDate', 'traceName': 'previousDueDate', 'nameCamelCase': 'previousDueDate', 'namePascalCase': 'PreviousDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[76, 5], [76, 35]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'newDueDate', 'traceName': 'newDueDate', 'nameCamelCase': 'newDueDate', 'namePascalCase': 'NewDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[77, 5], [77, 30]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'notes', 'traceName': 'notes', 'nameCamelCase': 'notes', 'namePascalCase': 'Notes', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[78, 5], [78, 14]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'processedBy', 'traceName': 'processedBy', 'nameCamelCase': 'processedBy', 'namePascalCase': 'ProcessedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[79, 5], [79, 24]]], 'inputUI': None, 'options': None}, {'className': 'ReservationId', 'isCopy': False, 'isKey': False, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Reservation', 'isOverrideField': True}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.Class', 'id': '3b489dc2-6a9f-413a-8ed9-cc8c5c55febd', 'x': 200, 'y': 200, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 120, 'fieldH': 90, 'methodH': 30}, 'selected': False, 'relations': [], 'parentOperations': [], 'relationType': None, 'isVO': False, 'isAbstract': False, 'isInterface': False, 'isAggregateRoot': True, 'parentId': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'refs': [[[4, 8], [4, 28]]]}, '398ecd5b-3954-4f69-93c6-41d6946c890d': {'_type': 'org.uengine.uml.model.enum', 'id': '398ecd5b-3954-4f69-93c6-41d6946c890d', 'name': 'LoanStatus', 'traceName': 'LoanStatus', 'displayName': '대출 상태', 'nameCamelCase': 'loanStatus', 'namePascalCase': 'LoanStatus', 'namePlural': 'loanStatuses', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': '398ecd5b-3954-4f69-93c6-41d6946c890d', 'x': 700, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'ON_LOAN', 'traceName': 'ON_LOAN', 'refs': [[[37, 18], [37, 20]]]}, {'value': 'OVERDUE', 'traceName': 'OVERDUE', 'refs': [[[37, 25], [37, 26]]]}, {'value': 'RETURNED', 'traceName': 'RETURNED', 'refs': [[[37, 31], [37, 34]]]}, {'value': 'EXTENDED', 'traceName': 'EXTENDED', 'refs': [[[37, 39], [37, 40]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[37, 5], [37, 50]]]}, '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c': {'_type': 'org.uengine.uml.model.enum', 'id': '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c', 'name': 'LoanActionType', 'traceName': 'LoanActionType', 'displayName': '대출 이력 액션 타입', 'nameCamelCase': 'loanActionType', 'namePascalCase': 'LoanActionType', 'namePlural': 'loanActionTypes', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c', 'x': 950, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'LOAN', 'traceName': 'LOAN', 'refs': [[[74, 23], [74, 24]]]}, {'value': 'RETURN', 'traceName': 'RETURN', 'refs': [[[74, 29], [74, 30]]]}, {'value': 'EXTEND', 'traceName': 'EXTEND', 'refs': [[[74, 35], [74, 36]]]}, {'value': 'OVERDUE_NOTICE', 'traceName': 'OVERDUE_NOTICE', 'refs': [[[74, 41], [74, 44]]]}, {'value': 'LOST_REPORT', 'traceName': 'LOST_REPORT', 'refs': [[[74, 49], [74, 52]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[74, 5], [74, 58]]]}, '1626c83a-6966-40f8-856b-8a2d245a6e2f': {'_type': 'org.uengine.uml.model.vo.Class', 'id': '1626c83a-6966-40f8-856b-8a2d245a6e2f', 'name': 'BookId', 'traceName': 'BookId', 'displayName': '', 'namePascalCase': 'BookId', 'nameCamelCase': 'bookId', 'namePlural': 'bookIds', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Book', 'isOverrideField': True, 'label': '- bookId: Integer'}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.vo.address.Class', 'id': '1626c83a-6966-40f8-856b-8a2d245a6e2f', 'x': 700, 'y': 152, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 170, 'fieldH': 150, 'methodH': 30}, 'selected': False, 'parentOperations': [], 'relationType': None, 'isVO': True, 'relations': [], 'groupElement': None, 'isAggregateRoot': False, 'isAbstract': False, 'isInterface': False, 'refs': []}, '551400f6-5151-47a6-afc1-2b9091b56c5b': {'_type': 'org.uengine.uml.model.vo.Class', 'id': '551400f6-5151-47a6-afc1-2b9091b56c5b', 'name': 'ReservationId', 'traceName': 'ReservationId', 'displayName': '', 'namePascalCase': 'ReservationId', 'nameCamelCase': 'reservationId', 'namePlural': 'reservationIds', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Reservation', 'isOverrideField': True, 'label': '- reservationId: Integer'}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.vo.address.Class', 'id': '551400f6-5151-47a6-afc1-2b9091b56c5b', 'x': 950, 'y': 152, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 170, 'fieldH': 150, 'methodH': 30}, 'selected': False, 'parentOperations': [], 'relationType': None, 'isVO': True, 'relations': [], 'groupElement': None, 'isAggregateRoot': False, 'isAbstract': False, 'isInterface': False, 'refs': []}}, 'relations': {}}, 'operations': []}, 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'boundedContext': {'name': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd'}, 'commands': [], 'description': 'LoanProcess 컨텍스트의 핵심 Aggregate는 Loan(대출)이다. 대출의 상태(LoanStatus)는 고정된 값 집합이므로 Enumeration으로 정의한다. 대출 이력의 액션 타입(LoanActionType) 역시 Enumeration으로 정의한다. DDL에서 요구하는 모든 필드는 Loan Aggregate에 포함되거나, 필요에 따라 Enumeration으로 분리한다. BookId와 MemberId는 외부 Aggregate(Book, Member)를 참조하는 식별자로 사용한다. 이벤트 소싱 및 상태 추적을 위해 createdAt, updatedAt, extensionCount 등도 포함한다. Pub/Sub 연동을 위해 status, actionType 등 상태 추적 속성을 명확히 한다. ValueObject는 DDL 및 요구사항상 별도의 불변 객체로 묶을 만한 속성이 없으므로 생성하지 않는다. 모든 속성은 Aggregate에 직접 포함한다.', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'elementView': {'_type': 'org.uengine.modeling.model.Aggregate', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'x': 1185.0, 'y': 450, 'width': 130, 'height': 400}, 'events': [], 'hexagonalView': {'_type': 'org.uengine.modeling.model.AggregateHexagonal', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'x': 0, 'y': 0, 'subWidth': 0, 'width': 0}, 'name': 'Loan', 'traceName': 'Loan', 'displayName': '대출', 'nameCamelCase': 'loan', 'namePascalCase': 'Loan', 'namePlural': 'loans', 'rotateStatus': False, 'selected': False, '_type': 'org.uengine.modeling.model.Aggregate', 'refs': [[[4, 8], [4, 28]]]}, '8f0391f5-4e51-4159-a8d9-1ef319822db5': {'aggregateRoot': {'_type': 'org.uengine.modeling.model.AggregateRoot', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[52, 5], [52, 45]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[53, 5], [53, 34]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[54, 5], [54, 24]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'reservationDate', 'traceName': 'reservationDate', 'nameCamelCase': 'reservationDate', 'namePascalCase': 'ReservationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[55, 5], [55, 55]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'ReservationStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[56, 5], [56, 54]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Boolean', 'isCopy': False, 'isKey': False, 'name': 'notificationSent', 'traceName': 'notificationSent', 'nameCamelCase': 'notificationSent', 'namePascalCase': 'NotificationSent', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[57, 5], [57, 43]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'expiryDate', 'traceName': 'expiryDate', 'nameCamelCase': 'expiryDate', 'namePascalCase': 'ExpiryDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[58, 5], [58, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[59, 5], [59, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[60, 5], [60, 49]]], 'referenceClass': None, 'isOverrideField': False}], 'entities': {'elements': {'7beec444-b271-4eb4-b1e2-7c0749a9c416': {'_type': 'org.uengine.uml.model.Class', 'id': '7beec444-b271-4eb4-b1e2-7c0749a9c416', 'name': 'Reservation', 'traceName': 'Reservation', 'namePascalCase': 'Reservation', 'nameCamelCase': 'reservation', 'namePlural': 'reservations', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[52, 5], [52, 45]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[53, 5], [53, 34]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[54, 5], [54, 24]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'reservationDate', 'traceName': 'reservationDate', 'nameCamelCase': 'reservationDate', 'namePascalCase': 'ReservationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[55, 5], [55, 55]]], 'inputUI': None, 'options': None}, {'className': 'ReservationStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[56, 5], [56, 54]]], 'inputUI': None, 'options': None}, {'className': 'Boolean', 'isCopy': False, 'isKey': False, 'name': 'notificationSent', 'traceName': 'notificationSent', 'nameCamelCase': 'notificationSent', 'namePascalCase': 'NotificationSent', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[57, 5], [57, 43]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'expiryDate', 'traceName': 'expiryDate', 'nameCamelCase': 'expiryDate', 'namePascalCase': 'ExpiryDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[58, 5], [58, 29]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[59, 5], [59, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[60, 5], [60, 49]]], 'inputUI': None, 'options': None}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.Class', 'id': '7beec444-b271-4eb4-b1e2-7c0749a9c416', 'x': 200, 'y': 200, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 120, 'fieldH': 90, 'methodH': 30}, 'selected': False, 'relations': [], 'parentOperations': [], 'relationType': None, 'isVO': False, 'isAbstract': False, 'isInterface': False, 'isAggregateRoot': True, 'parentId': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'refs': [[[52, 5], [66, 30]]]}, 'd8d260f1-65d3-45ab-a54d-f951e138760e': {'_type': 'org.uengine.uml.model.enum', 'id': 'd8d260f1-65d3-45ab-a54d-f951e138760e', 'name': 'ReservationStatus', 'traceName': 'ReservationStatus', 'displayName': '예약 상태', 'nameCamelCase': 'reservationStatus', 'namePascalCase': 'ReservationStatus', 'namePlural': 'reservationStatuses', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': 'd8d260f1-65d3-45ab-a54d-f951e138760e', 'x': 700, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'RESERVING', 'traceName': 'RESERVING', 'refs': [[[56, 18], [56, 20]]]}, {'value': 'RESERVED', 'traceName': 'RESERVED', 'refs': [[[56, 25], [56, 28]]]}, {'value': 'CANCELLED', 'traceName': 'CANCELLED', 'refs': [[[56, 33], [56, 36]]]}, {'value': 'EXPIRED', 'traceName': 'EXPIRED', 'refs': [[[56, 41], [56, 44]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[56, 5], [56, 54]]]}}, 'relations': {}}, 'operations': []}, 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'boundedContext': {'name': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd'}, 'commands': [], 'description': 'Reservation 애그리게이트는 도서 예약의 전체 라이프사이클을 관리해야 하므로, 예약의 고유 식별자(reservationId), 회원 식별자(memberId), 도서 식별자(bookId), 예약 일시(reservationDate), 상태(status), 알림 발송 여부(notificationSent), 만료일(expiryDate), 생성/수정 일시(createdAt, updatedAt) 등 DDL에서 요구하는 모든 필드를 포함해야 한다. 예약 상태는 ReservationStatus 열거형으로 관리하며, 예약의 상태 추적 및 이벤트 발행/구독에 적합하다. Pub/Sub 기반의 컨텍스트 통합을 위해 예약 상태 변경 등 이벤트 기반 속성도 포함되어야 한다. ValueObject는 요구된 구조에 없으므로 생성하지 않는다. 모든 속성은 DDL 및 요구사항의 최소 참조 구간을 정확히 명시한다.', 'id': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'elementView': {'_type': 'org.uengine.modeling.model.Aggregate', 'id': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'x': 1615.0, 'y': 450, 'width': 130, 'height': 400}, 'events': [], 'hexagonalView': {'_type': 'org.uengine.modeling.model.AggregateHexagonal', 'id': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'x': 0, 'y': 0, 'subWidth': 0, 'width': 0}, 'name': 'Reservation', 'traceName': 'Reservation', 'displayName': '예약', 'nameCamelCase': 'reservation', 'namePascalCase': 'Reservation', 'namePlural': 'reservations', 'rotateStatus': False, 'selected': False, '_type': 'org.uengine.modeling.model.Aggregate', 'refs': [[[52, 5], [66, 30]]]}}, relations={'8519432f-c0c5-413e-8609-aed7313cc110': {'_type': 'org.uengine.modeling.model.Relation', 'name': '', 'id': '8519432f-c0c5-413e-8609-aed7313cc110', 'sourceElement': {'aggregateRoot': {'_type': 'org.uengine.modeling.model.AggregateRoot', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'loanId', 'traceName': 'loanId', 'nameCamelCase': 'loanId', 'namePascalCase': 'LoanId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 38]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'BookId', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 19]]], 'referenceClass': 'Book', 'isOverrideField': True}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'loanDate', 'traceName': 'loanDate', 'nameCamelCase': 'loanDate', 'namePascalCase': 'LoanDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 48]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'dueDate', 'traceName': 'dueDate', 'nameCamelCase': 'dueDate', 'namePascalCase': 'DueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 25]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'returnDate', 'traceName': 'returnDate', 'nameCamelCase': 'returnDate', 'namePascalCase': 'ReturnDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[35, 5], [35, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'loanPeriodDays', 'traceName': 'loanPeriodDays', 'nameCamelCase': 'loanPeriodDays', 'namePascalCase': 'LoanPeriodDays', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[36, 5], [36, 39]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'LoanStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[37, 5], [37, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'extensionCount', 'traceName': 'extensionCount', 'nameCamelCase': 'extensionCount', 'namePascalCase': 'ExtensionCount', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[38, 5], [38, 31]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[39, 5], [39, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[40, 5], [40, 59]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[72, 5], [72, 41]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'LoanActionType', 'isCopy': False, 'isKey': False, 'name': 'actionType', 'traceName': 'actionType', 'nameCamelCase': 'actionType', 'namePascalCase': 'ActionType', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[74, 5], [74, 58]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'actionDate', 'traceName': 'actionDate', 'nameCamelCase': 'actionDate', 'namePascalCase': 'ActionDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[75, 5], [75, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'previousDueDate', 'traceName': 'previousDueDate', 'nameCamelCase': 'previousDueDate', 'namePascalCase': 'PreviousDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[76, 5], [76, 35]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'newDueDate', 'traceName': 'newDueDate', 'nameCamelCase': 'newDueDate', 'namePascalCase': 'NewDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[77, 5], [77, 30]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'notes', 'traceName': 'notes', 'nameCamelCase': 'notes', 'namePascalCase': 'Notes', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[78, 5], [78, 14]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'processedBy', 'traceName': 'processedBy', 'nameCamelCase': 'processedBy', 'namePascalCase': 'ProcessedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[79, 5], [79, 24]]], 'referenceClass': None, 'isOverrideField': False}], 'entities': {'elements': {'3b489dc2-6a9f-413a-8ed9-cc8c5c55febd': {'_type': 'org.uengine.uml.model.Class', 'id': '3b489dc2-6a9f-413a-8ed9-cc8c5c55febd', 'name': 'Loan', 'traceName': 'Loan', 'namePascalCase': 'Loan', 'nameCamelCase': 'loan', 'namePlural': 'loans', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'loanId', 'traceName': 'loanId', 'nameCamelCase': 'loanId', 'namePascalCase': 'LoanId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 38]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 29]]], 'inputUI': None, 'options': None}, {'className': 'BookId', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 19]]], 'inputUI': None, 'options': None, 'referenceClass': 'Book', 'isOverrideField': True}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'loanDate', 'traceName': 'loanDate', 'nameCamelCase': 'loanDate', 'namePascalCase': 'LoanDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 48]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'dueDate', 'traceName': 'dueDate', 'nameCamelCase': 'dueDate', 'namePascalCase': 'DueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 25]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'returnDate', 'traceName': 'returnDate', 'nameCamelCase': 'returnDate', 'namePascalCase': 'ReturnDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[35, 5], [35, 29]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'loanPeriodDays', 'traceName': 'loanPeriodDays', 'nameCamelCase': 'loanPeriodDays', 'namePascalCase': 'LoanPeriodDays', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[36, 5], [36, 39]]], 'inputUI': None, 'options': None}, {'className': 'LoanStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[37, 5], [37, 50]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'extensionCount', 'traceName': 'extensionCount', 'nameCamelCase': 'extensionCount', 'namePascalCase': 'ExtensionCount', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[38, 5], [38, 31]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[39, 5], [39, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[40, 5], [40, 59]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[72, 5], [72, 41]]], 'inputUI': None, 'options': None}, {'className': 'LoanActionType', 'isCopy': False, 'isKey': False, 'name': 'actionType', 'traceName': 'actionType', 'nameCamelCase': 'actionType', 'namePascalCase': 'ActionType', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[74, 5], [74, 58]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'actionDate', 'traceName': 'actionDate', 'nameCamelCase': 'actionDate', 'namePascalCase': 'ActionDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[75, 5], [75, 50]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'previousDueDate', 'traceName': 'previousDueDate', 'nameCamelCase': 'previousDueDate', 'namePascalCase': 'PreviousDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[76, 5], [76, 35]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'newDueDate', 'traceName': 'newDueDate', 'nameCamelCase': 'newDueDate', 'namePascalCase': 'NewDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[77, 5], [77, 30]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'notes', 'traceName': 'notes', 'nameCamelCase': 'notes', 'namePascalCase': 'Notes', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[78, 5], [78, 14]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'processedBy', 'traceName': 'processedBy', 'nameCamelCase': 'processedBy', 'namePascalCase': 'ProcessedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[79, 5], [79, 24]]], 'inputUI': None, 'options': None}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.Class', 'id': '3b489dc2-6a9f-413a-8ed9-cc8c5c55febd', 'x': 200, 'y': 200, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 120, 'fieldH': 90, 'methodH': 30}, 'selected': False, 'relations': [], 'parentOperations': [], 'relationType': None, 'isVO': False, 'isAbstract': False, 'isInterface': False, 'isAggregateRoot': True, 'parentId': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'refs': [[[4, 8], [4, 28]]]}, '398ecd5b-3954-4f69-93c6-41d6946c890d': {'_type': 'org.uengine.uml.model.enum', 'id': '398ecd5b-3954-4f69-93c6-41d6946c890d', 'name': 'LoanStatus', 'traceName': 'LoanStatus', 'displayName': '대출 상태', 'nameCamelCase': 'loanStatus', 'namePascalCase': 'LoanStatus', 'namePlural': 'loanStatuses', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': '398ecd5b-3954-4f69-93c6-41d6946c890d', 'x': 700, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'ON_LOAN', 'traceName': 'ON_LOAN', 'refs': [[[37, 18], [37, 20]]]}, {'value': 'OVERDUE', 'traceName': 'OVERDUE', 'refs': [[[37, 25], [37, 26]]]}, {'value': 'RETURNED', 'traceName': 'RETURNED', 'refs': [[[37, 31], [37, 34]]]}, {'value': 'EXTENDED', 'traceName': 'EXTENDED', 'refs': [[[37, 39], [37, 40]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[37, 5], [37, 50]]]}, '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c': {'_type': 'org.uengine.uml.model.enum', 'id': '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c', 'name': 'LoanActionType', 'traceName': 'LoanActionType', 'displayName': '대출 이력 액션 타입', 'nameCamelCase': 'loanActionType', 'namePascalCase': 'LoanActionType', 'namePlural': 'loanActionTypes', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c', 'x': 950, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'LOAN', 'traceName': 'LOAN', 'refs': [[[74, 23], [74, 24]]]}, {'value': 'RETURN', 'traceName': 'RETURN', 'refs': [[[74, 29], [74, 30]]]}, {'value': 'EXTEND', 'traceName': 'EXTEND', 'refs': [[[74, 35], [74, 36]]]}, {'value': 'OVERDUE_NOTICE', 'traceName': 'OVERDUE_NOTICE', 'refs': [[[74, 41], [74, 44]]]}, {'value': 'LOST_REPORT', 'traceName': 'LOST_REPORT', 'refs': [[[74, 49], [74, 52]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[74, 5], [74, 58]]]}, '1626c83a-6966-40f8-856b-8a2d245a6e2f': {'_type': 'org.uengine.uml.model.vo.Class', 'id': '1626c83a-6966-40f8-856b-8a2d245a6e2f', 'name': 'BookId', 'traceName': 'BookId', 'displayName': '', 'namePascalCase': 'BookId', 'nameCamelCase': 'bookId', 'namePlural': 'bookIds', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Book', 'isOverrideField': True, 'label': '- bookId: Integer'}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.vo.address.Class', 'id': '1626c83a-6966-40f8-856b-8a2d245a6e2f', 'x': 700, 'y': 152, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 170, 'fieldH': 150, 'methodH': 30}, 'selected': False, 'parentOperations': [], 'relationType': None, 'isVO': True, 'relations': [], 'groupElement': None, 'isAggregateRoot': False, 'isAbstract': False, 'isInterface': False, 'refs': []}}, 'relations': {}}, 'operations': []}, 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'boundedContext': {'name': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd'}, 'commands': [], 'description': 'LoanProcess 컨텍스트의 핵심 Aggregate는 Loan(대출)이다. 대출의 상태(LoanStatus)는 고정된 값 집합이므로 Enumeration으로 정의한다. 대출 이력의 액션 타입(LoanActionType) 역시 Enumeration으로 정의한다. DDL에서 요구하는 모든 필드는 Loan Aggregate에 포함되거나, 필요에 따라 Enumeration으로 분리한다. BookId와 MemberId는 외부 Aggregate(Book, Member)를 참조하는 식별자로 사용한다. 이벤트 소싱 및 상태 추적을 위해 createdAt, updatedAt, extensionCount 등도 포함한다. Pub/Sub 연동을 위해 status, actionType 등 상태 추적 속성을 명확히 한다. ValueObject는 DDL 및 요구사항상 별도의 불변 객체로 묶을 만한 속성이 없으므로 생성하지 않는다. 모든 속성은 Aggregate에 직접 포함한다.', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'elementView': {'_type': 'org.uengine.modeling.model.Aggregate', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'x': 1185.0, 'y': 450, 'width': 130, 'height': 400}, 'events': [], 'hexagonalView': {'_type': 'org.uengine.modeling.model.AggregateHexagonal', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'x': 0, 'y': 0, 'subWidth': 0, 'width': 0}, 'name': 'Loan', 'traceName': 'Loan', 'displayName': '대출', 'nameCamelCase': 'loan', 'namePascalCase': 'Loan', 'namePlural': 'loans', 'rotateStatus': False, 'selected': False, '_type': 'org.uengine.modeling.model.Aggregate', 'refs': [[[4, 8], [4, 28]]]}, 'targetElement': {'aggregateRoot': {'_type': 'org.uengine.modeling.model.AggregateRoot', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[23, 5], [23, 38]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'title', 'traceName': 'title', 'nameCamelCase': 'title', 'namePascalCase': 'Title', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'isbn', 'traceName': 'isbn', 'nameCamelCase': 'isbn', 'namePascalCase': 'Isbn', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[25, 5], [25, 31]], [[66, 6], [66, 9]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'author', 'traceName': 'author', 'nameCamelCase': 'author', 'namePascalCase': 'Author', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[26, 5], [26, 27]], [[67, 6], [67, 7]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'publisher', 'traceName': 'publisher', 'nameCamelCase': 'publisher', 'namePascalCase': 'Publisher', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[27, 5], [27, 30]], [[68, 6], [68, 8]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'BookCategory', 'isCopy': False, 'isKey': False, 'name': 'category', 'traceName': 'category', 'nameCamelCase': 'category', 'namePascalCase': 'Category', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 22]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'BookStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[29, 5], [29, 51]], [[73, 6], [73, 22]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'registrationDate', 'traceName': 'registrationDate', 'nameCamelCase': 'registrationDate', 'namePascalCase': 'RegistrationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 56]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'disposalDate', 'traceName': 'disposalDate', 'nameCamelCase': 'disposalDate', 'namePascalCase': 'DisposalDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 31]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'disposalReason', 'traceName': 'disposalReason', 'nameCamelCase': 'disposalReason', 'namePascalCase': 'DisposalReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 29]], [[111, 9], [111, 16]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'changeDate', 'traceName': 'changeDate', 'nameCamelCase': 'changeDate', 'namePascalCase': 'ChangeDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[49, 5], [49, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changeReason', 'traceName': 'changeReason', 'nameCamelCase': 'changeReason', 'namePascalCase': 'ChangeReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[47, 5], [47, 25]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changedBy', 'traceName': 'changedBy', 'nameCamelCase': 'changedBy', 'namePascalCase': 'ChangedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[48, 5], [48, 22]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[43, 5], [43, 41]]], 'referenceClass': None, 'isOverrideField': False}], 'entities': {'elements': {'1c0b547d-3b80-441c-b1d6-452c68dfe450': {'_type': 'org.uengine.uml.model.Class', 'id': '1c0b547d-3b80-441c-b1d6-452c68dfe450', 'name': 'Book', 'traceName': 'Book', 'namePascalCase': 'Book', 'nameCamelCase': 'book', 'namePlural': 'books', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[23, 5], [23, 38]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'title', 'traceName': 'title', 'nameCamelCase': 'title', 'namePascalCase': 'Title', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'isbn', 'traceName': 'isbn', 'nameCamelCase': 'isbn', 'namePascalCase': 'Isbn', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[25, 5], [25, 31]], [[66, 6], [66, 9]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'author', 'traceName': 'author', 'nameCamelCase': 'author', 'namePascalCase': 'Author', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[26, 5], [26, 27]], [[67, 6], [67, 7]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'publisher', 'traceName': 'publisher', 'nameCamelCase': 'publisher', 'namePascalCase': 'Publisher', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[27, 5], [27, 30]], [[68, 6], [68, 8]]], 'inputUI': None, 'options': None}, {'className': 'BookCategory', 'isCopy': False, 'isKey': False, 'name': 'category', 'traceName': 'category', 'nameCamelCase': 'category', 'namePascalCase': 'Category', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 22]]], 'inputUI': None, 'options': None}, {'className': 'BookStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[29, 5], [29, 51]], [[73, 6], [73, 22]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'registrationDate', 'traceName': 'registrationDate', 'nameCamelCase': 'registrationDate', 'namePascalCase': 'RegistrationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 56]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'disposalDate', 'traceName': 'disposalDate', 'nameCamelCase': 'disposalDate', 'namePascalCase': 'DisposalDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 31]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'disposalReason', 'traceName': 'disposalReason', 'nameCamelCase': 'disposalReason', 'namePascalCase': 'DisposalReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 29]], [[111, 9], [111, 16]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'changeDate', 'traceName': 'changeDate', 'nameCamelCase': 'changeDate', 'namePascalCase': 'ChangeDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[49, 5], [49, 50]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changeReason', 'traceName': 'changeReason', 'nameCamelCase': 'changeReason', 'namePascalCase': 'ChangeReason', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[47, 5], [47, 25]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'changedBy', 'traceName': 'changedBy', 'nameCamelCase': 'changedBy', 'namePascalCase': 'ChangedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[48, 5], [48, 22]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[43, 5], [43, 41]]], 'inputUI': None, 'options': None}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.Class', 'id': '1c0b547d-3b80-441c-b1d6-452c68dfe450', 'x': 200, 'y': 200, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 120, 'fieldH': 90, 'methodH': 30}, 'selected': False, 'relations': [], 'parentOperations': [], 'relationType': None, 'isVO': False, 'isAbstract': False, 'isInterface': False, 'isAggregateRoot': True, 'parentId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'refs': [[[4, 1], [4, 13]]]}, 'e0fc7abe-6217-49f0-a5df-01faaf85c40b': {'_type': 'org.uengine.uml.model.enum', 'id': 'e0fc7abe-6217-49f0-a5df-01faaf85c40b', 'name': 'BookStatus', 'traceName': 'BookStatus', 'displayName': '도서 상태', 'nameCamelCase': 'bookStatus', 'namePascalCase': 'BookStatus', 'namePlural': 'bookStatuses', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': 'e0fc7abe-6217-49f0-a5df-01faaf85c40b', 'x': 700, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'AVAILABLE', 'traceName': 'AVAILABLE', 'refs': [[[29, 18], [29, 21]]]}, {'value': 'ON_LOAN', 'traceName': 'ON_LOAN', 'refs': [[[29, 26], [29, 28]]]}, {'value': 'RESERVED', 'traceName': 'RESERVED', 'refs': [[[29, 33], [29, 35]]]}, {'value': 'DISCARDED', 'traceName': 'DISCARDED', 'refs': [[[29, 40], [29, 41]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[29, 5], [29, 51]], [[92, 6], [92, 29]]]}, 'e121e110-ce49-40eb-91c4-5a7a6890769f': {'_type': 'org.uengine.uml.model.enum', 'id': 'e121e110-ce49-40eb-91c4-5a7a6890769f', 'name': 'BookCategory', 'traceName': 'BookCategory', 'displayName': '도서 카테고리', 'nameCamelCase': 'bookCategory', 'namePascalCase': 'BookCategory', 'namePlural': 'bookCategories', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': 'e121e110-ce49-40eb-91c4-5a7a6890769f', 'x': 950, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'NOVEL', 'traceName': 'NOVEL', 'refs': [[[28, 20], [28, 21]]]}, {'value': 'NONFICTION', 'traceName': 'NONFICTION', 'refs': [[[28, 26], [28, 28]]]}, {'value': 'ACADEMIC', 'traceName': 'ACADEMIC', 'refs': [[[28, 33], [28, 34]]]}, {'value': 'MAGAZINE', 'traceName': 'MAGAZINE', 'refs': [[[28, 39], [28, 40]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 22]]]}}, 'relations': {}}, 'operations': []}, 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'boundedContext': {'name': '8a9d2422-87e9-4aa9-9087-30e9ef26d202', 'id': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, 'commands': [], 'description': 'BookManagement 컨텍스트의 도메인 요구사항과 DDL, 이벤트, 컨텍스트 통합 패턴을 분석한 결과, Book 집계는 도서의 라이프사이클 전체(등록, 상태 관리, 폐기, 상태 변경, 이력 추적)를 책임진다. 상태와 카테고리는 각각 BookStatus, BookCategory 열거형으로 정의하여 도메인 불변식과 상태 전이를 명확히 한다. DDL의 모든 필수 필드는 Book 집계에 포함되며, 이력 관리(상태 변경, 폐기 등)는 외부 컨텍스트와의 Pub/Sub 연동을 고려해 상태 및 이력 관련 속성을 포함한다. ValueObject는 요구된 구조상 생성하지 않는다. 집계 내 속성들은 이벤트 소싱 및 외부 시스템 연동(이벤트 발행/구독)에 필요한 정보를 모두 포함한다.', 'id': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'elementView': {'_type': 'org.uengine.modeling.model.Aggregate', 'id': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'x': 600, 'y': 450, 'width': 130, 'height': 400}, 'events': [], 'hexagonalView': {'_type': 'org.uengine.modeling.model.AggregateHexagonal', 'id': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'x': 0, 'y': 0, 'subWidth': 0, 'width': 0}, 'name': 'Book', 'traceName': 'Book', 'displayName': '도서', 'nameCamelCase': 'book', 'namePascalCase': 'Book', 'namePlural': 'books', 'rotateStatus': False, 'selected': False, '_type': 'org.uengine.modeling.model.Aggregate', 'refs': [[[4, 1], [4, 13]]]}, 'from': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'to': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'relationView': {'id': '8519432f-c0c5-413e-8609-aed7313cc110', 'style': '{"arrow-start":"none","arrow-end":"none"}', 'from': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'to': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'needReconnect': True, 'value': '[]'}, 'hexagonalView': {'_type': 'org.uengine.modeling.model.RelationHexagonal', 'from': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'id': '8519432f-c0c5-413e-8609-aed7313cc110', 'needReconnect': True, 'style': '{"arrow-start":"none","arrow-end":"none"}', 'to': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'value': None}, 'sourceMultiplicity': '1', 'targetMultiplicity': '1'}, '6c27ece8-a778-43a1-9e92-f19df60fa73d': {'_type': 'org.uengine.modeling.model.Relation', 'name': '', 'id': '6c27ece8-a778-43a1-9e92-f19df60fa73d', 'sourceElement': {'aggregateRoot': {'_type': 'org.uengine.modeling.model.AggregateRoot', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'loanId', 'traceName': 'loanId', 'nameCamelCase': 'loanId', 'namePascalCase': 'LoanId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 38]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'BookId', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 19]]], 'referenceClass': 'Book', 'isOverrideField': True}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'loanDate', 'traceName': 'loanDate', 'nameCamelCase': 'loanDate', 'namePascalCase': 'LoanDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 48]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'dueDate', 'traceName': 'dueDate', 'nameCamelCase': 'dueDate', 'namePascalCase': 'DueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 25]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'returnDate', 'traceName': 'returnDate', 'nameCamelCase': 'returnDate', 'namePascalCase': 'ReturnDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[35, 5], [35, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'loanPeriodDays', 'traceName': 'loanPeriodDays', 'nameCamelCase': 'loanPeriodDays', 'namePascalCase': 'LoanPeriodDays', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[36, 5], [36, 39]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'LoanStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[37, 5], [37, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'extensionCount', 'traceName': 'extensionCount', 'nameCamelCase': 'extensionCount', 'namePascalCase': 'ExtensionCount', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[38, 5], [38, 31]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[39, 5], [39, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[40, 5], [40, 59]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[72, 5], [72, 41]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'LoanActionType', 'isCopy': False, 'isKey': False, 'name': 'actionType', 'traceName': 'actionType', 'nameCamelCase': 'actionType', 'namePascalCase': 'ActionType', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[74, 5], [74, 58]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'actionDate', 'traceName': 'actionDate', 'nameCamelCase': 'actionDate', 'namePascalCase': 'ActionDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[75, 5], [75, 50]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'previousDueDate', 'traceName': 'previousDueDate', 'nameCamelCase': 'previousDueDate', 'namePascalCase': 'PreviousDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[76, 5], [76, 35]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'newDueDate', 'traceName': 'newDueDate', 'nameCamelCase': 'newDueDate', 'namePascalCase': 'NewDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[77, 5], [77, 30]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'notes', 'traceName': 'notes', 'nameCamelCase': 'notes', 'namePascalCase': 'Notes', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[78, 5], [78, 14]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'processedBy', 'traceName': 'processedBy', 'nameCamelCase': 'processedBy', 'namePascalCase': 'ProcessedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[79, 5], [79, 24]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'ReservationId', 'isCopy': False, 'isKey': False, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Reservation', 'isOverrideField': True}], 'entities': {'elements': {'3b489dc2-6a9f-413a-8ed9-cc8c5c55febd': {'_type': 'org.uengine.uml.model.Class', 'id': '3b489dc2-6a9f-413a-8ed9-cc8c5c55febd', 'name': 'Loan', 'traceName': 'Loan', 'namePascalCase': 'Loan', 'nameCamelCase': 'loan', 'namePlural': 'loans', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'loanId', 'traceName': 'loanId', 'nameCamelCase': 'loanId', 'namePascalCase': 'LoanId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[30, 5], [30, 38]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[31, 5], [31, 29]]], 'inputUI': None, 'options': None}, {'className': 'BookId', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[32, 5], [32, 19]]], 'inputUI': None, 'options': None, 'referenceClass': 'Book', 'isOverrideField': True}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'loanDate', 'traceName': 'loanDate', 'nameCamelCase': 'loanDate', 'namePascalCase': 'LoanDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[33, 5], [33, 48]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'dueDate', 'traceName': 'dueDate', 'nameCamelCase': 'dueDate', 'namePascalCase': 'DueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[34, 5], [34, 25]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'returnDate', 'traceName': 'returnDate', 'nameCamelCase': 'returnDate', 'namePascalCase': 'ReturnDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[35, 5], [35, 29]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'loanPeriodDays', 'traceName': 'loanPeriodDays', 'nameCamelCase': 'loanPeriodDays', 'namePascalCase': 'LoanPeriodDays', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[36, 5], [36, 39]]], 'inputUI': None, 'options': None}, {'className': 'LoanStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[37, 5], [37, 50]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'extensionCount', 'traceName': 'extensionCount', 'nameCamelCase': 'extensionCount', 'namePascalCase': 'ExtensionCount', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[38, 5], [38, 31]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[39, 5], [39, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[40, 5], [40, 59]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'historyId', 'traceName': 'historyId', 'nameCamelCase': 'historyId', 'namePascalCase': 'HistoryId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[72, 5], [72, 41]]], 'inputUI': None, 'options': None}, {'className': 'LoanActionType', 'isCopy': False, 'isKey': False, 'name': 'actionType', 'traceName': 'actionType', 'nameCamelCase': 'actionType', 'namePascalCase': 'ActionType', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[74, 5], [74, 58]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'actionDate', 'traceName': 'actionDate', 'nameCamelCase': 'actionDate', 'namePascalCase': 'ActionDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[75, 5], [75, 50]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'previousDueDate', 'traceName': 'previousDueDate', 'nameCamelCase': 'previousDueDate', 'namePascalCase': 'PreviousDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[76, 5], [76, 35]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'newDueDate', 'traceName': 'newDueDate', 'nameCamelCase': 'newDueDate', 'namePascalCase': 'NewDueDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[77, 5], [77, 30]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'notes', 'traceName': 'notes', 'nameCamelCase': 'notes', 'namePascalCase': 'Notes', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[78, 5], [78, 14]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'processedBy', 'traceName': 'processedBy', 'nameCamelCase': 'processedBy', 'namePascalCase': 'ProcessedBy', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[79, 5], [79, 24]]], 'inputUI': None, 'options': None}, {'className': 'ReservationId', 'isCopy': False, 'isKey': False, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Reservation', 'isOverrideField': True}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.Class', 'id': '3b489dc2-6a9f-413a-8ed9-cc8c5c55febd', 'x': 200, 'y': 200, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 120, 'fieldH': 90, 'methodH': 30}, 'selected': False, 'relations': [], 'parentOperations': [], 'relationType': None, 'isVO': False, 'isAbstract': False, 'isInterface': False, 'isAggregateRoot': True, 'parentId': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'refs': [[[4, 8], [4, 28]]]}, '398ecd5b-3954-4f69-93c6-41d6946c890d': {'_type': 'org.uengine.uml.model.enum', 'id': '398ecd5b-3954-4f69-93c6-41d6946c890d', 'name': 'LoanStatus', 'traceName': 'LoanStatus', 'displayName': '대출 상태', 'nameCamelCase': 'loanStatus', 'namePascalCase': 'LoanStatus', 'namePlural': 'loanStatuses', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': '398ecd5b-3954-4f69-93c6-41d6946c890d', 'x': 700, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'ON_LOAN', 'traceName': 'ON_LOAN', 'refs': [[[37, 18], [37, 20]]]}, {'value': 'OVERDUE', 'traceName': 'OVERDUE', 'refs': [[[37, 25], [37, 26]]]}, {'value': 'RETURNED', 'traceName': 'RETURNED', 'refs': [[[37, 31], [37, 34]]]}, {'value': 'EXTENDED', 'traceName': 'EXTENDED', 'refs': [[[37, 39], [37, 40]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[37, 5], [37, 50]]]}, '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c': {'_type': 'org.uengine.uml.model.enum', 'id': '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c', 'name': 'LoanActionType', 'traceName': 'LoanActionType', 'displayName': '대출 이력 액션 타입', 'nameCamelCase': 'loanActionType', 'namePascalCase': 'LoanActionType', 'namePlural': 'loanActionTypes', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': '3d4ce6b8-53e5-4156-b494-6fa7c5d3300c', 'x': 950, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'LOAN', 'traceName': 'LOAN', 'refs': [[[74, 23], [74, 24]]]}, {'value': 'RETURN', 'traceName': 'RETURN', 'refs': [[[74, 29], [74, 30]]]}, {'value': 'EXTEND', 'traceName': 'EXTEND', 'refs': [[[74, 35], [74, 36]]]}, {'value': 'OVERDUE_NOTICE', 'traceName': 'OVERDUE_NOTICE', 'refs': [[[74, 41], [74, 44]]]}, {'value': 'LOST_REPORT', 'traceName': 'LOST_REPORT', 'refs': [[[74, 49], [74, 52]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[74, 5], [74, 58]]]}, '1626c83a-6966-40f8-856b-8a2d245a6e2f': {'_type': 'org.uengine.uml.model.vo.Class', 'id': '1626c83a-6966-40f8-856b-8a2d245a6e2f', 'name': 'BookId', 'traceName': 'BookId', 'displayName': '', 'namePascalCase': 'BookId', 'nameCamelCase': 'bookId', 'namePlural': 'bookIds', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Book', 'isOverrideField': True, 'label': '- bookId: Integer'}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.vo.address.Class', 'id': '1626c83a-6966-40f8-856b-8a2d245a6e2f', 'x': 700, 'y': 152, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 170, 'fieldH': 150, 'methodH': 30}, 'selected': False, 'parentOperations': [], 'relationType': None, 'isVO': True, 'relations': [], 'groupElement': None, 'isAggregateRoot': False, 'isAbstract': False, 'isInterface': False, 'refs': []}, '551400f6-5151-47a6-afc1-2b9091b56c5b': {'_type': 'org.uengine.uml.model.vo.Class', 'id': '551400f6-5151-47a6-afc1-2b9091b56c5b', 'name': 'ReservationId', 'traceName': 'ReservationId', 'displayName': '', 'namePascalCase': 'ReservationId', 'nameCamelCase': 'reservationId', 'namePlural': 'reservationIds', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': None, 'referenceClass': 'Reservation', 'isOverrideField': True, 'label': '- reservationId: Integer'}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.vo.address.Class', 'id': '551400f6-5151-47a6-afc1-2b9091b56c5b', 'x': 950, 'y': 152, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 170, 'fieldH': 150, 'methodH': 30}, 'selected': False, 'parentOperations': [], 'relationType': None, 'isVO': True, 'relations': [], 'groupElement': None, 'isAggregateRoot': False, 'isAbstract': False, 'isInterface': False, 'refs': []}}, 'relations': {}}, 'operations': []}, 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'boundedContext': {'name': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd'}, 'commands': [], 'description': 'LoanProcess 컨텍스트의 핵심 Aggregate는 Loan(대출)이다. 대출의 상태(LoanStatus)는 고정된 값 집합이므로 Enumeration으로 정의한다. 대출 이력의 액션 타입(LoanActionType) 역시 Enumeration으로 정의한다. DDL에서 요구하는 모든 필드는 Loan Aggregate에 포함되거나, 필요에 따라 Enumeration으로 분리한다. BookId와 MemberId는 외부 Aggregate(Book, Member)를 참조하는 식별자로 사용한다. 이벤트 소싱 및 상태 추적을 위해 createdAt, updatedAt, extensionCount 등도 포함한다. Pub/Sub 연동을 위해 status, actionType 등 상태 추적 속성을 명확히 한다. ValueObject는 DDL 및 요구사항상 별도의 불변 객체로 묶을 만한 속성이 없으므로 생성하지 않는다. 모든 속성은 Aggregate에 직접 포함한다.', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'elementView': {'_type': 'org.uengine.modeling.model.Aggregate', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'x': 1185.0, 'y': 450, 'width': 130, 'height': 400}, 'events': [], 'hexagonalView': {'_type': 'org.uengine.modeling.model.AggregateHexagonal', 'id': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'x': 0, 'y': 0, 'subWidth': 0, 'width': 0}, 'name': 'Loan', 'traceName': 'Loan', 'displayName': '대출', 'nameCamelCase': 'loan', 'namePascalCase': 'Loan', 'namePlural': 'loans', 'rotateStatus': False, 'selected': False, '_type': 'org.uengine.modeling.model.Aggregate', 'refs': [[[4, 8], [4, 28]]]}, 'targetElement': {'aggregateRoot': {'_type': 'org.uengine.modeling.model.AggregateRoot', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[52, 5], [52, 45]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[53, 5], [53, 34]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[54, 5], [54, 24]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'reservationDate', 'traceName': 'reservationDate', 'nameCamelCase': 'reservationDate', 'namePascalCase': 'ReservationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[55, 5], [55, 55]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'ReservationStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[56, 5], [56, 54]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Boolean', 'isCopy': False, 'isKey': False, 'name': 'notificationSent', 'traceName': 'notificationSent', 'nameCamelCase': 'notificationSent', 'namePascalCase': 'NotificationSent', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[57, 5], [57, 43]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'expiryDate', 'traceName': 'expiryDate', 'nameCamelCase': 'expiryDate', 'namePascalCase': 'ExpiryDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[58, 5], [58, 29]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[59, 5], [59, 49]]], 'referenceClass': None, 'isOverrideField': False}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[60, 5], [60, 49]]], 'referenceClass': None, 'isOverrideField': False}], 'entities': {'elements': {'7beec444-b271-4eb4-b1e2-7c0749a9c416': {'_type': 'org.uengine.uml.model.Class', 'id': '7beec444-b271-4eb4-b1e2-7c0749a9c416', 'name': 'Reservation', 'traceName': 'Reservation', 'namePascalCase': 'Reservation', 'nameCamelCase': 'reservation', 'namePlural': 'reservations', 'fieldDescriptors': [{'className': 'Integer', 'isCopy': False, 'isKey': True, 'name': 'reservationId', 'traceName': 'reservationId', 'nameCamelCase': 'reservationId', 'namePascalCase': 'ReservationId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[52, 5], [52, 45]]], 'inputUI': None, 'options': None}, {'className': 'String', 'isCopy': False, 'isKey': False, 'name': 'memberId', 'traceName': 'memberId', 'nameCamelCase': 'memberId', 'namePascalCase': 'MemberId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[53, 5], [53, 34]]], 'inputUI': None, 'options': None}, {'className': 'Integer', 'isCopy': False, 'isKey': False, 'name': 'bookId', 'traceName': 'bookId', 'nameCamelCase': 'bookId', 'namePascalCase': 'BookId', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[54, 5], [54, 24]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'reservationDate', 'traceName': 'reservationDate', 'nameCamelCase': 'reservationDate', 'namePascalCase': 'ReservationDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[55, 5], [55, 55]]], 'inputUI': None, 'options': None}, {'className': 'ReservationStatus', 'isCopy': False, 'isKey': False, 'name': 'status', 'traceName': 'status', 'nameCamelCase': 'status', 'namePascalCase': 'Status', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[56, 5], [56, 54]]], 'inputUI': None, 'options': None}, {'className': 'Boolean', 'isCopy': False, 'isKey': False, 'name': 'notificationSent', 'traceName': 'notificationSent', 'nameCamelCase': 'notificationSent', 'namePascalCase': 'NotificationSent', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[57, 5], [57, 43]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'expiryDate', 'traceName': 'expiryDate', 'nameCamelCase': 'expiryDate', 'namePascalCase': 'ExpiryDate', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[58, 5], [58, 29]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'createdAt', 'traceName': 'createdAt', 'nameCamelCase': 'createdAt', 'namePascalCase': 'CreatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[59, 5], [59, 49]]], 'inputUI': None, 'options': None}, {'className': 'Date', 'isCopy': False, 'isKey': False, 'name': 'updatedAt', 'traceName': 'updatedAt', 'nameCamelCase': 'updatedAt', 'namePascalCase': 'UpdatedAt', 'displayName': '', '_type': 'org.uengine.model.FieldDescriptor', 'isList': False, 'refs': [[[60, 5], [60, 49]]], 'inputUI': None, 'options': None}], 'operations': [], 'elementView': {'_type': 'org.uengine.uml.model.Class', 'id': '7beec444-b271-4eb4-b1e2-7c0749a9c416', 'x': 200, 'y': 200, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 120, 'fieldH': 90, 'methodH': 30}, 'selected': False, 'relations': [], 'parentOperations': [], 'relationType': None, 'isVO': False, 'isAbstract': False, 'isInterface': False, 'isAggregateRoot': True, 'parentId': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'refs': [[[52, 5], [66, 30]]]}, 'd8d260f1-65d3-45ab-a54d-f951e138760e': {'_type': 'org.uengine.uml.model.enum', 'id': 'd8d260f1-65d3-45ab-a54d-f951e138760e', 'name': 'ReservationStatus', 'traceName': 'ReservationStatus', 'displayName': '예약 상태', 'nameCamelCase': 'reservationStatus', 'namePascalCase': 'ReservationStatus', 'namePlural': 'reservationStatuses', 'elementView': {'_type': 'org.uengine.uml.model.enum', 'id': 'd8d260f1-65d3-45ab-a54d-f951e138760e', 'x': 700, 'y': 456, 'width': 200, 'height': 100, 'style': '{}', 'titleH': 50, 'subEdgeH': 50}, 'selected': False, 'items': [{'value': 'RESERVING', 'traceName': 'RESERVING', 'refs': [[[56, 18], [56, 20]]]}, {'value': 'RESERVED', 'traceName': 'RESERVED', 'refs': [[[56, 25], [56, 28]]]}, {'value': 'CANCELLED', 'traceName': 'CANCELLED', 'refs': [[[56, 33], [56, 36]]]}, {'value': 'EXPIRED', 'traceName': 'EXPIRED', 'refs': [[[56, 41], [56, 44]]]}], 'useKeyValue': False, 'relations': [], 'refs': [[[56, 5], [56, 54]]]}}, 'relations': {}}, 'operations': []}, 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'boundedContext': {'name': 'ed555041-74d2-46e4-9124-ac2bc94931bd', 'id': 'ed555041-74d2-46e4-9124-ac2bc94931bd'}, 'commands': [], 'description': 'Reservation 애그리게이트는 도서 예약의 전체 라이프사이클을 관리해야 하므로, 예약의 고유 식별자(reservationId), 회원 식별자(memberId), 도서 식별자(bookId), 예약 일시(reservationDate), 상태(status), 알림 발송 여부(notificationSent), 만료일(expiryDate), 생성/수정 일시(createdAt, updatedAt) 등 DDL에서 요구하는 모든 필드를 포함해야 한다. 예약 상태는 ReservationStatus 열거형으로 관리하며, 예약의 상태 추적 및 이벤트 발행/구독에 적합하다. Pub/Sub 기반의 컨텍스트 통합을 위해 예약 상태 변경 등 이벤트 기반 속성도 포함되어야 한다. ValueObject는 요구된 구조에 없으므로 생성하지 않는다. 모든 속성은 DDL 및 요구사항의 최소 참조 구간을 정확히 명시한다.', 'id': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'elementView': {'_type': 'org.uengine.modeling.model.Aggregate', 'id': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'x': 1615.0, 'y': 450, 'width': 130, 'height': 400}, 'events': [], 'hexagonalView': {'_type': 'org.uengine.modeling.model.AggregateHexagonal', 'id': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'x': 0, 'y': 0, 'subWidth': 0, 'width': 0}, 'name': 'Reservation', 'traceName': 'Reservation', 'displayName': '예약', 'nameCamelCase': 'reservation', 'namePascalCase': 'Reservation', 'namePlural': 'reservations', 'rotateStatus': False, 'selected': False, '_type': 'org.uengine.modeling.model.Aggregate', 'refs': [[[52, 5], [66, 30]]]}, 'from': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'to': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'relationView': {'id': '6c27ece8-a778-43a1-9e92-f19df60fa73d', 'style': '{"arrow-start":"none","arrow-end":"none"}', 'from': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'to': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'needReconnect': True, 'value': '[]'}, 'hexagonalView': {'_type': 'org.uengine.modeling.model.RelationHexagonal', 'from': 'f85a7e02-d046-4ecb-9d63-040d853c5288', 'id': '6c27ece8-a778-43a1-9e92-f19df60fa73d', 'needReconnect': True, 'style': '{"arrow-start":"none","arrow-end":"none"}', 'to': '8f0391f5-4e51-4159-a8d9-1ef319822db5', 'value': None}, 'sourceMultiplicity': '1', 'targetMultiplicity': '1'}}),
-    "actions": [ActionModel(objectType='Command', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'commandId': '5f5c38a5-f604-4eed-b57a-704c538f9947', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'commandName': 'RegisterBook', 'commandAlias': '도서 등록', 'api_verb': 'POST', 'properties': [{'name': 'title', 'type': None, 'isKey': None, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]]}, {'name': 'isbn', 'type': None, 'isKey': None, 'refs': [[[25, 5], [25, 31]], [[66, 6], [66, 9]]]}, {'name': 'author', 'type': None, 'isKey': None, 'refs': [[[26, 5], [26, 27]], [[67, 6], [67, 7]]]}, {'name': 'publisher', 'type': None, 'isKey': None, 'refs': [[[27, 5], [27, 30]], [[68, 6], [68, 8]]]}, {'name': 'category', 'type': 'BookCategory', 'isKey': None, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 9]]]}], 'outputEventIds': ['1cd125d8-dae0-424d-b32b-ab23c37c7bce'], 'actor': 'Librarian', 'refs': [[[15, 22], [15, 99]], [[63, 41], [63, 102]]], 'referencedSiteMapId': 'book-registration', 'isRestRepository': False}, actionName='RegisterBook'), ActionModel(objectType='Command', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'commandId': 'fdc48a89-58e5-423e-a9ba-f66aabc875eb', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'commandName': 'ChangeBookStatus', 'commandAlias': '도서 상태 변경', 'api_verb': 'PUT', 'properties': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[112, 9], [112, 11]]]}, {'name': 'newStatus', 'type': 'BookStatus', 'isKey': None, 'refs': [[[46, 5], [46, 51]], [[92, 6], [92, 10]]]}, {'name': 'changeReason', 'type': None, 'isKey': None, 'refs': [[[47, 5], [47, 17]], [[111, 15], [111, 16]]]}, {'name': 'changedBy', 'type': None, 'isKey': None, 'refs': [[[48, 5], [48, 14]]]}], 'outputEventIds': ['9859b471-1980-4b18-9696-393116ebd68d'], 'actor': 'System', 'refs': [[[9, 3], [9, 19]], [[87, 37], [87, 58]]], 'referencedSiteMapId': 'book-status-management', 'isRestRepository': False}, actionName='ChangeBookStatus'), ActionModel(objectType='Command', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'commandId': '2d038c94-d45e-4d20-9987-96e9bab8705f', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'commandName': 'DiscardBook', 'commandAlias': '도서 폐기', 'api_verb': 'DELETE', 'properties': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[112, 9], [112, 11]]]}, {'name': 'disposalReason', 'type': None, 'isKey': None, 'refs': [[[32, 5], [32, 19]], [[111, 15], [111, 16]]]}], 'outputEventIds': ['5b5bf5dc-42a2-4b38-9da8-ab2e08f3a04a'], 'actor': 'Librarian', 'refs': [[[8, 3], [8, 15]], [[109, 48], [109, 76]]], 'referencedSiteMapId': 'book-status-management', 'isRestRepository': False}, actionName='DiscardBook'), ActionModel(objectType='Event', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'eventId': '1cd125d8-dae0-424d-b32b-ab23c37c7bce', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'eventName': 'BookRegistered', 'eventAlias': '도서 등록됨', 'properties': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[23, 5], [23, 38]], [[112, 9], [112, 11]]]}, {'name': 'title', 'type': None, 'isKey': None, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]]}, {'name': 'isbn', 'type': None, 'isKey': None, 'refs': [[[25, 5], [25, 31]], [[66, 6], [66, 9]]]}, {'name': 'author', 'type': None, 'isKey': None, 'refs': [[[26, 5], [26, 27]], [[67, 6], [67, 7]]]}, {'name': 'publisher', 'type': None, 'isKey': None, 'refs': [[[27, 5], [27, 30]], [[68, 6], [68, 8]]]}, {'name': 'category', 'type': 'BookCategory', 'isKey': None, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 9]]]}, {'name': 'status', 'type': 'BookStatus', 'isKey': None, 'refs': [[[29, 5], [29, 51]], [[73, 13], [73, 22]]]}, {'name': 'registrationDate', 'type': 'Date', 'isKey': None, 'refs': [[[30, 5], [30, 38]]]}], 'refs': [[[7, 3], [7, 16]], [[59, 12], [59, 25]]]}, actionName='BookRegisteredEvent'), ActionModel(objectType='Event', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'eventId': '9859b471-1980-4b18-9696-393116ebd68d', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'eventName': 'BookStatusChanged', 'eventAlias': '도서 상태 변경됨', 'properties': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[112, 9], [112, 11]]]}, {'name': 'previousStatus', 'type': 'BookStatus', 'isKey': None, 'refs': [[[45, 5], [45, 19]]]}, {'name': 'newStatus', 'type': 'BookStatus', 'isKey': None, 'refs': [[[46, 5], [46, 51]], [[92, 6], [92, 10]]]}, {'name': 'changeReason', 'type': None, 'isKey': None, 'refs': [[[47, 5], [47, 17]], [[111, 15], [111, 16]]]}, {'name': 'changedBy', 'type': None, 'isKey': None, 'refs': [[[48, 5], [48, 14]]]}, {'name': 'changeDate', 'type': 'Date', 'isKey': None, 'refs': [[[49, 5], [49, 15]]]}], 'refs': [[[9, 3], [9, 19]], [[83, 12], [83, 28]]]}, actionName='BookStatusChangedEvent'), ActionModel(objectType='Event', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'eventId': '5b5bf5dc-42a2-4b38-9da8-ab2e08f3a04a', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'eventName': 'BookDiscarded', 'eventAlias': '도서 폐기됨', 'properties': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[112, 9], [112, 11]]]}, {'name': 'disposalReason', 'type': None, 'isKey': None, 'refs': [[[32, 5], [32, 19]], [[111, 15], [111, 16]]]}, {'name': 'disposalDate', 'type': 'Date', 'isKey': None, 'refs': [[[31, 5], [31, 17]]]}], 'refs': [[[8, 3], [8, 15]], [[105, 12], [105, 24]]]}, actionName='BookDiscardedEvent'), ActionModel(objectType='ReadModel', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'readModelId': 'a81ed934-b0aa-49c3-a6e5-8adae19ffebd', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'readModelName': 'BookList', 'readModelAlias': '도서 목록', 'isMultipleResult': True, 'queryParameters': [{'name': 'category', 'type': 'BookCategory', 'isKey': None, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 9]]]}, {'name': 'status', 'type': 'BookStatus', 'isKey': None, 'refs': [[[29, 5], [29, 51]], [[92, 6], [92, 10]]]}, {'name': 'title', 'type': None, 'isKey': None, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]]}], 'actor': 'Librarian', 'refs': [[[15, 30], [15, 45]]], 'referencedSiteMapId': 'book-management', 'properties': [{'name': 'category', 'type': 'BookCategory', 'isKey': None, 'refs': [[[28, 5], [28, 46]], [[69, 6], [69, 9]]]}, {'name': 'status', 'type': 'BookStatus', 'isKey': None, 'refs': [[[29, 5], [29, 51]], [[92, 6], [92, 10]]]}, {'name': 'title', 'type': None, 'isKey': None, 'refs': [[[24, 5], [24, 26]], [[65, 6], [65, 8]]]}]}, actionName='BookListReadModel'), ActionModel(objectType='ReadModel', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'readModelId': '51265a4d-c492-40ac-9528-a1b9cb02128f', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'readModelName': 'BookDetails', 'readModelAlias': '도서 상세', 'isMultipleResult': False, 'queryParameters': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[112, 9], [112, 11]]]}], 'actor': 'Librarian', 'refs': [[[15, 3], [17, 43]]], 'referencedSiteMapId': 'book-management', 'properties': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[112, 9], [112, 11]]]}]}, actionName='BookDetailsReadModel'), ActionModel(objectType='ReadModel', type='create', ids={'aggregateId': '573b904c-8c34-47ab-8ac3-2cbd2c2ecf70', 'readModelId': '02141e47-fe09-4b3a-8f90-ef7ad2c09c01', 'boundedContextId': '8a9d2422-87e9-4aa9-9087-30e9ef26d202'}, args={'readModelName': 'BookHistory', 'readModelAlias': '도서 이력', 'isMultipleResult': False, 'queryParameters': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[129, 9], [129, 11]]]}], 'actor': 'Librarian', 'refs': [[[17, 6], [17, 63]], [[124, 19], [124, 27]]], 'referencedSiteMapId': 'book-history', 'properties': [{'name': 'bookId', 'type': 'Integer', 'isKey': True, 'refs': [[[44, 5], [44, 19]], [[129, 9], [129, 11]]]}]}, actionName='BookHistoryReadModel')]
+    "esValue": EsValueModel(elements={'a0f580e4-fc10-4d02-8a63-a81e7811e821': {'_type': 'org.uengine.modeling.model.BoundedContext', 'aggregates': [], 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'description': '# Bounded Context Overview: BookManagement (도서 관리)\n\n## Role\n도서 등록, 상태 관리, 폐기 처리를 담당하며 도서의 생애주기와 상태 변화를 관리한다.\n\n## Key Events\n- BookRegistered\n- BookStatusChanged\n- BookDisposed\n\n# Requirements\n\n## userStory\n\n도서 관리\' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해. 도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해. 등록된 도서는 처음에 \'대출가능\' 상태가 되고, 이후 대출/반납 상황에 따라 \'대출중\', \'예약중\' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 \'폐기\' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야\n\n도서별로 대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할\n\n## DDL\n\n```sql\n도서 테이블\nCREATE TABLE books (\n    book_id INT AUTO_INCREMENT PRIMARY KEY,\n    title VARCHAR(500) NOT NULL,\n    isbn VARCHAR(13) UNIQUE NOT NULL,\n    author VARCHAR(200) NOT NULL,\n    publisher VARCHAR(200) NOT NULL,\n    category ENUM(\'소설\', \'비소설\', \'학술\', \'잡지\') NOT NULL,\n    status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') DEFAULT \'대출가능\',\n    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    disposal_date DATETIME NULL,\n    disposal_reason TEXT NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    INDEX idx_title (title),\n    INDEX idx_isbn (isbn),\n    INDEX idx_status (status),\n    INDEX idx_category (category)\n);\n```\n```sql\n도서 상태 변경 이력 테이블\nCREATE TABLE book_status_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    book_id INT NOT NULL,\n    previous_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\'),\n    new_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') NOT NULL,\n    change_reason VARCHAR(200),\n    changed_by VARCHAR(100),\n    change_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_change_date (change_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "BookRegistered",\n  "displayName": "도서 등록됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "사서가 새로운 도서를 등록하여 도서관 시스템에 추가하였음. 등록 시 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받고, ISBN 중복 및 유효성 검증이 완료됨.",\n  "inputs": [\n    "도서명",\n    "ISBN(13자리)",\n    "저자",\n    "출판사",\n    "카테고리(소설/비소설/학술/잡지)"\n  ],\n  "outputs": [\n    "신규 도서 정보",\n    "도서 상태: 대출가능"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookStatusChanged",\n  "displayName": "도서 상태 변경됨",\n  "actor": "System",\n  "level": 2,\n  "description": "도서의 대출/반납/예약/폐기 등 상태 변화가 발생하여 도서 상태가 자동 또는 수동으로 변경됨.",\n  "inputs": [\n    "도서 상태 변경 트리거(대출, 반납, 예약, 폐기 등)",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "변경된 도서 상태"\n  ],\n  "nextEvents": [\n    "BookDisposed",\n    "BookLoaned",\n    "BookReturned",\n    "BookReserved"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookDisposed",\n  "displayName": "도서 폐기됨",\n  "actor": "Librarian",\n  "level": 3,\n  "description": "도서가 훼손 또는 분실되어 사서에 의해 폐기 처리됨. 폐기된 도서는 더 이상 대출이 불가능함.",\n  "inputs": [\n    "도서 식별자",\n    "폐기 사유"\n  ],\n  "outputs": [\n    "도서 상태: 폐기"\n  ],\n  "nextEvents": []\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanAndReservation\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출/반납 및 예약 (LoanAndReservation)\n- **Reason**: 도서 상태 변경(대출가능, 대출중, 예약중, 폐기 등)이 발생하면 대출/반납 및 예약 컨텍스트에서 이를 구독하여 대출/예약 프로세스에 반영한다.\n- **Interaction Pattern**: 도서 관리에서 도서 상태 변경 이벤트를 발행하면 대출/반납 및 예약 컨텍스트가 이를 구독하여 처리한다.\n\n### BookManagement-LoanHistory\n- **Type**: Pub/Sub\n- **Direction**: sends to 이력 관리 (LoanHistory)\n- **Reason**: 도서 등록, 폐기 등 도서 상태 변화 이력도 이력 관리 컨텍스트에서 기록할 수 있도록 이벤트를 발행한다.\n- **Interaction Pattern**: 도서 관리에서 도서 등록, 폐기 등 상태 변화 이벤트를 발행하면 이력 관리 컨텍스트가 이를 구독하여 상태 변경 이력을 기록한다.', 'id': 'a0f580e4-fc10-4d02-8a63-a81e7811e821', 'elementView': {'_type': 'org.uengine.modeling.model.BoundedContext', 'height': 590, 'id': 'a0f580e4-fc10-4d02-8a63-a81e7811e821', 'style': '{}', 'width': 560, 'x': 600, 'y': 450}, 'gitURL': None, 'hexagonalView': {'_type': 'org.uengine.modeling.model.BoundedContextHexagonal', 'height': 350, 'id': 'a0f580e4-fc10-4d02-8a63-a81e7811e821', 'style': '{}', 'width': 350, 'x': 235, 'y': 365}, 'members': [], 'name': 'BookManagement', 'traceName': 'BookManagement', 'displayName': '도서 관리', 'oldName': '', 'policies': [], 'portGenerated': 8080, 'preferredPlatform': 'template-spring-boot', 'preferredPlatformConf': {}, 'rotateStatus': False, 'tempId': '', 'templatePerElements': {}, 'views': [], 'definitionId': '163972132_es_a4afe53e52e57652bdbd6dac8e734470', 'requirements': {'ddl': "도서 테이블\nCREATE TABLE books (\n    book_id INT AUTO_INCREMENT PRIMARY KEY,\n    title VARCHAR(500) NOT NULL,\n    isbn VARCHAR(13) UNIQUE NOT NULL,\n    author VARCHAR(200) NOT NULL,\n    publisher VARCHAR(200) NOT NULL,\n    category ENUM('소설', '비소설', '학술', '잡지') NOT NULL,\n    status ENUM('대출가능', '대출중', '예약중', '폐기') DEFAULT '대출가능',\n    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    disposal_date DATETIME NULL,\n    disposal_reason TEXT NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    INDEX idx_title (title),\n    INDEX idx_isbn (isbn),\n    INDEX idx_status (status),\n    INDEX idx_category (category)\n);\n도서 상태 변경 이력 테이블\nCREATE TABLE book_status_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    book_id INT NOT NULL,\n    previous_status ENUM('대출가능', '대출중', '예약중', '폐기'),\n    new_status ENUM('대출가능', '대출중', '예약중', '폐기') NOT NULL,\n    change_reason VARCHAR(200),\n    changed_by VARCHAR(100),\n    change_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_change_date (change_date)\n);", 'ddlFields': [{'fieldName': 'book_id', 'refs': [[[26, 5], [26, 42]], [[87, 5], [87, 24]]]}, {'fieldName': 'title', 'refs': [[[27, 5], [27, 31]]]}, {'fieldName': 'isbn', 'refs': [[[28, 5], [28, 36]]]}, {'fieldName': 'author', 'refs': [[[29, 5], [29, 32]]]}, {'fieldName': 'publisher', 'refs': [[[30, 5], [30, 35]]]}, {'fieldName': 'category', 'refs': [[[31, 5], [31, 51]]]}, {'fieldName': 'status', 'refs': [[[32, 5], [32, 51]]]}, {'fieldName': 'registration_date', 'refs': [[[33, 5], [33, 56]]]}, {'fieldName': 'disposal_date', 'refs': [[[34, 5], [34, 31]]]}, {'fieldName': 'disposal_reason', 'refs': [[[35, 5], [35, 29]]]}, {'fieldName': 'created_at', 'refs': [[[36, 5], [36, 49]]]}, {'fieldName': 'updated_at', 'refs': [[[37, 5], [37, 77]]]}, {'fieldName': 'history_id', 'refs': [[[86, 5], [86, 45]]]}, {'fieldName': 'previous_status', 'refs': [[[88, 5], [88, 53]]]}, {'fieldName': 'new_status', 'refs': [[[89, 5], [89, 56]]]}, {'fieldName': 'change_reason', 'refs': [[[90, 5], [90, 30]]]}, {'fieldName': 'changed_by', 'refs': [[[91, 5], [91, 27]]]}, {'fieldName': 'change_date', 'refs': [[[92, 5], [92, 50]]]}], 'description': '# Bounded Context Overview: BookManagement (도서 관리)\n\n## Role\n도서 등록, 상태 관리, 폐기 처리를 담당하며 도서의 생애주기와 상태 변화를 관리한다.\n\n## Key Events\n- BookRegistered\n- BookStatusChanged\n- BookDisposed\n\n# Requirements\n\n## userStory\n\n도서 관리\' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해. 도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해. 등록된 도서는 처음에 \'대출가능\' 상태가 되고, 이후 대출/반납 상황에 따라 \'대출중\', \'예약중\' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 \'폐기\' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야\n\n도서별로 대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할\n\n## DDL\n\n```sql\n도서 테이블\nCREATE TABLE books (\n    book_id INT AUTO_INCREMENT PRIMARY KEY,\n    title VARCHAR(500) NOT NULL,\n    isbn VARCHAR(13) UNIQUE NOT NULL,\n    author VARCHAR(200) NOT NULL,\n    publisher VARCHAR(200) NOT NULL,\n    category ENUM(\'소설\', \'비소설\', \'학술\', \'잡지\') NOT NULL,\n    status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') DEFAULT \'대출가능\',\n    registration_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    disposal_date DATETIME NULL,\n    disposal_reason TEXT NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    INDEX idx_title (title),\n    INDEX idx_isbn (isbn),\n    INDEX idx_status (status),\n    INDEX idx_category (category)\n);\n```\n```sql\n도서 상태 변경 이력 테이블\nCREATE TABLE book_status_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    book_id INT NOT NULL,\n    previous_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\'),\n    new_status ENUM(\'대출가능\', \'대출중\', \'예약중\', \'폐기\') NOT NULL,\n    change_reason VARCHAR(200),\n    changed_by VARCHAR(100),\n    change_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_change_date (change_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "BookRegistered",\n  "displayName": "도서 등록됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "사서가 새로운 도서를 등록하여 도서관 시스템에 추가하였음. 등록 시 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받고, ISBN 중복 및 유효성 검증이 완료됨.",\n  "inputs": [\n    "도서명",\n    "ISBN(13자리)",\n    "저자",\n    "출판사",\n    "카테고리(소설/비소설/학술/잡지)"\n  ],\n  "outputs": [\n    "신규 도서 정보",\n    "도서 상태: 대출가능"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookStatusChanged",\n  "displayName": "도서 상태 변경됨",\n  "actor": "System",\n  "level": 2,\n  "description": "도서의 대출/반납/예약/폐기 등 상태 변화가 발생하여 도서 상태가 자동 또는 수동으로 변경됨.",\n  "inputs": [\n    "도서 상태 변경 트리거(대출, 반납, 예약, 폐기 등)",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "변경된 도서 상태"\n  ],\n  "nextEvents": [\n    "BookDisposed",\n    "BookLoaned",\n    "BookReturned",\n    "BookReserved"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookDisposed",\n  "displayName": "도서 폐기됨",\n  "actor": "Librarian",\n  "level": 3,\n  "description": "도서가 훼손 또는 분실되어 사서에 의해 폐기 처리됨. 폐기된 도서는 더 이상 대출이 불가능함.",\n  "inputs": [\n    "도서 식별자",\n    "폐기 사유"\n  ],\n  "outputs": [\n    "도서 상태: 폐기"\n  ],\n  "nextEvents": []\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanAndReservation\n- **Type**: Pub/Sub\n- **Direction**: sends to 대출/반납 및 예약 (LoanAndReservation)\n- **Reason**: 도서 상태 변경(대출가능, 대출중, 예약중, 폐기 등)이 발생하면 대출/반납 및 예약 컨텍스트에서 이를 구독하여 대출/예약 프로세스에 반영한다.\n- **Interaction Pattern**: 도서 관리에서 도서 상태 변경 이벤트를 발행하면 대출/반납 및 예약 컨텍스트가 이를 구독하여 처리한다.\n\n### BookManagement-LoanHistory\n- **Type**: Pub/Sub\n- **Direction**: sends to 이력 관리 (LoanHistory)\n- **Reason**: 도서 등록, 폐기 등 도서 상태 변화 이력도 이력 관리 컨텍스트에서 기록할 수 있도록 이벤트를 발행한다.\n- **Interaction Pattern**: 도서 관리에서 도서 등록, 폐기 등 상태 변화 이벤트를 발행하면 이력 관리 컨텍스트가 이를 구독하여 상태 변경 이력을 기록한다.', 'event': '{\n  "name": "BookRegistered",\n  "displayName": "도서 등록됨",\n  "actor": "Librarian",\n  "level": 1,\n  "description": "사서가 새로운 도서를 등록하여 도서관 시스템에 추가하였음. 등록 시 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받고, ISBN 중복 및 유효성 검증이 완료됨.",\n  "inputs": [\n    "도서명",\n    "ISBN(13자리)",\n    "저자",\n    "출판사",\n    "카테고리(소설/비소설/학술/잡지)"\n  ],\n  "outputs": [\n    "신규 도서 정보",\n    "도서 상태: 대출가능"\n  ],\n  "nextEvents": [\n    "BookStatusChanged"\n  ],\n  "refs": [\n    [\n      [\n        3,\n        57\n      ],\n      [\n        3,\n        100\n      ]\n    ],\n    [\n      [\n        3,\n        105\n      ],\n      [\n        3,\n        128\n      ]\n    ],\n    [\n      [\n        3,\n        136\n      ],\n      [\n        3,\n        161\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookStatusChanged",\n  "displayName": "도서 상태 변경됨",\n  "actor": "System",\n  "level": 2,\n  "description": "도서의 대출/반납/예약/폐기 등 상태 변화가 발생하여 도서 상태가 자동 또는 수동으로 변경됨.",\n  "inputs": [\n    "도서 상태 변경 트리거(대출, 반납, 예약, 폐기 등)",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "변경된 도서 상태"\n  ],\n  "nextEvents": [\n    "BookDisposed",\n    "BookLoaned",\n    "BookReturned",\n    "BookReserved"\n  ],\n  "refs": [\n    [\n      [\n        3,\n        191\n      ],\n      [\n        3,\n        238\n      ]\n    ],\n    [\n      [\n        3,\n        264\n      ],\n      [\n        3,\n        302\n      ]\n    ],\n    [\n      [\n        7,\n        150\n      ],\n      [\n        7,\n        167\n      ]\n    ],\n    [\n      [\n        7,\n        167\n      ],\n      [\n        7,\n        175\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookDisposed",\n  "displayName": "도서 폐기됨",\n  "actor": "Librarian",\n  "level": 3,\n  "description": "도서가 훼손 또는 분실되어 사서에 의해 폐기 처리됨. 폐기된 도서는 더 이상 대출이 불가능함.",\n  "inputs": [\n    "도서 식별자",\n    "폐기 사유"\n  ],\n  "outputs": [\n    "도서 상태: 폐기"\n  ],\n  "nextEvents": [],\n  "refs": [\n    [\n      [\n        3,\n        264\n      ],\n      [\n        3,\n        302\n      ]\n    ]\n  ]\n}', 'eventNames': 'BookRegistered, BookStatusChanged, BookDisposed 이벤트가 발생할 수 있어.', 'siteMap': [{'boundedContext': 'BookManagement', 'description': '현재 보유 도서의 목록과 상태를 조회', 'functionType': 'view', 'id': 'book-list-view', 'name': 'BookListView', 'title': '도서 목록 조회', 'uiRequirements': '도서명, ISBN, 저자, 출판사, 카테고리, 상태(대출가능/대출중/예약중/폐기) 필터 및 검색, 페이징 지원'}, {'boundedContext': 'BookManagement', 'description': '새로운 도서를 등록', 'functionType': 'command', 'id': 'book-create-command', 'name': 'BookCreateCommand', 'title': '도서 등록', 'uiRequirements': "도서명, ISBN(13자리, 중복확인), 저자, 출판사, 카테고리(소설/비소설/학술/잡지) 입력 폼, 등록 시 상태는 '대출가능'으로 설정"}, {'boundedContext': 'BookManagement', 'description': '기존 도서의 정보를 수정', 'functionType': 'command', 'id': 'book-edit-command', 'name': 'BookEditCommand', 'title': '도서 정보 수정', 'uiRequirements': '도서명, 저자, 출판사, 카테고리 등 수정, ISBN은 수정 불가, 상태 변경 불가'}, {'boundedContext': 'BookManagement', 'description': '훼손 또는 분실된 도서를 폐기 처리', 'functionType': 'command', 'id': 'book-dispose-command', 'name': 'BookDisposeCommand', 'title': '도서 폐기 처리', 'uiRequirements': "도서 목록에서 폐기 처리 버튼, 폐기 사유 입력, 폐기 시 상태를 '폐기'로 변경, 폐기 도서는 대출 불가"}, {'boundedContext': 'BookManagement', 'description': '도서별 상태 변경 이력을 조회', 'functionType': 'view', 'id': 'book-status-change-view', 'name': 'BookStatusChangeHistoryView', 'title': '도서 상태 변경 이력 조회', 'uiRequirements': '도서별 상태 변경(대출가능/대출중/예약중/폐기 등) 이력 리스트, 변경일시, 변경자, 변경 사유 표시'}], 'userStory': "도서 관리' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해. 도서 등록 시에는 도서명, ISBN, 저자, 출판사, 카테고리 정보를 입력받아야 해. ISBN은 13자리 숫자여야 하고 중복 확인이 필요해. 카테고리는 소설/비소설/학술/잡지 중에서 선택할 수 있어야 해. 등록된 도서는 처음에 '대출가능' 상태가 되고, 이후 대출/반납 상황에 따라 '대출중', '예약중' 상태로 자동으로 변경되어야 해. 도서가 훼손되거나 분실된 경우 '폐기' 처리가 가능해야 하며, 폐기된 도서는 더 이상 대출이 불가능해야\n도서별로 대출 이력과 상태 변경 이력을 조회할 수 있어야 하고, 이를 통해 도서의 대출 현황과 상태 변화를 추적할"}}, 'a35f39e7-6201-441e-9b5b-931aeba36079': {'_type': 'org.uengine.modeling.model.BoundedContext', 'aggregates': [], 'author': 'EYCl46CwWAWvpz2E1BCUpVgPIpa2', 'description': '# Bounded Context Overview: LoanAndReservation (대출/반납 및 예약)\n\n## Role\n회원의 도서 대출, 반납, 연장, 예약을 관리하고 도서 상태 변경을 트리거한다.\n\n## Key Events\n- BookLoaned\n- BookReserved\n- BookReturned\n- LoanExtended\n\n# Requirements\n\n## userStory\n\n대출/반납을 통합적으로 관리하는\n\n대출/반납\' 화면에서는 회원이 도서를 대출하고 반납하는 것을 관리할 수 있어야 해. 대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할\n\n예약\n\n대출 현황 화면에서는 현재 대출 중인 도서들의 목록을 볼 수 있어야 해. 각 대출 건에 대해 대출일, 반납\n\n연장\n\n대출 이력과 상태\n\n## DDL\n\n```sql\nCREATE TABLE loans (\n    loan_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    loan_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    due_date DATETIME NOT NULL,\n    return_date DATETIME NULL,\n    loan_period_days INT NOT NULL CHECK (loan_period_days IN (7, 14, 30)),\n    status ENUM(\'대출중\', \'연체\', \'반납완료\', \'연장\') DEFAULT \'대출중\',\n    extension_count INT DEFAULT 0,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_due_date (due_date)\n);\n```\n```sql\nCREATE TABLE reservations (\n    reservation_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    reservation_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status ENUM(\'예약중\', \'예약완료\', \'예약취소\', \'예약만료\') DEFAULT \'예약중\',\n    notification_sent BOOLEAN DEFAULT FALSE,\n    expiry_date DATETIME NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_reservation_date (reservation_date)\n);\n```\n```sql\nCREATE TABLE loan_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    loan_id INT NOT NULL,\n    action_type ENUM(\'대출\', \'반납\', \'연장\', \'연체알림\', \'분실신고\') NOT NULL,\n    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    previous_due_date DATETIME NULL,\n    new_due_date DATETIME NULL,\n    notes TEXT,\n    processed_by VARCHAR(100),\n    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),\n    INDEX idx_loan_id (loan_id),\n    INDEX idx_action_type (action_type),\n    INDEX idx_action_date (action_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "BookLoaned",\n  "displayName": "도서 대출됨",\n  "actor": "Member",\n  "level": 4,\n  "description": "회원이 도서 대출을 신청하고, 회원 인증 및 도서 상태 확인 후 대출이 승인됨. 대출 기간이 설정되고 도서 상태가 \'대출중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "이름",\n    "도서 식별자",\n    "대출 기간(7/14/30일)"\n  ],\n  "outputs": [\n    "대출 정보",\n    "도서 상태: 대출중"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "LoanHistoryRecorded"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookReserved",\n  "displayName": "도서 예약됨",\n  "actor": "Member",\n  "level": 5,\n  "description": "회원이 대출 중인 도서에 대해 예약을 신청함. 예약이 완료되면 도서 상태가 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "예약 정보",\n    "도서 상태: 예약중"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "ReservationHistoryRecorded"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookReturned",\n  "displayName": "도서 반납됨",\n  "actor": "Member",\n  "level": 6,\n  "description": "회원이 대출한 도서를 반납함. 반납 시 도서 상태가 \'대출가능\'으로 변경되고, 예약자가 있을 경우 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "도서 상태: 대출가능 또는 예약중",\n    "반납 처리 정보"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "LoanHistoryRecorded"\n  ]\n}\n```\n\n```json\n{\n  "name": "LoanExtended",\n  "displayName": "대출 연장됨",\n  "actor": "Member",\n  "level": 7,\n  "description": "회원이 대출 중인 도서의 대출 기간을 연장함. 연장 후 대출 정보와 반납 예정일이 갱신됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "연장 기간"\n  ],\n  "outputs": [\n    "갱신된 대출 정보",\n    "새 반납 예정일"\n  ],\n  "nextEvents": [\n    "LoanHistoryRecorded"\n  ]\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanAndReservation\n- **Type**: Pub/Sub\n- **Direction**: receives from 도서 관리 (BookManagement)\n- **Reason**: 도서 상태 변경(대출가능, 대출중, 예약중, 폐기 등)이 발생하면 대출/반납 및 예약 컨텍스트에서 이를 구독하여 대출/예약 프로세스에 반영한다.\n- **Interaction Pattern**: 도서 관리에서 도서 상태 변경 이벤트를 발행하면 대출/반납 및 예약 컨텍스트가 이를 구독하여 처리한다.\n\n### LoanAndReservation-LoanHistory\n- **Type**: Pub/Sub\n- **Direction**: sends to 이력 관리 (LoanHistory)\n- **Reason**: 대출, 반납, 연장, 예약 등 이벤트 발생 시 이력 관리 컨텍스트에서 해당 이벤트를 구독하여 이력을 기록한다.\n- **Interaction Pattern**: 대출/반납 및 예약에서 대출/반납/연장/예약 이벤트를 발행하면 이력 관리 컨텍스트가 이를 구독하여 이력 데이터를 생성한다.', 'id': 'a35f39e7-6201-441e-9b5b-931aeba36079', 'elementView': {'_type': 'org.uengine.modeling.model.BoundedContext', 'height': 590, 'id': 'a35f39e7-6201-441e-9b5b-931aeba36079', 'style': '{}', 'width': 560, 'x': 1185.0, 'y': 450}, 'gitURL': None, 'hexagonalView': {'_type': 'org.uengine.modeling.model.BoundedContextHexagonal', 'height': 350, 'id': 'a35f39e7-6201-441e-9b5b-931aeba36079', 'style': '{}', 'width': 350, 'x': 235, 'y': 365}, 'members': [], 'name': 'LoanAndReservation', 'traceName': 'LoanAndReservation', 'displayName': '대출/반납 및 예약', 'oldName': '', 'policies': [], 'portGenerated': 8081, 'preferredPlatform': 'template-spring-boot', 'preferredPlatformConf': {}, 'rotateStatus': False, 'tempId': '', 'templatePerElements': {}, 'views': [], 'definitionId': '163972132_es_a4afe53e52e57652bdbd6dac8e734470', 'requirements': {'ddl': "CREATE TABLE loans (\n    loan_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    loan_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    due_date DATETIME NOT NULL,\n    return_date DATETIME NULL,\n    loan_period_days INT NOT NULL CHECK (loan_period_days IN (7, 14, 30)),\n    status ENUM('대출중', '연체', '반납완료', '연장') DEFAULT '대출중',\n    extension_count INT DEFAULT 0,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_due_date (due_date)\n);\nCREATE TABLE reservations (\n    reservation_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    reservation_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status ENUM('예약중', '예약완료', '예약취소', '예약만료') DEFAULT '예약중',\n    notification_sent BOOLEAN DEFAULT FALSE,\n    expiry_date DATETIME NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_reservation_date (reservation_date)\n);\nCREATE TABLE loan_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    loan_id INT NOT NULL,\n    action_type ENUM('대출', '반납', '연장', '연체알림', '분실신고') NOT NULL,\n    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    previous_due_date DATETIME NULL,\n    new_due_date DATETIME NULL,\n    notes TEXT,\n    processed_by VARCHAR(100),\n    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),\n    INDEX idx_loan_id (loan_id),\n    INDEX idx_action_type (action_type),\n    INDEX idx_action_date (action_date)\n);", 'ddlFields': [{'fieldName': 'loan_id', 'refs': [[[46, 5], [46, 38]], [[101, 5], [101, 24]]]}, {'fieldName': 'member_id', 'refs': [[[47, 5], [47, 34]], [[68, 5], [68, 34]]]}, {'fieldName': 'book_id', 'refs': [[[48, 5], [48, 24]], [[69, 5], [69, 24]]]}, {'fieldName': 'loan_date', 'refs': [[[49, 5], [49, 48]]]}, {'fieldName': 'due_date', 'refs': [[[50, 5], [50, 30]]]}, {'fieldName': 'return_date', 'refs': [[[51, 5], [51, 29]]]}, {'fieldName': 'loan_period_days', 'refs': [[[52, 5], [52, 39]]]}, {'fieldName': 'status', 'refs': [[[53, 5], [53, 50]], [[71, 5], [71, 54]]]}, {'fieldName': 'extension_count', 'refs': [[[54, 5], [54, 31]]]}, {'fieldName': 'created_at', 'refs': [[[55, 5], [55, 49]], [[74, 5], [74, 49]]]}, {'fieldName': 'updated_at', 'refs': [[[56, 5], [56, 77]], [[75, 5], [75, 77]]]}, {'fieldName': 'reservation_id', 'refs': [[[67, 5], [67, 45]]]}, {'fieldName': 'reservation_date', 'refs': [[[70, 5], [70, 55]]]}, {'fieldName': 'notification_sent', 'refs': [[[72, 5], [72, 37]]]}, {'fieldName': 'expiry_date', 'refs': [[[73, 5], [73, 29]]]}, {'fieldName': 'history_id', 'refs': [[[100, 5], [100, 41]]]}, {'fieldName': 'action_type', 'refs': [[[102, 5], [102, 63]]]}, {'fieldName': 'action_date', 'refs': [[[103, 5], [103, 50]]]}, {'fieldName': 'previous_due_date', 'refs': [[[104, 5], [104, 35]]]}, {'fieldName': 'new_due_date', 'refs': [[[105, 5], [105, 30]]]}, {'fieldName': 'notes', 'refs': [[[106, 5], [106, 14]]]}, {'fieldName': 'processed_by', 'refs': [[[107, 5], [107, 29]]]}], 'description': '# Bounded Context Overview: LoanAndReservation (대출/반납 및 예약)\n\n## Role\n회원의 도서 대출, 반납, 연장, 예약을 관리하고 도서 상태 변경을 트리거한다.\n\n## Key Events\n- BookLoaned\n- BookReserved\n- BookReturned\n- LoanExtended\n\n# Requirements\n\n## userStory\n\n대출/반납을 통합적으로 관리하는\n\n대출/반납\' 화면에서는 회원이 도서를 대출하고 반납하는 것을 관리할 수 있어야 해. 대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할\n\n예약\n\n대출 현황 화면에서는 현재 대출 중인 도서들의 목록을 볼 수 있어야 해. 각 대출 건에 대해 대출일, 반납\n\n연장\n\n대출 이력과 상태\n\n## DDL\n\n```sql\nCREATE TABLE loans (\n    loan_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    loan_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    due_date DATETIME NOT NULL,\n    return_date DATETIME NULL,\n    loan_period_days INT NOT NULL CHECK (loan_period_days IN (7, 14, 30)),\n    status ENUM(\'대출중\', \'연체\', \'반납완료\', \'연장\') DEFAULT \'대출중\',\n    extension_count INT DEFAULT 0,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_due_date (due_date)\n);\n```\n```sql\nCREATE TABLE reservations (\n    reservation_id INT AUTO_INCREMENT PRIMARY KEY,\n    member_id VARCHAR(20) NOT NULL,\n    book_id INT NOT NULL,\n    reservation_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    status ENUM(\'예약중\', \'예약완료\', \'예약취소\', \'예약만료\') DEFAULT \'예약중\',\n    notification_sent BOOLEAN DEFAULT FALSE,\n    expiry_date DATETIME NULL,\n    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,\n    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n    FOREIGN KEY (member_id) REFERENCES members(member_id),\n    FOREIGN KEY (book_id) REFERENCES books(book_id),\n    INDEX idx_member_id (member_id),\n    INDEX idx_book_id (book_id),\n    INDEX idx_status (status),\n    INDEX idx_reservation_date (reservation_date)\n);\n```\n```sql\nCREATE TABLE loan_history (\n    history_id INT AUTO_INCREMENT PRIMARY KEY,\n    loan_id INT NOT NULL,\n    action_type ENUM(\'대출\', \'반납\', \'연장\', \'연체알림\', \'분실신고\') NOT NULL,\n    action_date DATETIME DEFAULT CURRENT_TIMESTAMP,\n    previous_due_date DATETIME NULL,\n    new_due_date DATETIME NULL,\n    notes TEXT,\n    processed_by VARCHAR(100),\n    FOREIGN KEY (loan_id) REFERENCES loans(loan_id),\n    INDEX idx_loan_id (loan_id),\n    INDEX idx_action_type (action_type),\n    INDEX idx_action_date (action_date)\n);\n```\n## Event\n\n```json\n{\n  "name": "BookLoaned",\n  "displayName": "도서 대출됨",\n  "actor": "Member",\n  "level": 4,\n  "description": "회원이 도서 대출을 신청하고, 회원 인증 및 도서 상태 확인 후 대출이 승인됨. 대출 기간이 설정되고 도서 상태가 \'대출중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "이름",\n    "도서 식별자",\n    "대출 기간(7/14/30일)"\n  ],\n  "outputs": [\n    "대출 정보",\n    "도서 상태: 대출중"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "LoanHistoryRecorded"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookReserved",\n  "displayName": "도서 예약됨",\n  "actor": "Member",\n  "level": 5,\n  "description": "회원이 대출 중인 도서에 대해 예약을 신청함. 예약이 완료되면 도서 상태가 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "예약 정보",\n    "도서 상태: 예약중"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "ReservationHistoryRecorded"\n  ]\n}\n```\n\n```json\n{\n  "name": "BookReturned",\n  "displayName": "도서 반납됨",\n  "actor": "Member",\n  "level": 6,\n  "description": "회원이 대출한 도서를 반납함. 반납 시 도서 상태가 \'대출가능\'으로 변경되고, 예약자가 있을 경우 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "도서 상태: 대출가능 또는 예약중",\n    "반납 처리 정보"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "LoanHistoryRecorded"\n  ]\n}\n```\n\n```json\n{\n  "name": "LoanExtended",\n  "displayName": "대출 연장됨",\n  "actor": "Member",\n  "level": 7,\n  "description": "회원이 대출 중인 도서의 대출 기간을 연장함. 연장 후 대출 정보와 반납 예정일이 갱신됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "연장 기간"\n  ],\n  "outputs": [\n    "갱신된 대출 정보",\n    "새 반납 예정일"\n  ],\n  "nextEvents": [\n    "LoanHistoryRecorded"\n  ]\n}\n```\n\n## Context Relations\n\n### BookManagement-LoanAndReservation\n- **Type**: Pub/Sub\n- **Direction**: receives from 도서 관리 (BookManagement)\n- **Reason**: 도서 상태 변경(대출가능, 대출중, 예약중, 폐기 등)이 발생하면 대출/반납 및 예약 컨텍스트에서 이를 구독하여 대출/예약 프로세스에 반영한다.\n- **Interaction Pattern**: 도서 관리에서 도서 상태 변경 이벤트를 발행하면 대출/반납 및 예약 컨텍스트가 이를 구독하여 처리한다.\n\n### LoanAndReservation-LoanHistory\n- **Type**: Pub/Sub\n- **Direction**: sends to 이력 관리 (LoanHistory)\n- **Reason**: 대출, 반납, 연장, 예약 등 이벤트 발생 시 이력 관리 컨텍스트에서 해당 이벤트를 구독하여 이력을 기록한다.\n- **Interaction Pattern**: 대출/반납 및 예약에서 대출/반납/연장/예약 이벤트를 발행하면 이력 관리 컨텍스트가 이를 구독하여 이력 데이터를 생성한다.', 'event': '{\n  "name": "BookLoaned",\n  "displayName": "도서 대출됨",\n  "actor": "Member",\n  "level": 4,\n  "description": "회원이 도서 대출을 신청하고, 회원 인증 및 도서 상태 확인 후 대출이 승인됨. 대출 기간이 설정되고 도서 상태가 \'대출중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "이름",\n    "도서 식별자",\n    "대출 기간(7/14/30일)"\n  ],\n  "outputs": [\n    "대출 정보",\n    "도서 상태: 대출중"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "LoanHistoryRecorded"\n  ],\n  "refs": [\n    [\n      [\n        5,\n        49\n      ],\n      [\n        5,\n        91\n      ]\n    ],\n    [\n      [\n        5,\n        59\n      ],\n      [\n        5,\n        77\n      ]\n    ],\n    [\n      [\n        5,\n        43\n      ],\n      [\n        5,\n        126\n      ]\n    ],\n    [\n      [\n        5,\n        198\n      ],\n      [\n        5,\n        235\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookReserved",\n  "displayName": "도서 예약됨",\n  "actor": "Member",\n  "level": 5,\n  "description": "회원이 대출 중인 도서에 대해 예약을 신청함. 예약이 완료되면 도서 상태가 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "예약 정보",\n    "도서 상태: 예약중"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "ReservationHistoryRecorded"\n  ],\n  "refs": [\n    [\n      [\n        5,\n        183\n      ],\n      [\n        5,\n        193\n      ]\n    ],\n    [\n      [\n        7,\n        167\n      ],\n      [\n        7,\n        175\n      ]\n    ]\n  ]\n}\n{\n  "name": "BookReturned",\n  "displayName": "도서 반납됨",\n  "actor": "Member",\n  "level": 6,\n  "description": "회원이 대출한 도서를 반납함. 반납 시 도서 상태가 \'대출가능\'으로 변경되고, 예약자가 있을 경우 \'예약중\'으로 변경됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자"\n  ],\n  "outputs": [\n    "도서 상태: 대출가능 또는 예약중",\n    "반납 처리 정보"\n  ],\n  "nextEvents": [\n    "BookStatusChanged",\n    "LoanHistoryRecorded"\n  ],\n  "refs": [\n    [\n      [\n        7,\n        133\n      ],\n      [\n        7,\n        167\n      ]\n    ],\n    [\n      [\n        7,\n        167\n      ],\n      [\n        7,\n        175\n      ]\n    ]\n  ]\n}\n{\n  "name": "LoanExtended",\n  "displayName": "대출 연장됨",\n  "actor": "Member",\n  "level": 7,\n  "description": "회원이 대출 중인 도서의 대출 기간을 연장함. 연장 후 대출 정보와 반납 예정일이 갱신됨.",\n  "inputs": [\n    "회원번호",\n    "도서 식별자",\n    "연장 기간"\n  ],\n  "outputs": [\n    "갱신된 대출 정보",\n    "새 반납 예정일"\n  ],\n  "nextEvents": [\n    "LoanHistoryRecorded"\n  ],\n  "refs": [\n    [\n      [\n        7,\n        109\n      ],\n      [\n        7,\n        124\n      ]\n    ]\n  ]\n}', 'eventNames': 'BookLoaned, BookReserved, BookReturned, LoanExtended 이벤트가 발생할 수 있어.', 'userStory': "대출/반납을 통합적으로 관리하는\n대출/반납' 화면에서는 회원이 도서를 대출하고 반납하는 것을 관리할 수 있어야 해. 대출 신청 시에는 회원번호와 이름으로 회원을 확인하고, 대출할\n예약\n대출 현황 화면에서는 현재 대출 중인 도서들의 목록을 볼 수 있어야 해. 각 대출 건에 대해 대출일, 반납\n연장\n대출 이력과 상태"}}}, relations={}),
+    "actions": [
+        {
+            "objectType": "Aggregate",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a35f39e7-6201-441e-9b5b-931aeba36079",
+                "aggregateId": "6a58ccad-7551-445d-a4ba-3f2128d26bd4"
+            },
+            "args": {
+                "aggregateName": "Loan",
+                "aggregateAlias": "대출",
+                "properties": [
+                    {
+                        "name": "loanId",
+                        "type": "Integer",
+                        "isKey": True,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    32,
+                                    5
+                                ],
+                                [
+                                    32,
+                                    42
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "memberId",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    33,
+                                    5
+                                ],
+                                [
+                                    33,
+                                    34
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "bookId",
+                        "type": "Integer",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    34,
+                                    5
+                                ],
+                                [
+                                    34,
+                                    24
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "loanDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    35,
+                                    5
+                                ],
+                                [
+                                    35,
+                                    48
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "dueDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    36,
+                                    5
+                                ],
+                                [
+                                    36,
+                                    30
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "returnDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    37,
+                                    5
+                                ],
+                                [
+                                    37,
+                                    29
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "loanPeriodDays",
+                        "type": "Integer",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    38,
+                                    5
+                                ],
+                                [
+                                    38,
+                                    39
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "status",
+                        "type": "LoanStatus",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    39,
+                                    5
+                                ],
+                                [
+                                    39,
+                                    50
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "extensionCount",
+                        "type": "Integer",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    40,
+                                    5
+                                ],
+                                [
+                                    40,
+                                    31
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "createdAt",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    41,
+                                    5
+                                ],
+                                [
+                                    41,
+                                    31
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "updatedAt",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    42,
+                                    5
+                                ],
+                                [
+                                    42,
+                                    31
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "historyId",
+                        "type": "Integer",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    72,
+                                    5
+                                ],
+                                [
+                                    72,
+                                    45
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "actionType",
+                        "type": "LoanActionType",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    74,
+                                    5
+                                ],
+                                [
+                                    74,
+                                    63
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "actionDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    75,
+                                    5
+                                ],
+                                [
+                                    75,
+                                    32
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "previousDueDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    76,
+                                    5
+                                ],
+                                [
+                                    76,
+                                    35
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "newDueDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    77,
+                                    5
+                                ],
+                                [
+                                    77,
+                                    30
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "notes",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    78,
+                                    5
+                                ],
+                                [
+                                    78,
+                                    14
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "processedBy",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    79,
+                                    5
+                                ],
+                                [
+                                    79,
+                                    29
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            31,
+                            1
+                        ],
+                        [
+                            49,
+                            2
+                        ]
+                    ]
+                ],
+                "description": "* Inference(When generating the aggregate)\n주어진 요구사항과 DDL을 분석한 결과, Loan Aggregate는 도서 대출과 관련된 모든 필수 필드를 포함해야 하며, 대출 상태를 나타내는 LoanStatus 열거형을 사용하여 상태 관리가 명확히 이루어지도록 설계한다. 또한, 대출 이력 관련 필드(historyId, actionType, actionDate, previousDueDate, newDueDate, notes, processedBy)를 Loan Aggregate 내에 직접 포함시켜 별도의 Aggregate 생성 없이 요구사항을 충족한다. 모든 필드는 DDL과 이벤트 설명에 근거하여 정확히 매핑되었으며, 상태 필드는 한글 상태명을 영어로 변환하여 열거형 멤버로 정의하였다.\n"
+            },
+            "actionName": "CreateLoanAggregate"
+        },
+        {
+            "objectType": "Enumeration",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a35f39e7-6201-441e-9b5b-931aeba36079",
+                "aggregateId": "6a58ccad-7551-445d-a4ba-3f2128d26bd4",
+                "enumerationId": "10469fdf-3cbb-452b-92c9-add711dd259f"
+            },
+            "args": {
+                "enumerationName": "LoanStatus",
+                "enumerationAlias": "대출 상태",
+                "properties": [
+                    {
+                        "name": "ON_LOAN",
+                        "refs": [
+                            [
+                                [
+                                    39,
+                                    18
+                                ],
+                                [
+                                    39,
+                                    20
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "OVERDUE",
+                        "refs": [
+                            [
+                                [
+                                    39,
+                                    25
+                                ],
+                                [
+                                    39,
+                                    26
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "RETURNED",
+                        "refs": [
+                            [
+                                [
+                                    39,
+                                    31
+                                ],
+                                [
+                                    39,
+                                    34
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "EXTENDED",
+                        "refs": [
+                            [
+                                [
+                                    39,
+                                    39
+                                ],
+                                [
+                                    39,
+                                    40
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            39,
+                            5
+                        ],
+                        [
+                            39,
+                            50
+                        ]
+                    ]
+                ]
+            },
+            "actionName": "CreateLoanStatusEnum"
+        },
+        {
+            "objectType": "Enumeration",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a35f39e7-6201-441e-9b5b-931aeba36079",
+                "aggregateId": "6a58ccad-7551-445d-a4ba-3f2128d26bd4",
+                "enumerationId": "3b8e440f-cabe-453c-a256-2e71c39201f5"
+            },
+            "args": {
+                "enumerationName": "LoanActionType",
+                "enumerationAlias": "대출 이력 액션 타입",
+                "properties": [
+                    {
+                        "name": "LOAN",
+                        "refs": [
+                            [
+                                [
+                                    74,
+                                    23
+                                ],
+                                [
+                                    74,
+                                    24
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "RETURN",
+                        "refs": [
+                            [
+                                [
+                                    74,
+                                    29
+                                ],
+                                [
+                                    74,
+                                    30
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "EXTENSION",
+                        "refs": [
+                            [
+                                [
+                                    74,
+                                    35
+                                ],
+                                [
+                                    74,
+                                    36
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "OVERDUE_NOTICE",
+                        "refs": [
+                            [
+                                [
+                                    74,
+                                    41
+                                ],
+                                [
+                                    74,
+                                    44
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "LOSS_REPORT",
+                        "refs": [
+                            [
+                                [
+                                    74,
+                                    49
+                                ],
+                                [
+                                    74,
+                                    52
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            74,
+                            5
+                        ],
+                        [
+                            74,
+                            63
+                        ]
+                    ]
+                ]
+            },
+            "actionName": "CreateLoanActionTypeEnum"
+        },
+        {
+            "objectType": "Aggregate",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a35f39e7-6201-441e-9b5b-931aeba36079",
+                "aggregateId": "deee744d-983e-47f5-be6b-16b72fa1b300"
+            },
+            "args": {
+                "aggregateName": "Reservation",
+                "aggregateAlias": "예약",
+                "properties": [
+                    {
+                        "name": "reservationId",
+                        "type": "Integer",
+                        "isKey": True,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    53,
+                                    5
+                                ],
+                                [
+                                    53,
+                                    49
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "memberId",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    54,
+                                    5
+                                ],
+                                [
+                                    54,
+                                    34
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "bookId",
+                        "type": "Integer",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    55,
+                                    5
+                                ],
+                                [
+                                    55,
+                                    24
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "reservationDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    56,
+                                    5
+                                ],
+                                [
+                                    56,
+                                    55
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "status",
+                        "type": "ReservationStatus",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    57,
+                                    5
+                                ],
+                                [
+                                    57,
+                                    60
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "notificationSent",
+                        "type": "Boolean",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    58,
+                                    5
+                                ],
+                                [
+                                    58,
+                                    43
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "expiryDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    59,
+                                    5
+                                ],
+                                [
+                                    59,
+                                    29
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "createdAt",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    60,
+                                    5
+                                ],
+                                [
+                                    60,
+                                    49
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "updatedAt",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    61,
+                                    5
+                                ],
+                                [
+                                    61,
+                                    77
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            52,
+                            2
+                        ],
+                        [
+                            68,
+                            2
+                        ]
+                    ]
+                ],
+                "description": "* Inference(When generating the aggregate)\nReservation Aggregate는 회원의 도서 예약 정보를 관리하는 핵심 도메인 객체입니다. DDL과 요구사항에 따라 예약 ID, 회원 ID, 도서 ID, 예약일, 상태, 알림 발송 여부, 만료일, 생성 및 수정 일자를 포함하여 예약 관련 모든 필드를 포함합니다. ReservationStatus 열거형은 예약 상태를 명확히 표현하며, 예약 상태의 다양한 값을 영어로 변환하여 사용합니다. 모든 필드는 Reservation Aggregate 내에 포함되어 있으며, 별도의 ValueObject는 필요하지 않아 단순하고 명확한 모델을 유지합니다.\n"
+            },
+            "actionName": "CreateReservationAggregate"
+        },
+        {
+            "objectType": "Enumeration",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a35f39e7-6201-441e-9b5b-931aeba36079",
+                "aggregateId": "deee744d-983e-47f5-be6b-16b72fa1b300",
+                "enumerationId": "68bae2d0-8e22-4741-91fa-9587c1f5065b"
+            },
+            "args": {
+                "enumerationName": "ReservationStatus",
+                "enumerationAlias": "예약 상태",
+                "properties": [
+                    {
+                        "name": "RESERVATION_PENDING",
+                        "refs": [
+                            [
+                                [
+                                    57,
+                                    17
+                                ],
+                                [
+                                    57,
+                                    54
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "RESERVATION_COMPLETED",
+                        "refs": [
+                            [
+                                [
+                                    57,
+                                    24
+                                ],
+                                [
+                                    57,
+                                    54
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "RESERVATION_CANCELLED",
+                        "refs": [
+                            [
+                                [
+                                    57,
+                                    32
+                                ],
+                                [
+                                    57,
+                                    54
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "RESERVATION_EXPIRED",
+                        "refs": [
+                            [
+                                [
+                                    57,
+                                    40
+                                ],
+                                [
+                                    57,
+                                    54
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            57,
+                            5
+                        ],
+                        [
+                            57,
+                            60
+                        ]
+                    ]
+                ]
+            },
+            "actionName": "CreateReservationStatusEnum"
+        },
+        {
+            "objectType": "Aggregate",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a0f580e4-fc10-4d02-8a63-a81e7811e821",
+                "aggregateId": "a08b8110-d0b9-434f-b93a-744108e91bf6"
+            },
+            "args": {
+                "aggregateName": "Book",
+                "aggregateAlias": "도서",
+                "properties": [
+                    {
+                        "name": "bookId",
+                        "type": "Integer",
+                        "isKey": True,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    24,
+                                    5
+                                ],
+                                [
+                                    24,
+                                    42
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "title",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    66
+                                ],
+                                [
+                                    15,
+                                    74
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "isbn",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    8
+                                ],
+                                [
+                                    26,
+                                    37
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "author",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    10
+                                ],
+                                [
+                                    27,
+                                    33
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "publisher",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    13
+                                ],
+                                [
+                                    28,
+                                    36
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "category",
+                        "type": "BookCategory",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    12
+                                ],
+                                [
+                                    29,
+                                    52
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "status",
+                        "type": "BookStatus",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    10
+                                ],
+                                [
+                                    30,
+                                    59
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "registrationDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    31,
+                                    5
+                                ],
+                                [
+                                    31,
+                                    38
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "disposalDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    32,
+                                    5
+                                ],
+                                [
+                                    32,
+                                    31
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "disposalReason",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    33,
+                                    5
+                                ],
+                                [
+                                    33,
+                                    29
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "createdAt",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    34,
+                                    5
+                                ],
+                                [
+                                    34,
+                                    31
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "updatedAt",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    35,
+                                    5
+                                ],
+                                [
+                                    35,
+                                    31
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "historyId",
+                        "type": "Integer",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    45,
+                                    5
+                                ],
+                                [
+                                    45,
+                                    45
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "previousStatus",
+                        "type": "BookStatus",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    47,
+                                    5
+                                ],
+                                [
+                                    47,
+                                    24
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "newStatus",
+                        "type": "BookStatus",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    48,
+                                    5
+                                ],
+                                [
+                                    48,
+                                    56
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "changeReason",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    49,
+                                    5
+                                ],
+                                [
+                                    49,
+                                    25
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "changedBy",
+                        "type": "String",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    50,
+                                    5
+                                ],
+                                [
+                                    50,
+                                    22
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "changeDate",
+                        "type": "Date",
+                        "isKey": None,
+                        "isForeignProperty": None,
+                        "refs": [
+                            [
+                                [
+                                    51,
+                                    5
+                                ],
+                                [
+                                    51,
+                                    32
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            4,
+                            1
+                        ],
+                        [
+                            4,
+                            12
+                        ]
+                    ]
+                ],
+                "description": "* Inference(When generating the aggregate)\nBookManagement 도메인은 도서의 등록, 상태 관리, 폐기 처리 및 상태 변경 이력 관리를 포함합니다. Book Aggregate는 도서의 핵심 속성을 포함하며, BookStatus와 BookCategory 두 개의 Enumeration을 통해 도서 상태와 카테고리를 명확히 구분합니다. 도서 상태 변경 이력 관련 필드(historyId, previousStatus, newStatus, changeReason, changedBy, changeDate)는 도서 상태 변경 이력 관리가 Book Aggregate 내에서 관리되도록 포함시켰습니다. 모든 필드는 DDL과 요구사항에 따라 적절히 매핑되었으며, 도서 상태 및 카테고리 필드는 Enumeration으로 처리하여 도메인 규칙을 엄격히 반영했습니다.\n"
+            },
+            "actionName": "CreateBookAggregate"
+        },
+        {
+            "objectType": "Enumeration",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a0f580e4-fc10-4d02-8a63-a81e7811e821",
+                "aggregateId": "a08b8110-d0b9-434f-b93a-744108e91bf6",
+                "enumerationId": "e337e326-e737-40a8-8a8a-248f539c35f5"
+            },
+            "args": {
+                "enumerationName": "BookStatus",
+                "enumerationAlias": "도서 상태",
+                "properties": [
+                    {
+                        "name": "AVAILABLE",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    10
+                                ],
+                                [
+                                    30,
+                                    59
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "ON_LOAN",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    10
+                                ],
+                                [
+                                    30,
+                                    59
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "RESERVED",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    10
+                                ],
+                                [
+                                    30,
+                                    59
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "DISPOSED",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    10
+                                ],
+                                [
+                                    30,
+                                    59
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            15,
+                            10
+                        ],
+                        [
+                            30,
+                            59
+                        ]
+                    ]
+                ]
+            },
+            "actionName": "CreateBookStatusEnum"
+        },
+        {
+            "objectType": "Enumeration",
+            "type": "create",
+            "ids": {
+                "boundedContextId": "a0f580e4-fc10-4d02-8a63-a81e7811e821",
+                "aggregateId": "a08b8110-d0b9-434f-b93a-744108e91bf6",
+                "enumerationId": "37fec9a5-6c67-49dc-bb4c-2306c45b48b9"
+            },
+            "args": {
+                "enumerationName": "BookCategory",
+                "enumerationAlias": "도서 카테고리",
+                "properties": [
+                    {
+                        "name": "FICTION",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    12
+                                ],
+                                [
+                                    29,
+                                    52
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "NON_FICTION",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    12
+                                ],
+                                [
+                                    29,
+                                    52
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "ACADEMIC",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    12
+                                ],
+                                [
+                                    29,
+                                    52
+                                ]
+                            ]
+                        ]
+                    },
+                    {
+                        "name": "MAGAZINE",
+                        "refs": [
+                            [
+                                [
+                                    15,
+                                    12
+                                ],
+                                [
+                                    29,
+                                    52
+                                ]
+                            ]
+                        ]
+                    }
+                ],
+                "refs": [
+                    [
+                        [
+                            15,
+                            12
+                        ],
+                        [
+                            29,
+                            52
+                        ]
+                    ]
+                ]
+            },
+            "actionName": "CreateBookCategoryEnum"
+        }
+    ]
 }

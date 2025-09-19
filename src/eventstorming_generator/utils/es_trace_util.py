@@ -5,13 +5,14 @@ from .log_util import LogUtil
 
 class EsTraceUtil:
     @staticmethod
-    def add_line_numbers_to_description(description: str) -> str:
+    def add_line_numbers_to_description(description: str, use_xml_tags: bool = False) -> str:
         """
         기능 요구사항 텍스트에 줄 번호를 추가하는 공통 메서드
         
         Args:
             description: 원본 기능 요구사항 텍스트
-            
+            use_xml_tags: XML 태그를 사용하여 줄 번호를 추가할지 여부
+
         Returns:
             줄 번호가 추가된 텍스트
         """
@@ -19,16 +20,20 @@ class EsTraceUtil:
             return description
             
         lines = description.split('\n')
-        line_numbered_description = '\n'.join([f"{i+1}: {line}" for i, line in enumerate(lines)])
+        if use_xml_tags:
+            line_numbered_description = '\n'.join([f"<{i+1}>{line}</{i+1}>" for i, line in enumerate(lines)])
+        else:
+            line_numbered_description = '\n'.join([f"{i+1}: {line}" for i, line in enumerate(lines)])
         return line_numbered_description
 
     @staticmethod
-    def get_line_number_range(line_numbered_requirements: str) -> Tuple[int, int]:
+    def get_line_number_range(line_numbered_requirements: str, use_xml_tags: bool = False) -> Tuple[int, int]:
         """
         줄 번호가 붙은 텍스트에서 최소/최대 줄 번호를 추출합니다.
         
         Args:
-            line_numbered_requirements: "1: 내용\n2: 내용..." 형태의 텍스트
+            line_numbered_requirements: "1: 내용\n2: 내용..." 또는 "<1>내용</1>\n<2>내용</2>..." 형태의 텍스트
+            use_xml_tags: XML 태그 형식인지 여부
             
         Returns:
             (min_line, max_line) 튜플
@@ -37,11 +42,19 @@ class EsTraceUtil:
             return (1, 1)
         
         line_numbers = []
-        for line in line_numbered_requirements.split('\n'):
-            # "숫자: " 패턴을 찾아서 줄 번호 추출
-            match = re.match(r'^(\d+):\s*', line)
-            if match:
-                line_numbers.append(int(match.group(1)))
+        
+        if use_xml_tags:
+            # XML 태그 형식에서 줄 번호 추출: <1>내용</1>
+            for line in line_numbered_requirements.split('\n'):
+                match = re.match(r'^<(\d+)>.*</\1>$', line)
+                if match:
+                    line_numbers.append(int(match.group(1)))
+        else:
+            # 일반 형식에서 줄 번호 추출: 1: 내용
+            for line in line_numbered_requirements.split('\n'):
+                match = re.match(r'^(\d+):\s*', line)
+                if match:
+                    line_numbers.append(int(match.group(1)))
         
         if not line_numbers:
             return (1, 1)
@@ -50,7 +63,7 @@ class EsTraceUtil:
 
 
     @staticmethod
-    def convert_refs_to_indexes(actions: List[ActionModel], original_description: str, state, log_prefix: str = "") -> None:
+    def convert_refs_to_indexes(actions: List[ActionModel], original_description: str, state, log_prefix: str = "", use_xml_tags: bool = False) -> None:
         """
         Action 목록의 모든 refs를 단어 조합에서 컬럼 위치로 변환하는 공통 메서드
         JavaScript의 sanitizeAndConvertRefs와 동일한 3단계 처리 방식 적용
@@ -66,8 +79,8 @@ class EsTraceUtil:
             return
 
         # 1. 준비 작업: line numbering 및 범위 계산
-        line_numbered_description = EsTraceUtil.add_line_numbers_to_description(original_description)
-        min_line, max_line = EsTraceUtil.get_line_number_range(line_numbered_description)
+        line_numbered_description = EsTraceUtil.add_line_numbers_to_description(original_description, use_xml_tags)
+        min_line, max_line = EsTraceUtil.get_line_number_range(line_numbered_description, use_xml_tags)
         lines = original_description.split('\n')  # prefix 없는 원본 라인들
 
         for action in actions:

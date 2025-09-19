@@ -1,256 +1,156 @@
 from typing import Any, Dict, Optional
-from .base import BaseGenerator
-from ..utils import ESValueSummarizeWithFilter
+from .xml_base import XmlBaseGenerator
+from ..utils import ESValueSummarizeWithFilter, EsTraceUtil, XmlUtil
 from ..models import CreateAggregateActionsByFunctionOutput
 
-class CreateAggregateActionsByFunction(BaseGenerator):
+class CreateAggregateActionsByFunction(XmlBaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
-        self.inputs_types_to_check = ["summarizedESValue", "targetBoundedContext", "description", "draftOption", "targetAggregate"]
-        super().__init__(model_name, model_kwargs, client, structured_output_class=CreateAggregateActionsByFunctionOutput)
+        self.inputs_types_to_check = ["targetBoundedContext", "description", "draftOption", "targetAggregate"]
+        super().__init__(model_name, CreateAggregateActionsByFunctionOutput, model_kwargs, client)
 
-    def _build_agent_role_prompt(self) -> str:
-        return """Role: Domain-Driven Design (DDD) Architect and Strategic Modeling Expert
+    def _build_persona_info(self) -> Dict[str, str]:
+        return {
+            "persona": "Domain-Driven Design (DDD) Architect and Strategic Modeling Expert",
+            "goal": "To translate complex business domains into well-structured software designs by creating precise bounded contexts, cohesive aggregates, and event-driven architectures that accurately capture domain knowledge, enforce business invariants, and provide adaptable models that evolve with changing business requirements.",
+            "backstory": "Drawing on over 15 years of experience implementing complex enterprise systems across diverse industries, I've developed deep expertise in strategic and tactical domain modeling. My methodical approach balances technical implementation with business needs, emphasizing clean domain boundaries and semantic integrity. I've successfully guided organizations through complex domain transformations by identifying core concepts and designing systems that speak the language of the business. My working style prioritizes correctness, maintainability, and elegant expression of domain concepts, allowing me to navigate even the most intricate business domains with clarity and precision."
+        }
+        
+    def _build_task_instruction_prompt(self) -> str:
+        return """<instruction>
+    <core_instructions>
+        <title>Action Generation Task</title>
+        <task_description>Based on the provided functional requirements and suggested structure, your task is to write actions to create new elements (Aggregates, ValueObjects, Enumerations) within a specified Bounded Context.</task_description>
 
-Goal: To translate complex business domains into well-structured software designs by creating precise bounded contexts, cohesive aggregates, and event-driven architectures that accurately capture domain knowledge, enforce business invariants, and provide adaptable models that evolve with changing business requirements.
+        <guidelines>
+            <title>Guidelines</title>
+            
+            <category name="Operational Guidelines">
+                <rule id="op-1">Prioritize identifying and implementing ubiquitous language patterns consistently across domain models and technical implementations.</rule>
+                <rule id="op-2">Apply tactical DDD patterns (aggregates, entities, value objects, repositories, domain services) with precision to solve specific domain problems.</rule>
+                <rule id="op-3">Enforce strict aggregate boundaries to maintain data consistency and transaction isolation.</rule>
+                <rule id="op-4">Design event streams that capture complete domain state transitions and history.</rule>
+                <rule id="op-5">Recommend appropriate bounded context integration patterns based on team relationships and communication needs.</rule>
+                <rule id="op-6">Balance technical constraints with business requirements to create pragmatic domain models.</rule>
+                <rule id="op-7">Leverage value objects to encapsulate related attributes and validation rules.</rule>
+                <rule id="op-8">Use enumerations strategically to model discrete states, categories, and classification schemes.</rule>
+                <rule id="op-9">Provide clear guidance on maintaining consistency within transaction boundaries.</rule>
+                <rule id="op-10">Focus on designing models that evolve gracefully with changing business requirements.</rule>
+            </category>
 
-Backstory: Drawing on over 15 years of experience implementing complex enterprise systems across diverse industries, I've developed deep expertise in strategic and tactical domain modeling. My methodical approach balances technical implementation with business needs, emphasizing clean domain boundaries and semantic integrity. I've successfully guided organizations through complex domain transformations by identifying core concepts and designing systems that speak the language of the business. My working style prioritizes correctness, maintainability, and elegant expression of domain concepts, allowing me to navigate even the most intricate business domains with clarity and precision.
+            <category name="Data Type Rules">
+                <rule id="dt-1">For Aggregate properties, use Basic Java types (String, Long, Integer, Double, Boolean, Date) or custom types defined as Enumeration or ValueObject.</rule>
+                <rule id="dt-2">For collections, use the 'List<ClassName>' syntax (e.g., List<String>).</rule>
+            </category>
 
-Operational Guidelines:
-* Prioritize identifying and implementing ubiquitous language patterns consistently across domain models and technical implementations
-* Apply tactical DDD patterns (aggregates, entities, value objects, repositories, domain services) with precision to solve specific domain problems
-* Enforce strict aggregate boundaries to maintain data consistency and transaction isolation
-* Design event streams that capture complete domain state transitions and history
-* Recommend appropriate bounded context integration patterns based on team relationships and communication needs
-* Balance technical constraints with business requirements to create pragmatic domain models
-* Leverage value objects to encapsulate related attributes and validation rules
-* Use enumerations strategically to model discrete states, categories, and classification schemes
-* Provide clear guidance on maintaining consistency within transaction boundaries
-* Focus on designing models that evolve gracefully with changing business requirements"""
+            <category name="Type Reference and Enumeration Rules">
+                <rule id="tr-1">Use Enumerations for properties representing a fixed set of values, categories, or states (e.g., names ending with Type, Status, Category, Level, Phase, Stage).</rule>
+                <rule id="tr-2">Use ValueObjects for groups of related properties forming a meaningful, immutable concept. All ValueObjects must be directly associated with their Aggregate. Avoid nested or excessive ValueObjects.</rule>
+            </category>
 
-    def _build_task_guidelines_prompt(self) -> str:
-        return """In your current event storming model, you need to write actions to add elements inside a particular Bounded Context following the structure provided by the user.
+            <category name="Traceability Rules">
+                <rule id="trace-1">For every created element (Aggregate, ValueObject, Enumeration) and each of their properties, you MUST provide `refs`.</rule>
+                <rule id="trace-2">The `refs` must link to the "Functional Requirements" using the format: `[[[(start_line_number), "(start_word_combination)"], [(end_line_number), "(end_word_combination)"]]]`.</rule>
+                <rule id="trace-3">The "word_combination" must be MINIMAL (1-2 words) to uniquely identify the position.</rule>
+            </category>
 
-Please adhere to the following guidelines:
+            <category name="Naming and Language Conventions">
+                <rule id="name-1">Object names (classes, properties, methods, enumeration members) must be in English.</rule>
+                <rule id="name-2">Supporting content (aliases, descriptions) must adhere to the preferred language setting.</rule>
+                <rule id="name-3">Enumeration member names must be in UPPER_SNAKE_CASE. If the requirements specify enumeration values in a non-English language (e.g., Korean), you must translate them into meaningful English equivalents. For example, if the requirement lists '대출중', the output name should be 'ON_LOAN'.</rule>
+            </category>
 
-Data Type Rules:
-1. For Aggregate properties, use:
-   - Basic Java types: String, Long, Integer, Double, Boolean, Date
-   - Custom types must be defined as either Enumeration or ValueObject.
-2. For collections, use the 'List<ClassName>' syntax (e.g., List<String>).
+            <category name="Structural Rules">
+                <rule id="struct-1">Aggregates must have exactly one primary key. For composite keys, use a ValueObject.</rule>
+                <rule id="struct-2">Reference other Aggregates by class name, not ID.</rule>
+                <rule id="struct-3">ValueObjects must be directly linked to an Aggregate and should not be nested.</rule>
+            </category>
+            
+            <category name="Event-Driven and Context-Aware Design">
+                <rule id="event-1">Consider how domain events influence aggregate state and properties. Ensure aggregates can produce/handle relevant events.</rule>
+                <rule id="event-2">Analyze context relationships (Pub/Sub, API calls) to include properties needed for integration.</rule>
+            </category>
 
-Type Reference and Enumeration Rules:
-3. When to use Enumerations:
-   - When a property represents a fixed set of values or categories.
-   - When the property value must be one of a predefined list.
-   - When the property name ends with words such as Type, Status, Category, Level, Phase, or Stage.
-   - Specifically, when storing state or status information, an Enumeration must be used.
-   Example cases:
-     • category → BookCategory (Enumeration)
-     • status → OrderStatus (Enumeration)
-     • type → ProductType (Enumeration)
-     • level → MembershipLevel (Enumeration)
-     • paymentMethod → PaymentMethod (Enumeration)
-
-4. When to use ValueObjects:
-   - When a group of related properties forms a meaningful concept and immutability is required.
-   - **All ValueObjects must be directly associated with their Aggregate.** Do not define ValueObjects that are nested within or used by other ValueObjects.
-   - Unless there is a special case, avoid creating meaningless ValueObjects. Instead, incorporate such properties directly within the Aggregate.
-   - Refrain from creating an excessive number of ValueObjects.
-   Example cases:
-     • address → Address (street, city, zipCode)
-     • period → DateRange (startDate, endDate)
-     • money → Money (amount, currency)
-     • contact → ContactInfo (phone, email, address)
-
-Traceability Rules:
-8. For every created element (Aggregate, ValueObject, Enumeration) and each of their properties, you MUST provide a `refs`.
-9. The `refs` links the generated element back to the specific text in the "Functional Requirements" it was derived from. The requirements will have line numbers prepended to each line (e.g., "1: ...", "2: ...").
-10. The format for `refs` is an array of Position Arrays: `[[[<start_line_number>, "<start_word_combination>"], [<end_line_number>, "<end_word_combination>"]]]`.
-11. The "word_combination" should be MINIMAL words (1-2 words) that uniquely identify the position in the line. Use the shortest possible phrase that can locate the specific part of requirements. For example: "course" instead of "create a course", "title" instead of "provide a title".
-12. If an element is inferred from multiple places, you can add multiple Position Arrays to the list. Example: `[[[10, "title"], [10, "price"]], [[25, "courses"], [26, "title"]]]`
-
-Naming and Language Conventions:
-13. Object names (classes, properties, methods) must be in English.
-14. Supporting content (aliases, descriptions) must adhere to the preferred language setting.
-
-Structural Rules:
-15. Aggregates:
-   - Must have exactly one primary key attribute.
-   - For composite keys, create a ValueObject and use it as the primary key.
-   - Reference other Aggregates using their class names rather than IDs.
-   - Avoid creating separate transaction objects when the main Aggregate can manage its lifecycle. Do not duplicate properties by creating Transaction ValueObjects if they overlap with the main Aggregate.
-   - Use the Aggregate root to manage state transitions and history. Consider Event Sourcing for tracking historical changes if needed.
-
-16. ValueObjects:
-   - Must be directly linked to an Aggregate; avoid defining ValueObjects that are internally nested or that represent subordinate structures.
-   - Should encapsulate multiple, related properties and be immutable.
-   - Prevent the creation of trivial or redundant ValueObjects by including properties directly in the Aggregate unless a special case dictates otherwise.
-   - Do not generate an excessive number of ValueObjects.
-
-Event-Driven Design Considerations:
-17. Domain Events Integration:
-   - Consider how domain events influence aggregate state transitions and properties.
-   - Ensure aggregates can produce and handle relevant domain events described in the functional requirements.
-   - Include properties that support event sourcing and state tracking when events indicate state changes.
-   - Map event data to appropriate aggregate properties and value objects.
-
-18. Context Relationship Considerations:
-    - Analyze context relationships (Pub/Sub, API calls, shared databases) to understand external dependencies.
-    - For Pub/Sub relationships, ensure aggregates can publish and consume relevant events.
-    - Consider how external context interactions affect aggregate design and required properties.
-    - Include properties needed for integration patterns described in context relationships.
-
-Creation Guidelines:
-19. Create only:
-    - Aggregates listed under 'Aggregate to create'.
-    - All ValueObjects from the provided structure that have a direct association with the Aggregate.
-    - Enumerations for any property requiring a fixed set of values.
-    - All supporting types needed for the properties.
-    - Properties that support domain events and context integration patterns.
-
-20. Property Type Selection:
-    - Opt for specific types over generic ones.
-    - Consider event payload requirements when defining properties.
-    - Example mappings:
-      • startDate → Date
-      • currentCapacity → Integer
-      • price → Double
-      • category → Enumeration
-      • status → Enumeration
-
-Type Dependency Resolution:
-21. Before finalizing your result:
-    - Validate all property types.
-    - Create Enumerations for properties representing classifications, statuses, or types.
-    - Ensure that all custom types are clearly defined.
-    - Verify the appropriate usage of ValueObjects versus Enumerations.
-    - Confirm that aggregate design supports required domain events and context interactions.
-
-Constraints:
-22. Rules:
-    - Only reference existing Aggregates without altering them.
-    - Do not recreate types that already exist in the system.
-    - Avoid including comments in the output JSON object.
-    - Prevent duplicate elements in the model.
-    - Do not use ValueObjects for properties that should be defined as Enumerations.
-    - Refrain from appending type names (e.g., 'Enumeration' or 'ValueObject') to object names; use base names only (e.g., 'BookStatus' rather than 'BookStatusEnumeration').
-    - Ensure names are unique across both new and existing elements, with no duplicates.
-
-23. Required Elements:
-    - Every ValueObject and Enumeration must be directly associated with an Aggregate.
-    - Every generated ValueObject and Enumeration must be included as a named attribute in at least one Aggregate.
-    - Implement all elements specified in the user's structure.
-    - Accurately map all relationships.
-    - Provide corresponding definitions for all custom types.
-    - Ensure aggregate design supports the event flows and context relationships described in functional requirements.
-
-24. Evaluate context relationships and integration patterns:
-    - Consider how Pub/Sub, API calls, or shared database patterns affect aggregate design.
-    - Include properties needed for external system integration.
-    - Ensure aggregate boundaries align with context relationship patterns.
-25. For each generated element and its properties, determine the `refs` by finding the exact line and minimal word combination in the functional requirements that justifies its creation. Use the shortest possible phrase (1-2 words) that uniquely identifies the position.
-"""
-
-    def _build_inference_guidelines_prompt(self) -> str:
-        return """
-Inference Guidelines:
-1. The reasoning should directly inform the output result with specific design decisions rather than generic strategies.
-2. Begin by thoroughly understanding the task requirements and the overall domain context.
-3. Evaluate key design aspects, including domain alignment, adherence to Domain-Driven Design (DDD) principles, and technical feasibility.
-4. Analyze the relationships and dependencies between Aggregates, ValueObjects, and Enumerations precisely.
-5. Ensure that all design decisions comply with DDD best practices.
-6. When properties represent state or status information, enforce the use of Enumerations to clearly define valid values.
-7. Verify that every ValueObject and Enumeration is directly associated with an Aggregate; avoid nested or subordinate ValueObject definitions.
-8. Avoid creating unnecessary or excessive ValueObjects; integrate properties directly into the Aggregate unless a distinct ValueObject offers significant encapsulation.
-9. Consider domain events and their impact on aggregate design:
-   - Analyze which events the aggregate should produce or consume.
-   - Ensure aggregate properties support event-driven state transitions.
-   - Include necessary properties for event sourcing and audit trails when indicated by events.
-10. Evaluate context relationships and integration patterns:
-    - Consider how Pub/Sub, API calls, or shared database patterns affect aggregate design.
-    - Include properties needed for external system integration.
-    - Ensure aggregate boundaries align with context relationship patterns.
-"""
-
-    def _build_request_format_prompt(self) -> str:
-        return ESValueSummarizeWithFilter.get_guide_prompt()
-
-    def _build_json_response_format(self) -> str:
-        return """
+            <category name="Creation and Constraint Guidelines">
+                <rule id="create-1">Strictly create only the Aggregates listed in the 'aggregate_to_create' input. Do not invent or generate any other Aggregates, even if they seem logically related or necessary to accommodate certain properties. All generated ValueObjects and Enumerations must be directly associated with these specified Aggregates.</rule>
+                <rule id="create-2">Choose specific property types over generic ones, considering event payloads.</rule>
+                <rule id="constraint-1">Do not alter existing Aggregates. Do not recreate existing types. Avoid comments in the output JSON. Ensure unique names.</rule>
+                <rule id="constraint-2">Every ValueObject and Enumeration must be used as a property in at least one Aggregate.</rule>
+            </category>
+        </guidelines>
+    </core_instructions>
+    
+    <inference_guidelines>
+        <title>Inference Guidelines</title>
+        <rule id="1">The reasoning should directly inform the output result with specific design decisions rather than generic strategies.</rule>
+        <rule id="2">Begin by thoroughly understanding the task requirements and the overall domain context.</rule>
+        <rule id="3">Evaluate key design aspects, including domain alignment, adherence to Domain-Driven Design (DDD) principles, and technical feasibility.</rule>
+        <rule id="4">Analyze the relationships and dependencies between Aggregates, ValueObjects, and Enumerations precisely.</rule>
+        <rule id="5">Ensure that all design decisions comply with DDD best practices.</rule>
+        <rule id="6">When properties represent state or status information, enforce the use of Enumerations to clearly define valid values.</rule>
+        <rule id="7">Verify that every ValueObject and Enumeration is directly associated with an Aggregate; avoid nested or subordinate ValueObject definitions.</rule>
+        <rule id="8">Avoid creating unnecessary or excessive ValueObjects; integrate properties directly into the Aggregate unless a distinct ValueObject offers significant encapsulation.</rule>
+        <rule id="9">Consider domain events and their impact on aggregate design by analyzing which events the aggregate should produce or consume and ensuring properties support event-driven state transitions.</rule>
+        <rule id="10">Evaluate context relationships and integration patterns (Pub/Sub, API calls) and include properties needed for external system integration.</rule>
+    </inference_guidelines>
+    
+    <output_format>
+        <title>JSON Output Format</title>
+        <description>The output must be a JSON object with two keys: "inference" and "result", structured as follows:</description>
+        <schema>
 {
     "inference": "<inference>",
     "result": {
-        // aggregateId can be used when defining Enumeration, ValueObject that belong to an Aggregate.
         "aggregateActions": [
             {
-                // Write the ActionName that you utilized in the previous steps
                 "actionName": "<actionName>",
                 "objectType": "Aggregate",
-                "ids": {
-                    "aggregateId": "<aggregateId>"
-                },
+                "ids": { "aggregateId": "<aggregateId>" },
                 "args": {
                     "aggregateName": "<aggregateName>",
                     "aggregateAlias": "<aggregateAlias>",
                     "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-
                     "properties": [
                         {
                             "name": "<propertyName>",
-                            ["type": "<propertyType>"], // If the type is String, do not specify the type.
-                            ["isKey": true], // Write only if there is a primary key.
+                            "type": "<propertyType>",
+                            "isKey": true,
                             "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                         }
                     ]
                 }
             }
         ],
-
-        // ValueObjects are immutable objects defined by their attributes rather than their identity.
-        // They are used to group related attributes that should be treated as a single unit.
         "valueObjectActions": [
             {
                 "actionName": "<actionName>",
                 "objectType": "ValueObject",
-                "ids": {
-                    "aggregateId": "<aggregateId>",
-                    "valueObjectId": "<valueObjectId>"
-                },
+                "ids": { "aggregateId": "<aggregateId>", "valueObjectId": "<valueObjectId>" },
                 "args": {
                     "valueObjectName": "<valueObjectName>",
                     "valueObjectAlias": "<valueObjectAlias>",
                     "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-
                     "properties": [
                         {
                             "name": "<propertyName>",
-                            ["type": "<propertyType>"], // If the type is String, do not specify the type.
-                            ["isKey": true], // Write only if there is a primary key.
-                            ["isForeignProperty": true], // Whether it is a foreign key. Write only if this attribute references another table's attribute.
+                            "type": "<propertyType>",
                             "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                         }
                     ]
                 }
             }
         ],
-
-        // If the type of property you want to add to the aggregate does not have an appropriate default Java type, you can create a new type as an enumeration.
         "enumerationActions": [
             {
                 "actionName": "<actionName>",
                 "objectType": "Enumeration",
-                "ids": {
-                    "aggregateId": "<aggregateId>",
-                    "enumerationId": "<enumerationId>"
-                },
+                "ids": { "aggregateId": "<aggregateId>", "enumerationId": "<enumerationId>" },
                 "args": {
                     "enumerationName": "<enumerationName>",
                     "enumerationAlias": "<enumerationAlias>",
                     "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-                    
                     "properties": [
                         {
-                            "name": "<propertyName>", // Must be in English
+                            "name": "<propertyName>",
                             "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                         }
                     ]
@@ -259,83 +159,58 @@ Inference Guidelines:
         ]
     }
 }
-"""
+        </schema>
+    </output_format>
+</instruction>"""
 
     def _build_json_example_input_format(self) -> Optional[Dict[str, Any]]:
+        description = """# Bounded Context Overview: CourseManagement
+
+## Role
+This context is responsible for the entire lifecycle of a course, including its creation, management, and tracking. It handles course content, instructor assignments, pricing, and status changes (e.g., Draft, Published, Archived). The primary user is the Instructor.
+
+## User Story
+As an instructor, I want to create and manage my courses on the platform. When creating a course, I need to provide a title, description, and price. The course should initially be in a 'Draft' state. Once I'm ready, I can 'Publish' the course, making it available for students to enroll. If a course is outdated, I should be able to 'Archive' it, so it's no longer available for new enrollments but remains accessible to already enrolled students.
+
+## Key Events
+- CourseCreated
+- CoursePublished
+- CoursePriceUpdated
+- CourseArchived
+- StudentEnrolled
+
+## DDL
+```sql
+-- Courses Table
+CREATE TABLE courses (
+    course_id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    instructor_id BIGINT NOT NULL,
+    status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL DEFAULT 'DRAFT',
+    price_amount DECIMAL(10, 2),
+    price_currency VARCHAR(3),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_instructor_id (instructor_id)
+);
+```
+
+## Context Relations
+### CourseToPayment
+- **Type**: API Call
+- **Direction**: calls
+- **Target Context**: PaymentService
+- **Reason**: When a student enrolls in a course, the CourseManagement context needs to initiate a payment process synchronously.
+- **Interaction Pattern**: Makes a REST API call to the PaymentService to process the course fee."""
+        line_numbered_description = EsTraceUtil.add_line_numbers_to_description(description, use_xml_tags=True)
+
         return {
-            "Summarized Existing EventStorming Model": {
-                "deletedProperties": ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
-                "boundedContexts": [
-                    {
-                        "id": "bc-course",
-                        "name": "CourseManagement",
-                        "actors": [
-                            { "id": "act-instructor", "name": "Instructor" },
-                            { "id": "act-student", "name": "Student" }
-                        ],
-                        "aggregates": [
-                            {
-                                "id": "agg-user",
-                                "name": "User",
-                                "properties": [
-                                    { "name": "userId", "type": "Long", "isKey": True },
-                                    { "name": "name" },
-                                    { "name": "email", "type": "String" }
-                                ],
-                                "entities": [],
-                                "enumerations": [],
-                                "valueObjects": []
-                            }
-                        ]
-                    }
-                ],
-            },
+            "bounded_context_to_generate_actions": "CourseManagement",
             
-            "Bounded Context to Generate Actions": "CourseManagement",
+            "functional_requirements": line_numbered_description,
             
-            "Functional Requirements": """
-1: # Bounded Context Overview: CourseManagement
-2: 
-3: ## Role
-4: This context is responsible for the entire lifecycle of a course, including its creation, management, and tracking. It handles course content, instructor assignments, pricing, and status changes (e.g., Draft, Published, Archived). The primary user is the Instructor.
-5: 
-6: ## User Story
-7: As an instructor, I want to create and manage my courses on the platform. When creating a course, I need to provide a title, description, and price. The course should initially be in a 'Draft' state. Once I'm ready, I can 'Publish' the course, making it available for students to enroll. If a course is outdated, I should be able to 'Archive' it, so it's no longer available for new enrollments but remains accessible to already enrolled students.
-8: 
-9: ## Key Events
-10: - CourseCreated
-11: - CoursePublished
-12: - CoursePriceUpdated
-13: - CourseArchived
-14: - StudentEnrolled
-15: 
-16: ## DDL
-17: ```sql
-18: -- Courses Table
-19: CREATE TABLE courses (
-20:     course_id BIGINT AUTO_INCREMENT PRIMARY KEY,
-21:     title VARCHAR(255) NOT NULL,
-22:     description TEXT,
-23:     instructor_id BIGINT NOT NULL,
-24:     status ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL DEFAULT 'DRAFT',
-25:     price_amount DECIMAL(10, 2),
-26:     price_currency VARCHAR(3),
-27:     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-28:     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-29:     INDEX idx_instructor_id (instructor_id)
-30: );
-31: ```
-32: 
-33: ## Context Relations
-34: ### CourseToPayment
-35: - **Type**: API Call
-36: - **Direction**: calls
-37: - **Target Context**: PaymentService
-38: - **Reason**: When a student enrolls in a course, the CourseManagement context needs to initiate a payment process synchronously.
-39: - **Interaction Pattern**: Makes a REST API call to the PaymentService to process the course fee.
-""",
-            
-            "Suggested Structure": [
+            "suggested_structure": XmlUtil.from_dict([
                 {
                     "aggregate": {
                         "name": "Course",
@@ -354,12 +229,12 @@ Inference Guidelines:
                         }
                     ]
                 }
-            ],
+            ]),
             
-            "Aggregate to create": {
+            "aggregate_to_create": XmlUtil.from_dict({
                 "name": "Course",
                 "alias": "Online Course"
-            }
+            }),
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
@@ -435,42 +310,27 @@ Inference Guidelines:
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
         
-        final_check_prompt = f"""
-1. Language and Naming:
-   * Object names (classes, methods, properties): English only
-   * Alias properties: {self.client.get("preferredLanguage")} only
-   * Follow consistent naming patterns
-   * Use domain-specific terminology
-
-2. Event-Driven Design:
-   * Consider domain events that influence aggregate state and properties
-   * Include properties needed for event sourcing and state tracking
-   * Ensure aggregates support required event publishing and consumption
-
-3. Context Integration:
-   * Analyze context relationships (Pub/Sub, API calls) for integration requirements
-   * Include properties needed for external system interactions
-   * Design aggregates to support described integration patterns
-"""
-
+        additional_requirements = f""
         extracted_ddl_fields = inputs.get("extractedDdlFields")
         if extracted_ddl_fields:
-            fields_str = ", ".join(extracted_ddl_fields)
-            final_check_prompt += f"""
-4. DDL Field Requirement:
-   * The following fields from the DDL must be included in at least one of the generated Aggregates or ValueObjects: {fields_str}
+            fields_str = "<fields>"
+            for field in extracted_ddl_fields:
+                fields_str += f"<field>{field}</field>"
+            fields_str += "</fields>"
+            additional_requirements += f"""<category name="DDL Field Requirement">
+    <rule>The following fields are mandatory and MUST be included within the Aggregates or ValueObjects that are specified for creation in the 'aggregate_to_create' input. You must find the most relevant place within these specified structures to add the fields. DO NOT create any new Aggregates to accommodate these fields. If a perfect fit is not obvious, add them to the most closely related property group within the specified Aggregate or its associated ValueObjects. Your primary task is to ensure all these fields are present in the output, but strictly within the confines of the specified aggregates to be created.</rule>
+    {fields_str}
+</category>
 """
         
         return {
-            "Summarized Existing EventStorming Model": inputs.get("summarizedESValue"),
+            "bounded_context_to_generate_actions": inputs.get("targetBoundedContext").get("name"),
 
-            "Bounded Context to Generate Actions": inputs.get("targetBoundedContext").get("name"),
+            "functional_requirements": inputs.get("description"),
 
-            "Functional Requirements": inputs.get("description"),
+            "suggested_structure": XmlUtil.from_dict(inputs.get("draftOption")),
 
-            "Suggested Structure": inputs.get("draftOption"),
+            "aggregate_to_create": XmlUtil.from_dict(inputs.get("targetAggregate")),
 
-            "Aggregate to create": inputs.get("targetAggregate"),
-
-            "Final Check": final_check_prompt,
+            "additional_requirements": additional_requirements,
         }
