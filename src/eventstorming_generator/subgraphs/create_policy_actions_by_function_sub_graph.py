@@ -1,6 +1,5 @@
 import time
 from typing import Callable, Dict, Any, List
-from copy import deepcopy
 from langgraph.graph import StateGraph, START
 
 from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
@@ -156,7 +155,10 @@ def preprocess_policy_actions_generation(state: State) -> State:
             current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
 
         # 현재 ES 값의 복사본 생성
-        es_value = state.outputs.esValue.model_dump()
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
         
         # 요약된 ES 값 생성
         summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
@@ -194,7 +196,10 @@ def generate_policy_actions(state: State) -> State:
     
     try:
 
-        es_value = state.outputs.esValue.model_dump()
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
         
         # 요약 서브그래프에서 처리 결과를 받아온 경우
         if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
@@ -337,12 +342,9 @@ def postprocess_policy_actions_generation(state: State) -> State:
             LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to convert source references for '{bc_name}'", e)
             # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
 
-        # ES 값의 복사본 생성
-        es_value_to_modify = deepcopy(state.outputs.esValue)
-        
         # 액션 적용하여 ES 값 업데이트
         updated_es_value = EsActionsUtil.apply_actions(
-            es_value_to_modify,
+            state.outputs.esValue.model_dump(),
             current_gen.created_actions,
             state.inputs.userInfo,
             state.inputs.information

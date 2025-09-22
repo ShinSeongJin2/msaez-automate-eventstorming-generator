@@ -169,7 +169,10 @@ def worker_postprocess_aggregate(state: State) -> State:
             return state
         
         # ES 값의 복사본 생성 (ID 변환용)
-        es_value = EsValueModel(**state.outputs.esValue.model_dump())
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
         es_alias_trans_manager = EsAliasTransManager(es_value)
         
         actions = _filter_valid_property_actions(current_gen.created_actions)

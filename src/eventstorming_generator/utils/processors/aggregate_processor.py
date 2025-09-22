@@ -90,6 +90,10 @@ class AggregateProcessor:
             
             # 업데이트된 객체를 es_value에 저장
             es_value["elements"][action.ids.get("aggregateId", "")] = aggregate_object
+        
+        if action.args.get("relatedRelation"):
+            related_relation = action.args.get("relatedRelation")
+            es_value["relations"][related_relation["id"]] = related_relation
     
     @staticmethod
     def _get_aggregate_base(user_info: Dict[str, Any], name: str, display_name: str, 

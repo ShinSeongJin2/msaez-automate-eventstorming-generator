@@ -1,105 +1,93 @@
 from typing import Any, Dict, Optional
-from .base import BaseGenerator
-from ..utils import ESValueSummarizeWithFilter
+import json
+
+from .xml_base import XmlBaseGenerator
+from ..utils import ESValueSummarizeWithFilter, XmlUtil
 from ..models import CreateAggregateClassIdByDraftsOutput
 
-class CreateAggregateClassIdByDrafts(BaseGenerator):
+class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         self.inputs_types_to_check = ["summarizedESValue", "draftOption", "targetReferences"]
-        super().__init__(model_name, model_kwargs, client, structured_output_class=CreateAggregateClassIdByDraftsOutput)
+        super().__init__(model_name, CreateAggregateClassIdByDraftsOutput, model_kwargs, client)
 
-    def _build_agent_role_prompt(self) -> str:
-        return """Role: Senior Domain-Driven Design (DDD) Expert
+    def _build_persona_info(self) -> Dict[str, str]:
+        return {
+            "persona": "Senior Domain-Driven Design (DDD) Expert",
+            "goal": "To create optimal, unidirectional reference structures between aggregates that maintain domain integrity while minimizing coupling, ensuring proper implementation of value objects and aggregate references based on DDD principles.",
+            "backstory": "With decades of hands-on experience implementing DDD in complex enterprise systems, I've developed deep expertise in strategic context mapping and aggregate relationship management. My methodical approach is driven by a commitment to clean architecture principles and optimal domain modeling. My work consistently balances technical excellence with business domain alignment, prioritizing maintainable and scalable solutions that protect domain invariants across aggregate boundaries."
+        }
 
-Goal: To create optimal, unidirectional reference structures between aggregates that maintain domain integrity while minimizing coupling, ensuring proper implementation of value objects and aggregate references based on DDD principles.
+    def _build_task_instruction_prompt(self) -> str:
+        return """<instruction>
+    <core_instructions>
+        <title>ValueObject Reference Generation Task</title>
+        <task_description>Your task is to create the appropriate ValueObject that references another Aggregate as a foreign key, based on the provided EventStorming configuration draft. You must generate the ValueObject only for the `referenceAggregate` corresponding to the given `targetReferences`.</task_description>
+    </core_instructions>
+    
+    <guidelines>
+        <title>Guidelines for Reference Generation</title>
+        <rule id="1">
+            <title>Strictly Unidirectional References</title>
+            <description>
+                - CRITICAL: You MUST implement only ONE-WAY references between aggregates. NEVER create bidirectional references.
+                - If the draft suggests a two-way relationship (e.g., Order refers to Customer AND Customer refers to Order), you MUST choose only ONE direction to implement. For instance, implement Order -> Customer and ignore Customer -> Order.
+                - For every bidirectional relationship identified in the input, you must implement one direction in the `actions` list and explicitly declare the other direction as omitted in the `omittedReferences` list in the output.
+            </description>
+        </rule>
+        <rule id="2">
+            <title>Direction Selection Criteria</title>
+            <description>
+                When deciding the direction of a reference, consider the following criteria to make an informed choice:
+                - **Lifecycle Dependency:** The dependent aggregate should reference the independent one (e.g., an Order's lifecycle depends on a Customer, so Order references Customer).
+                - **Business Invariants:** The aggregate that enforces business rules should reference the data it needs to validate those rules.
+                - **Stability:** The more stable aggregate should be the one that is referenced.
+                - **Query Patterns:** Optimize for the most frequent and critical data access patterns.
+            </description>
+        </rule>
+        <rule id="3">
+            <title>Property Replication Rules</title>
+            <description>
+                - Only replicate properties that are highly unlikely to change (i.e., immutable or near-immutable), such as a birth date, gender, or country of origin.
+                - Strictly AVOID replicating volatile properties that change frequently, like an address, email, or phone number.
+                - Each replicated property must be justified by its immutability and business value for the reference. Include only the minimum required properties.
+            </description>
+        </rule>
+        <rule id="4">
+            <title>Technical & Implementation Details</title>
+            <description>
+                - Handle composite keys appropriately if a referenced Aggregate uses multiple identifiers.
+                - Ensure all recommendations follow proper ValueObject patterns for aggregate references.
+                - Before finalizing, double-check to confirm you have not created any bidirectional references.
+                - The `fromAggregate` and `toAggregate` fields in the `args` must accurately reflect the source and target of the reference. `toAggregate` must be identical to `referenceClass`.
+            </description>
+        </rule>
+        <rule id="5">
+            <title>Two-Tier Inference Strategy</title>
+            <description>
+                - The root `inference` should explain your overall strategic decisions, such as why a particular unidirectional relationship was chosen over another.
+                - The `inference` within each `action` must justify the specific details of THAT action only, such as the choice of replicated properties and their immutability. Do not repeat the overall strategy here.
+            </description>
+        </rule>
+    </guidelines>
+    
+    <inference_guidelines>
+        <title>Inference Guidelines</title>
+        <rule id="1">**Domain Analysis:** Begin by comprehensively analyzing the provided aggregate relationships and domain context.</rule>
+        <rule id="2">**Unidirectional Enforcement:** State clearly which reference direction was chosen and why, based on the principles of dependency, lifecycle, and stability. Explicitly mention that the reverse direction was intentionally omitted.</rule>
+        <rule id="3">**Property Justification:** Justify the inclusion of any replicated properties by confirming their immutability and necessity for the reference.</rule>
+        <rule id="4">**Direct Relation to Output:** The reasoning process should be directly related to the output result, not a general strategy.</rule>
+    </inference_guidelines>
 
-Backstory: With decades of hands-on experience implementing DDD in complex enterprise systems, I've developed deep expertise in strategic context mapping and aggregate relationship management. My methodical approach is driven by a commitment to clean architecture principles and optimal domain modeling. My work consistently balances technical excellence with business domain alignment, prioritizing maintainable and scalable solutions that protect domain invariants across aggregate boundaries.
-
-Operational Guidelines:
-* Analyze aggregate relationships comprehensively before recommending reference structures
-* Always implement strictly unidirectional references between aggregates, never bidirectional
-* Select reference direction based on lifecycle dependency, stability, and query patterns
-* Only replicate truly immutable or near-immutable properties across aggregate boundaries
-* Provide clear justification for all design decisions based on DDD principles
-* Optimize reference structures for query performance while maintaining domain integrity
-* Balance technical considerations with domain model clarity and business rules
-* Ensure all recommendations follow proper ValueObject patterns for aggregate references"""
-
-    def _build_task_guidelines_prompt(self) -> str:
-        return """You will need to create the appropriate ValueObject that references other Aggregates as foreign keys, based on the provided EventStorming configuration draft.
-
-Please follow these rules:
-1. Foreign Key Value Object Generation:
-   * CRITICAL: Only implement ONE DIRECTION of reference between aggregates
-   * When choosing direction, consider:
-     - Which aggregate is the owner of the relationship
-     - Which side is more stable and less likely to change
-     - Query patterns and performance requirements
-   * Example: In Order-Customer relationship, Order should reference Customer (not vice-versa)
-
-2. Relationship Direction Decision:
-   * NEVER create bidirectional references, even if suggested in the draft
-   * For each pair of aggregates, choose only ONE direction based on:
-     - Lifecycle dependency (dependent aggregate references the independent one)
-     - Business invariants (aggregate enforcing rules references required data)
-     - Access patterns (optimize for most frequent queries)
-
-3. Property Replication:
-   * Only replicate properties that are highly unlikely to change (e.g., birthDate, gender)
-   * These near-immutable properties are safe for caching as they remain constant throughout the entity's lifecycle
-   * Strictly avoid replicating volatile properties that change frequently
-   * Each replicated property must be justified based on its immutability and business value
-   * Examples of safe-to-replicate properties:
-     - Date of birth (remains constant)
-     - Gender (rarely changes)
-     - Country of birth (permanent)
-   * Examples of properties to avoid replicating:
-     - Address (frequently changes)
-     - Email (moderately volatile)
-     - Phone number (changes occasionally)
-
-4. Technical Considerations:
-   * Handle composite keys appropriately when referenced Aggregate uses multiple identifiers
-   * Include proper indexing hints for foreign key fields
-   * Consider implementing lazy loading for referenced data
-   * Maintain referential integrity through proper constraints
-
-5. Edge Cases:
-   * Handle null references and optional relationships
-   * Consider cascade operations impact
-   * Plan for reference cleanup in case of Aggregate deletion
-   * Implement proper validation for circular references
-
-6. Output Format:
-   * Provide clean JSON without comments
-   * Use consistent property naming
-   * Include all required metadata
-   * Specify proper data types and constraints
-
-7. Output Limit
-   * Generate the appropriate ValueObject only for the referceAggregate corresponding to the given targetReferences. However, if the creation of a ValueObject for a given targetReferences also creates bidirectional references, only one of them should be created as a ValueObject."""
-
-    def _build_inference_guidelines_prompt(self) -> str:
-        return """
-Inference Guidelines:
-1. The process of reasoning should be directly related to the output result, not a reference to a general strategy.
-2. Begin by comprehensively analyzing the provided aggregate relationships and domain context.
-3. Focus on key aspects:
-   - **Domain Alignment:** Assess how the value object and its references integrate into the broader business domain.
-   - **Unidirectional Relationship:** Ensure that references are implemented in a strictly unidirectional manner; choose the direction based on aggregate dependency, lifecycle, and stability.
-   - **Property Considerations:** Identify and replicate only those properties that are immutable and critical for maintaining referential integrity.
-"""
-
-    def _build_request_format_prompt(self) -> str:
-        return ESValueSummarizeWithFilter.get_guide_prompt()
-
-    def _build_json_response_format(self) -> str:
-        return """
+    <output_format>
+        <title>JSON Output Format</title>
+        <description>The output must be a JSON object with two keys: "inference" and "result", structured as follows. Provide clean JSON without comments.</description>
+        <schema>
 {
     "inference": "<inference>",
     "result": {
         "actions": [
             {
+                "inference": "<Inference for this action>",
                 "objectType": "ValueObject",
                 "ids": {
                     "boundedContextId": "<boundedContextId>",
@@ -109,6 +97,8 @@ Inference Guidelines:
                 "args": {
                     "valueObjectName": "<valueObjectName>",
                     "referenceClass": "<referenceClassName>",
+                    "fromAggregate": "<source_aggregate_name>",
+                    "toAggregate": "<target_aggregate_name>",
                     "properties": [
                         {
                             "name": "<propertyName>",
@@ -118,15 +108,25 @@ Inference Guidelines:
                     ]
                 }
             }
+        ],
+        "omittedReferences": [
+            {
+                "fromAggregate": "<source_aggregate_name>",
+                "toAggregate": "<target_aggregate_name>",
+                "reason": "<reason_for_omission>"
+            }
         ]
     }
 }
-"""
+        </schema>
+    </output_format>
+</instruction>"""
 
     def _build_json_example_input_format(self) -> Optional[Dict[str, Any]]:
+        deleted_properties = ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"] + ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateInnerStickers"]
         return {
-            "Summarized Existing EventStorming Model": {
-                "deletedProperties": ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateOuterStickers"],
+            "summarized_existing_eventstorming_model": XmlUtil.from_dict({
+                "deletedProperties": deleted_properties,
                 "boundedContexts": [
                     {
                         "id": "bc-order",
@@ -178,16 +178,15 @@ Inference Guidelines:
                         ]
                     }
                 ]
-            },
-
-            "Suggested Structure": {
+            }),
+            
+            "suggested_structure": XmlUtil.from_dict({
                 "OrderManagement": [
                     {
                         "aggregate": {
                             "name": "Order",
                             "alias": "Order"
                         },
-                        "enumerations": [],
                         "valueObjects": [
                             {
                                 "name": "CustomerReference",
@@ -206,7 +205,6 @@ Inference Guidelines:
                             "name": "Customer",
                             "alias": "Customer"
                         },
-                        "enumerations": [],
                         "valueObjects": [
                             {
                                 "name": "OrderReference",
@@ -219,9 +217,9 @@ Inference Guidelines:
                         ]
                     }
                 ]
-            },
+            }),
 
-            "Target References": ["OrderReference", "CustomerReference"]
+            "target_references": XmlUtil.from_dict(["OrderReference", "CustomerReference"])
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
@@ -231,8 +229,16 @@ Inference Guidelines:
 - Property Replication: Only properties that are immutable and critical for maintaining referential integrity—namely, the primary key (customerId), alongside near-immutable properties such as gender and birthDate—are replicated. This minimizes redundancy and avoids the pitfalls of copying volatile data.
 Overall, this inference ensures that the generated ValueObject adheres to the design rules, maintains domain clarity, and promotes referential integrity without creating unwanted bidirectional dependencies.""",
             "result": {
+                "omittedReferences": [
+                    {
+                        "fromAggregate": "Customer",
+                        "toAggregate": "Order",
+                        "reason": "A reference from Customer to Order was omitted to enforce a unidirectional relationship. The Order's lifecycle is dependent on the Customer, making Customer the more stable aggregate that should be referenced."
+                    }
+                ],
                 "actions": [
                     {
+                        "inference": "The reference from Order to Customer is created because an Order's lifecycle depends on a Customer. Immutable properties like gender and birthDate are included for data consistency, along with the primary key customerId.",
                         "objectType": "ValueObject",
                         "ids": {
                             "boundedContextId": "bc-order",
@@ -240,6 +246,8 @@ Overall, this inference ensures that the generated ValueObject adheres to the de
                             "valueObjectId": "vo-customer-id"
                         },
                         "args": {
+                            "fromAggregate": "Order",
+                            "toAggregate": "Customer",
                             "valueObjectName": "CustomerReference",
                             "referenceClass": "Customer",
                             "properties": [
@@ -265,30 +273,31 @@ Overall, this inference ensures that the generated ValueObject adheres to the de
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
         return {
-            "Summarized Existing EventStorming Model": inputs.get("summarizedESValue"),
-
-            "Suggested Structure": inputs.get("draftOption"),
-
-            "Target References": inputs.get("targetReferences"),
-
-            "Final Check": """
-CRITICAL RULES FOR REFERENCE GENERATION:
-1. STRICT UNIDIRECTIONAL REFERENCE ONLY:
-   - When draft shows two-way relationship, you MUST choose only ONE direction
-   - Never generate both directions of references
-   - Example: If Order->Customer and Customer->Order are in draft, implement ONLY Order->Customer
-
-2. Direction Selection Criteria:
-   - Choose based on dependency (dependent entity references independent one)
-   - Consider lifecycle management (e.g., Order depends on Customer)
-   - Optimize for most common query patterns
-
-3. Property Guidelines:
-   - Avoid adding properties that might change
-   - Include only the minimum required reference properties
-
-4. Implementation Check:
-   - Verify you're generating only ONE direction of reference
-   - Double-check you haven't created any bidirectional references
-`"""
+            "summarized_existing_eventstorming_model": XmlUtil.from_dict(inputs.get("summarizedESValue")),
+            "suggested_structure": XmlUtil.from_dict(inputs.get("draftOption")),
+            "target_references": XmlUtil.from_dict(inputs.get("targetReferences"))
         }
+
+    def _post_process_to_structured_output(self, output: CreateAggregateClassIdByDraftsOutput) -> CreateAggregateClassIdByDraftsOutput:
+        try:
+            filtered_actions = []
+            for action in output.result.actions:
+                from_aggregate = action.args.fromAggregate.lower()
+                to_aggregate = action.args.toAggregate.lower()
+
+                is_exist = False
+                for omitted_reference in output.result.omittedReferences:
+                    omitted_from_aggregate = omitted_reference.fromAggregate.lower()
+                    omitted_to_aggregate = omitted_reference.toAggregate.lower()
+
+                    if omitted_from_aggregate == from_aggregate and omitted_to_aggregate == to_aggregate:
+                        is_exist = True
+                        break
+    
+                if not is_exist:
+                    filtered_actions.append(action)
+        
+            output.result.actions = filtered_actions
+            return output
+        except (json.JSONDecodeError, AttributeError):
+            raise ValueError("Invalid JSON format")

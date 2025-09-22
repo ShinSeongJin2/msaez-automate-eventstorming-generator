@@ -50,7 +50,10 @@ def preprocess_es_value_summary_generation(state: State) -> State:
 
         LogUtil.add_info_log(state, "[ES_SUMMARY_SUBGRAPH] Starting ES value summary preprocessing")
 
-        es_value = state.outputs.esValue.model_dump()
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
         
         # ES 별칭 변환 관리자 초기화
         es_alias_trans_manager = EsAliasTransManager(es_value)

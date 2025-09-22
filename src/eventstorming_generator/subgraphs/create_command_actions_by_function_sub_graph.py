@@ -128,7 +128,11 @@ def assign_events_to_aggregates(state: State) -> State:
         LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting event assignment to aggregates")
         
         model = state.subgraphs.createCommandActionsByFunctionModel
-        
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
+
         # BC별로 이벤트 할당 처리
         for bc_name, draft_option in state.inputs.selectedDraftOptions.items():
             bounded_context = draft_option.get("boundedContext", {})
@@ -153,7 +157,7 @@ def assign_events_to_aggregates(state: State) -> State:
 
             # 해당 BC의 애그리거트 목록 수집
             summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
-                state.outputs.esValue.model_dump(), [], EsAliasTransManager(state.outputs.esValue.model_dump())
+                es_value, [], EsAliasTransManager(es_value)
             )
 
             aggregates_in_bc = []
@@ -289,6 +293,10 @@ def preprocess_command_actions_generation(state: State) -> State:
     """
     model = state.subgraphs.createCommandActionsByFunctionModel
     current = model.current_generation
+    es_value = {
+        "elements": state.outputs.esValue.elements,
+        "relations": state.outputs.esValue.relations
+    }
     
     if not current:
         LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No current generation found, skipping preprocessing")
@@ -306,7 +314,7 @@ def preprocess_command_actions_generation(state: State) -> State:
 
         # 요약된 ES Value 생성
         summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
-            state.outputs.esValue.model_dump(), [], EsAliasTransManager(state.outputs.esValue.model_dump())
+            es_value, [], EsAliasTransManager(es_value)
         )
         current.summarized_es_value = summarized_es_value
         
@@ -489,7 +497,11 @@ def postprocess_command_actions_generation(state: State) -> State:
     """
     model = state.subgraphs.createCommandActionsByFunctionModel
     current = model.current_generation
-    
+    es_value = {
+        "elements": state.outputs.esValue.elements,
+        "relations": state.outputs.esValue.relations
+    }
+
     if not current:
         LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No current generation found, skipping postprocessing")
         return state
@@ -515,27 +527,24 @@ def postprocess_command_actions_generation(state: State) -> State:
         LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Filtered {initial_action_count} -> {len(actions)} valid actions for aggregate '{aggregate_name}'")
         
         # UUID 변환 처리
-        actions = EsAliasTransManager(state.outputs.esValue.model_dump()).trans_to_uuid_in_actions(actions)
+        actions = EsAliasTransManager(es_value).trans_to_uuid_in_actions(actions)
         
         # 액션 복원 작업 (boundedContextId 추가 등)
-        actions = restore_actions(actions, state.outputs.esValue.model_dump(), current.target_bounded_context.get("name", ""))
+        actions = restore_actions(actions, es_value, current.target_bounded_context.get("name", ""))
         
         # 기존 요소와 중복되는 액션 필터링
-        actions = filter_actions(actions, state.outputs.esValue.model_dump())
+        actions = filter_actions(actions, es_value)
         LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Actions after duplicate filtering for aggregate '{aggregate_name}': {len(actions)}")
         
         # 처리된 액션 저장
         current.created_actions = actions
 
         # 생성된 액션을 ES Value에 적용
-        user_info = state.inputs.userInfo.model_dump() if state.inputs.userInfo else {}
-        information = state.inputs.information.model_dump() if state.inputs.information else {}
-        
         updated_es_value = EsActionsUtil.apply_actions(
-            state.outputs.esValue, 
+            state.outputs.esValue.model_dump(), 
             current.created_actions, 
-            user_info, 
-            information
+            state.inputs.userInfo, 
+            state.inputs.information
         )
         
         # 상태 업데이트

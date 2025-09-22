@@ -55,7 +55,10 @@ def worker_preprocess_gwt_generation(state: State) -> State:
     aggregate_name = current_gen.target_aggregate_name
     
     try:
-        es_value = state.outputs.esValue.model_dump()
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
         
         es_alias_trans_manager = EsAliasTransManager(es_value)
 
@@ -160,7 +163,10 @@ def worker_generate_gwt_generation(state: State) -> State:
         # 결과에서 GWT 추출 및 적용
         command_to_replace = {}
         
-        es_value = state.outputs.esValue.model_dump()
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
         if result and "result" in result and "gwts" in result["result"]:
             es_alias_trans_manager = EsAliasTransManager(es_value)
             gwts = result["result"]["gwts"]

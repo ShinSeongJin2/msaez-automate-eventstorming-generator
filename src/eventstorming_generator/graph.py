@@ -64,14 +64,11 @@ def create_bounded_contexts(state: State):
                 ]
                 
                 # 액션 적용하여 새로운 esValue 생성
-                user_info = state.inputs.userInfo.model_dump() if state.inputs.userInfo else {}
-                information = state.inputs.information.model_dump() if state.inputs.information else {}
-                
                 updated_es_value = EsActionsUtil.apply_actions(
-                    state.outputs.esValue, 
+                    state.outputs.esValue.model_dump(), 
                     actions, 
-                    user_info, 
-                    information
+                    state.inputs.userInfo, 
+                    state.inputs.information
                 )
                 
                 # 상태 업데이트
@@ -169,41 +166,8 @@ def get_total_global_progress_count(draftOptions: Dict[str, Any]):
     for context in draftOptions.values():
         aggregateCount += len(context.get("structure", []))
 
-    aggregateClassIDCount = _get_total_class_id_progress_count(draftOptions)
-
-    total_count = boundedContextCount + aggregateCount + aggregateClassIDCount + 3
+    total_count = boundedContextCount + aggregateCount + 4
     return total_count
-
-def _get_total_class_id_progress_count(draft_options: Dict[str, Any]):
-    total_progress_count = 0
-
-    draft_options = {k: v.get("structure", []) for k, v in draft_options.items()}
- 
-    # 참조 관계 추출
-    references = []
-    for bounded_context_id, bounded_context_data in draft_options.items():
-        for structure in bounded_context_data:
-            for vo in structure.get("valueObjects", []):
-                if "referencedAggregate" in vo:
-                    references.append({
-                        "fromAggregate": structure["aggregate"]["name"],
-                        "toAggregate": vo["referencedAggregate"]["name"],
-                        "referenceName": vo["name"]
-                    })
-    
-    # 처리할 참조 목록 초기화
-    if references:
-        processed_pairs = set()
-        
-        for ref in references:
-            # 양방향 참조를 한 쌍으로 처리하기 위해 정렬된 키 생성
-            pair_key = "-".join(sorted([ref["fromAggregate"], ref["toAggregate"]]))
-            
-            if pair_key not in processed_pairs:
-                processed_pairs.add(pair_key)
-                total_progress_count += 1
-    
-    return total_progress_count
 
 graph_builder = StateGraph(State)
 

@@ -1,7 +1,6 @@
 import time
 import uuid
 from typing import Callable
-from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from langgraph.graph import StateGraph, START
 
@@ -271,7 +270,7 @@ def collect_and_apply_results(state: State) -> State:
     
     try:
         # ES 값의 복사본 생성
-        es_value = deepcopy(state.outputs.esValue)
+        es_value = state.outputs.esValue.model_dump()
         
         successful_gwts = []
         failed_gwts = []

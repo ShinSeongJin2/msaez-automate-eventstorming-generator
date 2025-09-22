@@ -19,13 +19,10 @@ ResumeNodes = {
 
     "CREATE_CLASS_ID": {
         "PREPARE": "prepare",
-        "SELECT_NEXT": "select_next",
-        "PREPROCESS": "preprocess",
-        "GENERATE": "generate",
-        "POSTPROCESS": "postprocess",
-        "VALIDATE": "validate",
-        "COMPLETE": "complete",
-        "ES_VALUE_SUMMARY_GENERATOR": "es_value_summary_generator"
+        "SELECT_BATCH": "select_batch",
+        "EXECUTE_PARALLEL": "execute_parallel",
+        "COLLECT_RESULTS": "collect_results",
+        "COMPLETE": "complete"
     },
 
     "CREATE_COMMAND_ACTIONS": {

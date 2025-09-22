@@ -266,7 +266,7 @@ def collect_and_apply_results(state: State) -> State:
             
             # EsActionsUtil을 사용하여 모든 액션 일괄 적용
             updated_es_value = EsActionsUtil.apply_actions(
-                state.outputs.esValue,
+                state.outputs.esValue.model_dump(),
                 all_actions,
                 user_info,
                 information

@@ -275,16 +275,12 @@ def collect_and_apply_results(state: State) -> State:
         
         # ES 모델에 모든 액션 일괄 적용
         if all_actions:   
-            # 사용자 정보와 프로젝트 정보 준비
-            user_info = state.inputs.userInfo or {}
-            information = state.inputs.information or {}
-            
             # EsActionsUtil을 사용하여 모든 액션 일괄 적용
             updated_es_value = EsActionsUtil.apply_actions(
                 state.outputs.esValue.model_dump(),
                 all_actions,
-                user_info,
-                information
+                state.inputs.userInfo ,
+                state.inputs.information
             )
             
             # 업데이트된 ES 값 저장
