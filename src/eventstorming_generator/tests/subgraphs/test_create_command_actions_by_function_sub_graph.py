@@ -8,7 +8,10 @@ def test_create_command_actions_by_function_sub_graph():
 
         run_subgraph = create_command_actions_by_function_subgraph()
         result = run_subgraph(create_command_actions_by_function_sub_graph_inputs)
-        TestUtils.save_dict_to_temp_file(result.outputs.esValue, "test_create_command_actions_by_function_sub_graph")
+        TestUtils.save_dict_to_temp_file({
+            "esValue": result.outputs.esValue,
+            "totalSeconds": result.subgraphs.createCommandActionsByFunctionModel.total_seconds
+        }, "test_create_command_actions_by_function_sub_graph")
         TestUtils.save_es_summarize_result_to_temp_file(result.outputs.esValue, "test_create_command_actions_by_function_sub_graph")
         
     except Exception as e:

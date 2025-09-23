@@ -5,7 +5,8 @@ from .test_create_policy_actions_by_function_sub_graph import test_create_policy
 from .test_create_gwt_generator_by_function_sub_graph import test_create_gwt_generator_by_function_sub_graph
 from .test_es_value_summary_generator_sub_graph import test_es_value_summary_generator_sub_graph
 from .test_create_ui_components_subgraph import test_create_ui_components_subgraph
-from .worker_subgraphs import test_gwt_worker_sub_graph, test_aggregate_worker_subgraph, test_class_id_worker_subgraph
+from .worker_subgraphs import test_gwt_worker_sub_graph, test_aggregate_worker_subgraph, test_class_id_worker_subgraph, test_command_actions_worker_subgraph
+from .test_create_element_names_by_draft_sub_graph import test_create_element_names_by_draft_sub_graph
 
 __all__ = [
     "test_create_aggregate_by_functions_sub_graph",
@@ -17,6 +18,8 @@ __all__ = [
     "test_create_ui_components_subgraph",
     "test_gwt_worker_sub_graph",
     "test_aggregate_worker_subgraph",
-    "test_class_id_worker_subgraph"
+    "test_class_id_worker_subgraph",
+    "test_command_actions_worker_subgraph",
+    "test_create_element_names_by_draft_sub_graph"
 ]
 

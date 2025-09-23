@@ -8,10 +8,9 @@ from .test_es_value_summary_generator import test_es_value_summary_generator
 from .test_extract_ddl_fields_generator import test_extract_ddl_fields_generator
 from .test_assign_fields_to_actions_generator import test_assign_fields_to_actions_generator
 from .test_assign_ddl_fields_to_aggregate_draft import test_assign_ddl_fields_to_aggregate_draft
-from .test_assign_event_names_to_aggregate_draft import test_assign_event_names_to_aggregate_draft
-from .test_assign_command_view_names_to_aggregate_draft import test_assign_command_view_names_to_aggregate_draft
 from .test_create_command_wire_frame import test_create_command_wire_frame
 from .test_create_read_model_wire_frame import test_create_read_model_wire_frame
+from .test_create_element_names_by_drafts import test_create_element_names_by_drafts
 
 __all__ = [
     "test_create_aggregate_actions_by_function",
@@ -24,8 +23,7 @@ __all__ = [
     "test_extract_ddl_fields_generator",
     "test_assign_fields_to_actions_generator",
     "test_assign_ddl_fields_to_aggregate_draft",
-    "test_assign_event_names_to_aggregate_draft",
-    "test_assign_command_view_names_to_aggregate_draft",
     "test_create_command_wire_frame",
-    "test_create_read_model_wire_frame"
+    "test_create_read_model_wire_frame",
+    "test_create_element_names_by_drafts"
 ]

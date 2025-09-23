@@ -6,14 +6,17 @@ from .create_policy_actions_by_function_model import CreatePolicyActionsByFuncti
 from .create_gwt_generator_by_function_model import CreateGwtGeneratorByFunctionModel, GWTGenerationState
 from .es_value_summary_generator_model import ESValueSummaryGeneratorModel
 from .create_ui_components_model import CreateUiComponentsModel, CreateUiComponentsGenerationState
+from .create_element_names_by_draft_model import CreateElementNamesByDraftsModel, ElementNamesGenerationState, SiteMapInfo, ExtractedElementNameDetail
+
 class SubgraphsModel(BaseModelWithItem):
     createAggregateByFunctionsModel: CreateAggregateByFunctionsModel = CreateAggregateByFunctionsModel()
     createAggregateClassIdByDraftsModel: CreateAggregateClassIdByDraftsModel = CreateAggregateClassIdByDraftsModel()
+    createElementNamesByDraftsModel: CreateElementNamesByDraftsModel = CreateElementNamesByDraftsModel()
     createCommandActionsByFunctionModel: CreateCommandActionsByFunctionModel = CreateCommandActionsByFunctionModel()
     createPolicyActionsByFunctionModel: CreatePolicyActionsByFunctionModel = CreatePolicyActionsByFunctionModel()
     createGwtGeneratorByFunctionModel: CreateGwtGeneratorByFunctionModel = CreateGwtGeneratorByFunctionModel()
-    esValueSummaryGeneratorModel: ESValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
     createUiComponentsModel: CreateUiComponentsModel = CreateUiComponentsModel()
+    esValueSummaryGeneratorModel: ESValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
 
 __all__ = [
     "SubgraphsModel",
@@ -21,13 +24,17 @@ __all__ = [
     "AggregateGenerationState",
     "CreateAggregateClassIdByDraftsModel",
     "ClassIdGenerationState",
+    "CreateElementNamesByDraftsModel",
+    "ElementNamesGenerationState",
+    "SiteMapInfo",
+    "ExtractedElementNameDetail",
     "CreateCommandActionsByFunctionModel",
     "CommandActionGenerationState",
     "CreatePolicyActionsByFunctionModel",
     "PolicyActionGenerationState",
     "CreateGwtGeneratorByFunctionModel",
     "GWTGenerationState",
-    "ESValueSummaryGeneratorModel",
     "CreateUiComponentsModel",
-    "CreateUiComponentsGenerationState"
+    "CreateUiComponentsGenerationState",
+    "ESValueSummaryGeneratorModel"
 ]

@@ -3,7 +3,7 @@ from typing import Dict, Any
 
 from eventstorming_generator.models import ActionModel, State
 from eventstorming_generator.utils import EsActionsUtil, JobUtil, LogUtil
-from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph, create_command_actions_by_function_subgraph, create_policy_actions_by_function_subgraph, create_gwt_generator_by_function_subgraph, create_ui_components_subgraph
+from eventstorming_generator.subgraphs import create_aggregate_by_functions_subgraph, create_aggregate_class_id_by_drafts_subgraph, create_element_names_by_draft_sub_graph, create_command_actions_by_function_subgraph, create_policy_actions_by_function_subgraph, create_gwt_generator_by_function_subgraph, create_ui_components_subgraph
 from eventstorming_generator.constants import ResumeNodes
 
 def resume_from_root_graph(state: State):
@@ -105,6 +105,14 @@ def route_after_create_class_id(state: State):
         return "complete"
     
     LogUtil.add_info_log(state, "[ROOT_GRAPH] Class ID generation completed, proceeding to command actions")
+    return "create_element_names"
+
+def route_after_create_element_names(state: State):
+    if state.subgraphs.createElementNamesByDraftsModel.is_failed:
+        LogUtil.add_error_log(state, "[ROOT_GRAPH] Element names creation failed, terminating process")
+        return "complete"
+    
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] Element names creation completed, proceeding to command actions")
     return "create_command_actions"
 
 def route_after_create_command_actions(state: State):
@@ -160,20 +168,14 @@ def complete(state: State):
     return state
 
 def get_total_global_progress_count(draftOptions: Dict[str, Any]):
-    boundedContextCount = len(draftOptions)
-
-    aggregateCount = 0
-    for context in draftOptions.values():
-        aggregateCount += len(context.get("structure", []))
-
-    total_count = boundedContextCount + aggregateCount + 4
-    return total_count
+    return len(draftOptions)*2 + 5
 
 graph_builder = StateGraph(State)
 
 graph_builder.add_node("create_bounded_contexts", create_bounded_contexts)
 graph_builder.add_node("create_aggregates", create_aggregate_by_functions_subgraph())
 graph_builder.add_node("create_class_id", create_aggregate_class_id_by_drafts_subgraph())
+graph_builder.add_node("create_element_names", create_element_names_by_draft_sub_graph())
 graph_builder.add_node("create_command_actions", create_command_actions_by_function_subgraph())
 graph_builder.add_node("create_policy_actions", create_policy_actions_by_function_subgraph())
 graph_builder.add_node("create_gwt", create_gwt_generator_by_function_subgraph())
@@ -184,6 +186,7 @@ graph_builder.add_conditional_edges(START, resume_from_root_graph, {
     "create_bounded_contexts": "create_bounded_contexts",
     "create_aggregates": "create_aggregates",
     "create_class_id": "create_class_id",
+    "create_element_names": "create_element_names",
     "create_command_actions": "create_command_actions",
     "create_policy_actions": "create_policy_actions",
     "create_gwt": "create_gwt",
@@ -196,6 +199,10 @@ graph_builder.add_conditional_edges("create_aggregates", route_after_create_aggr
     "complete": "complete"
 })
 graph_builder.add_conditional_edges("create_class_id", route_after_create_class_id, {
+    "create_element_names": "create_element_names",
+    "complete": "complete"
+})
+graph_builder.add_conditional_edges("create_element_names", route_after_create_element_names, {
     "create_command_actions": "create_command_actions",
     "complete": "complete"
 })

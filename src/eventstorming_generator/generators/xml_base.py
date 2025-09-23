@@ -1,4 +1,5 @@
 import os
+import json
 from typing import Dict, List, Any, Optional, Union, Type
 from abc import ABC, abstractmethod
 from langchain.chat_models import init_chat_model
@@ -29,6 +30,9 @@ class XmlBaseGenerator(ABC):
     상속받는 클래스는 프롬프트 구성 요소들을 구현하고, 이 베이스 클래스는 이를 조합하여 
     일관된 프롬프트 형식을 제공합니다.
     """
+    
+    # 모델 캐시를 위한 클래스 변수
+    _model_cache: Dict[str, Any] = {}
     
     def __init__(self, model_name: str, structured_output_class: Type, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         """
@@ -192,14 +196,66 @@ class XmlBaseGenerator(ABC):
     
     def set_model(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None) -> None:
         """
-        LangChain 모델 설정
+        LangChain 모델 설정 (캐싱 지원)
         
         Args:
             model_name: 모델 이름
             model_kwargs: 모델 파라미터
         """
         if model_kwargs is None: model_kwargs = {}
-        self.model = init_chat_model(model_name, **model_kwargs)
+        
+        # 캐시 키 생성
+        cache_key = self._get_cache_key(model_name, model_kwargs)
+        
+        # 캐시에서 모델 확인
+        if cache_key in self._model_cache:
+            self.model = self._model_cache[cache_key]
+        else:
+            # 새 모델 생성 및 캐시에 저장
+            self.model = init_chat_model(model_name, **model_kwargs)
+            self._model_cache[cache_key] = self.model
+    
+    def _get_cache_key(self, model_name: str, model_kwargs: Dict[str, Any]) -> str:
+        """
+        모델 캐시 키 생성
+        
+        Args:
+            model_name: 모델 이름
+            model_kwargs: 모델 파라미터
+            
+        Returns:
+            str: 캐시 키
+        """
+        # model_kwargs를 정렬된 JSON 문자열로 변환하여 일관된 키 생성
+        sorted_kwargs = json.dumps(model_kwargs, sort_keys=True, ensure_ascii=False)
+        return f"{model_name}:{sorted_kwargs}"
+
+    @classmethod
+    def clear_model_cache(cls) -> None:
+        """
+        모델 캐시 전체 삭제
+        """
+        cls._model_cache.clear()
+    
+    @classmethod
+    def get_cache_size(cls) -> int:
+        """
+        현재 캐시된 모델 개수 반환
+        
+        Returns:
+            int: 캐시된 모델 개수
+        """
+        return len(cls._model_cache)
+    
+    @classmethod
+    def get_cached_model_keys(cls) -> List[str]:
+        """
+        캐시된 모델 키 목록 반환
+        
+        Returns:
+            List[str]: 캐시된 모델 키 목록
+        """
+        return list(cls._model_cache.keys())
     
     def get_token_count(self) -> int:
         """

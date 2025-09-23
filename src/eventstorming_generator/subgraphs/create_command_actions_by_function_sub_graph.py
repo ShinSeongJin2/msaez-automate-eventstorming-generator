@@ -1,13 +1,13 @@
 import time
-import re
-from typing import Callable, Dict, Any, List
+import uuid
+from typing import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from langgraph.graph import StateGraph, START
 
-from ..models import ActionModel, CommandActionGenerationState, State, ESValueSummaryGeneratorModel
-from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, EsTraceUtil
-from ..generators import CreateCommandActionsByFunction, AssignEventNamesToAggregateDraft, AssignCommandViewNamesToAggregateDraft
-from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ..models import CommandActionGenerationState, ExtractedElementNameDetail, State
+from ..utils import JsonUtil, EsActionsUtil, LogUtil, JobUtil
 from ..constants import ResumeNodes
+from .worker_subgraphs import create_command_actions_worker_subgraph, command_actions_worker_id_context
 from ..config import Config
 
 
@@ -48,64 +48,46 @@ def prepare_command_actions_generation(state: State) -> State:
             state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
             return state
         
+        # 엘리먼트명 - UI ID 딕셔너리 구성
+        draft_options = state.inputs.selectedDraftOptions
+        for bc_name, draft_option in draft_options.items():
+            siteMap = draft_option.get("boundedContext", None).get("requirements", None).get("siteMap", None)
+            if not siteMap:
+                continue
+
+            for site_map_object in siteMap:
+                state.subgraphs.createCommandActionsByFunctionModel.element_name_to_ui_id_dict[site_map_object.get("name")] = site_map_object.get("id")
+
         # 처리할 애그리거트 목록 초기화
         pending_generations = []
         total_aggregates = 0
         
-        # 각 BoundedContext와 Aggregate에 대한 생성 작업 준비
-        for bc_name, draft_option in state.inputs.selectedDraftOptions.items():
-            bounded_context = draft_option.get("boundedContext", {})
-            bc_display_name = bounded_context.get("displayName", bc_name)
-
-            extractedElementNames = []
-            try :
-                siteMap = draft_option.get("boundedContext", None).get("requirements", None).get("siteMap", None)
-
-                aggregateDraft = []
-                for structure in draft_option.get("structure", []):
-                    aggregateDraft.append(structure.get("aggregate", {}))
-                
-                if siteMap and aggregateDraft and len(aggregateDraft) > 0:
-                    aiResponse = AssignCommandViewNamesToAggregateDraft(
-                        model_name=Config.get_ai_model(),
-                        client={
-                            "inputs": {
-                                "aggregateDrafts": aggregateDraft,
-                                "siteMap": siteMap
-                            }
-                        }
-                    ).generate()
-                    extractedElementNames = aiResponse.get("result", {}).get("extractedCommands", []) + aiResponse.get("result", {}).get("extractedReadModels", [])
-            except Exception as e:
-                LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to extract element names for bounded context '{bc_name}':  {e}")
-
-            # 현재 ES Value에서 해당 BoundedContext에 속한 Aggregate들을 찾음
-            aggregates_in_bc = []
-            for element in state.outputs.esValue.elements.values():
-                if (element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and 
-                    element.get("boundedContext", {}).get("id") == bounded_context.get("id")):
-                    aggregates_in_bc.append(element)
-
-                    extractedElementNamesForAggregate = []
-                    if extractedElementNames and len(extractedElementNames) > 0:
-                        for extractedElementName in extractedElementNames:
-                            if extractedElementName.get("aggregateName") == element.get("name", ""):
-                                extractedElementNamesForAggregate.append(extractedElementName)
+        extracted_element_names = state.subgraphs.createElementNamesByDraftsModel.extracted_element_names
+        for bc_name, bc_extracted_element_names in extracted_element_names.items():
+            for agg_name, agg_extracted_element_name_detail in bc_extracted_element_names.items():
+                for element in state.outputs.esValue.elements.values():
+                    if (not element or element.get("_type") != "org.uengine.modeling.model.Aggregate" or element.get("name") != agg_name):
+                        continue
                     
-                    # 각 Aggregate에 대한 생성 상태 준비
-                    description = draft_option.get("description", "")
+                    bounded_context_id = element.get("boundedContext", {}).get("id")
+                    if not bounded_context_id:
+                        continue
+                    
+                    bounded_context = state.outputs.esValue.elements[bounded_context_id]
+                    if not bounded_context or bounded_context.get("name") != bc_name:
+                        continue
+                    
+                    description = bounded_context.get("description", "")
                     generation_state = CommandActionGenerationState(
-                        target_bounded_context=bounded_context,
-                        target_aggregate=element,
+                        target_bounded_context_name=bc_name,
+                        target_aggregate_name=agg_name,
                         description=description,
                         original_description=description,
-                        extractedElementNames=extractedElementNamesForAggregate
+                        extracted_element_names=agg_extracted_element_name_detail
                     )
                     pending_generations.append(generation_state)
                     total_aggregates += 1
-            
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Found {len(aggregates_in_bc)} aggregates in bounded context '{bc_display_name}': {[agg.get('name', 'Unknown') for agg in aggregates_in_bc]}")
-        
+
         # 상태 업데이트
         state.subgraphs.createCommandActionsByFunctionModel.pending_generations = pending_generations
         state.subgraphs.createCommandActionsByFunctionModel.is_processing = True
@@ -119,493 +101,236 @@ def prepare_command_actions_generation(state: State) -> State:
     
     return state
 
-def assign_events_to_aggregates(state: State) -> State:
+def select_batch_command_actions(state: State) -> State:
     """
-    BC별 요청된 이벤트들을 해당 BC 내 적절한 애그리거트에 할당하는 노드
-    """
-    
-    try:
-        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting event assignment to aggregates")
-        
-        model = state.subgraphs.createCommandActionsByFunctionModel
-        es_value = {
-            "elements": state.outputs.esValue.elements,
-            "relations": state.outputs.esValue.relations
-        }
-
-        # BC별로 이벤트 할당 처리
-        for bc_name, draft_option in state.inputs.selectedDraftOptions.items():
-            bounded_context = draft_option.get("boundedContext", {})
-            bc_events = bounded_context.get("requirements", {}).get("event", [])
-            
-            if not bc_events:
-                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] No events to assign for bounded context '{bc_name}'")
-                continue
-                
-
-            event_names = []
-            try:
-                event_names = re.findall(r'"name".*:.*"(.*?)"', bc_events)
-                event_names = [name for name in event_names if name]    
-            except Exception as e:
-                LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to parse events for bounded context '{bc_name}': {e}")
-                continue
-
-            if not event_names:
-                continue
-            
-
-            # 해당 BC의 애그리거트 목록 수집
-            summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
-                es_value, [], EsAliasTransManager(es_value)
-            )
-
-            aggregates_in_bc = []
-            for bc in summarized_es_value.get("boundedContexts", []):
-                if (bc and bc.get("name") != bc_name): continue
-
-                for agg in bc.get("aggregates", []):
-                    aggregate_info = {
-                        "id": agg.get("id"),
-                        "name": agg.get("name"),
-                        "properties": []
-                    }
-
-                    for prop in agg.get("properties", []):
-                        property_info = {
-                            "name": prop.get("name"),
-                            "type": prop.get("type") if prop.get("type") else "String"
-                        }
-                        if prop.get("isKey"):
-                            property_info["isKey"] = True
-                        aggregate_info["properties"].append(property_info)
-
-                    aggregates_in_bc.append(aggregate_info)
-                break
-            
-            if not aggregates_in_bc:
-                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] No aggregates found for bounded context '{bc_name}'")
-                continue
-            
-
-            # 애그리거트가 1개인 경우 모든 이벤트를 해당 애그리거트에 할당
-            if len(aggregates_in_bc) == 1:
-                aggregate_name = aggregates_in_bc[0].get("name", "")
-                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Single aggregate '{aggregate_name}' found in BC '{bc_name}', assigning all {len(event_names)} events")
-                
-                # 해당 애그리거트의 generation state 찾아서 이벤트 할당
-                for generation in model.pending_generations:
-                    if (generation.target_aggregate.get("name") == aggregates_in_bc[0].get("name")):
-                        generation.required_event_names = event_names
-                        break
-            else:
-                # 애그리거트가 여러 개인 경우 LLM을 통해 이벤트 소속 결정
-                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Multiple aggregates found in BC '{bc_name}', using LLM to assign {len(event_names)} events to {len(aggregates_in_bc)} aggregates")
-                
-                # 모델명 가져오기
-                model_name = Config.get_ai_model()
-                
-                # 이벤트 할당 생성기 실행
-                assign_generator = AssignEventNamesToAggregateDraft(
-                    model_name=model_name,
-                    client={
-                        "inputs": {
-                            "boundedContextName": bounded_context.get("name", bc_name),
-                            "aggregates": aggregates_in_bc,
-                            "eventNames": event_names
-                        },
-                        "preferredLanguage": state.inputs.preferedLanguage
-                    }
-                )
-                
-                result = assign_generator.generate()
-                
-                if result and result.get("result"):
-                    assignments = result["result"]
-                    LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Event assignment completed for BC '{bc_name}': {len(assignments)} aggregates assigned")
-                    
-                    # 결과를 각 generation state에 할당
-                    for assignment in assignments:
-                        aggregate_name = assignment.get("aggregateName", "")
-                        assigned_events = assignment.get("eventNames", [])
-                        
-                        # 해당 애그리거트의 generation state 찾기
-                        for generation in model.pending_generations:
-                            if generation.target_aggregate.get("name", "").lower() == aggregate_name.lower():
-                                generation.required_event_names = assigned_events
-                                LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Assigned {len(assigned_events)} events to aggregate '{aggregate_name}': {assigned_events}")
-                                break
-                else:
-                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to get event assignment result for BC '{bc_name}'")
-        
-        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Event assignment to aggregates completed")
-        state.subgraphs.createCommandActionsByFunctionModel.assign_event_names_complete = True
-
-    except Exception as e:
-        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during event assignment to aggregates", e)
-        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
-    
-    return state
-
-def select_next_command_actions(state: State) -> State:
-    """
-    다음에 처리할 Aggregate를 선택하는 노드
+    다음 배치로 처리할 Aggregate들을 선택하는 노드 (병렬 처리용)
+    - batch_size만큼의 Aggregate를 한 번에 선택
+    - current_batch에 설정하여 병렬 처리 준비
     """
 
     try:
 
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["SELECT_NEXT"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["SELECT_BATCH"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
         model = state.subgraphs.createCommandActionsByFunctionModel
-        pending_count = len(model.pending_generations)
-        completed_count = len(model.completed_generations)
-        
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Selecting next command actions generation. Pending: {pending_count}, Completed: {completed_count}")
+        batch_size = Config.get_ai_model_light_max_batch_size()
 
-        # 대기 중인 작업이 없으면 모든 작업 완료
-        if len(model.pending_generations) == 0:
+        # 모든 처리가 완료되었는지 확인
+        if not model.pending_generations and not model.current_batch:
             model.all_complete = True
             model.is_processing = False
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] All command actions generations completed successfully. Total processed: {completed_count} aggregates")
             return state
         
-        # 다음 처리할 아이템 선택
-        model.current_generation = model.pending_generations.pop(0)
+        # 현재 처리 중인 배치가 있으면 상태 유지
+        if model.current_batch:
+            return state
         
-        aggregate_name = model.current_generation.target_aggregate.get("name", "Unknown")
-        bc_name = model.current_generation.target_bounded_context.get("name", "Unknown")
-        remaining_count = len(model.pending_generations)
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Selected next aggregate: '{aggregate_name}' in context '{bc_name}' (remaining: {remaining_count})")
+        # 대기 중인 Aggregate들에서 배치 크기만큼 선택
+        if model.pending_generations:
+            # 남은 Aggregate 수와 배치 크기 중 작은 값만큼 선택
+            actual_batch_size = min(batch_size, len(model.pending_generations))
+            
+            current_batch = []
+            for _ in range(actual_batch_size):
+                if model.pending_generations:
+                    current_batch.append(model.pending_generations.pop(0))
+            
+            model.current_batch = current_batch
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed to select next command actions generation", e)
+        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed to select command actions batch", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
     
     return state
 
-def preprocess_command_actions_generation(state: State) -> State:
+def execute_parallel_workers(state: State) -> State:
     """
-    Command 액션 생성 전 전처리 작업 수행
-    - 요약된 ES Value 생성
-    - 요약된 정보가 토큰 제한을 초과하는지 확인하고 필요시 추가 요약
-    """
-    model = state.subgraphs.createCommandActionsByFunctionModel
-    current = model.current_generation
-    es_value = {
-        "elements": state.outputs.esValue.elements,
-        "relations": state.outputs.esValue.relations
-    }
-    
-    if not current:
-        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No current generation found, skipping preprocessing")
-        return state
-        
-    aggregate_name = current.target_aggregate.get("name", "Unknown")
-    bc_name = current.target_bounded_context.get("name", "Unknown")
-    LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Starting preprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
-    
-    try:
-
-        # 기능 요구사항에 라인 번호 추가
-        if current.description:
-            current.description = EsTraceUtil.add_line_numbers_to_description(current.description)
-
-        # 요약된 ES Value 생성
-        summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
-            es_value, [], EsAliasTransManager(es_value)
-        )
-        current.summarized_es_value = summarized_es_value
-        
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Preprocessing completed for aggregate '{aggregate_name}'. Summary size: {len(str(summarized_es_value))} chars")
-        
-    except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Preprocessing failed for aggregate '{aggregate_name}' in context '{bc_name}'", e)
-        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
-    
-    return state
-
-def generate_command_actions(state: State) -> State:
-    """
-    지정된 Aggregate에 대한 Command 액션 생성 실행
+    현재 배치의 Aggregate들을 병렬로 처리
+    - 각 Aggregate를 개별 워커 서브그래프에서 병렬 실행
+    - ThreadPoolExecutor를 사용하여 동시 처리
     """
     model = state.subgraphs.createCommandActionsByFunctionModel
-    current_gen = model.current_generation
     
-    if not current_gen:
-        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No current generation found, skipping generation")
+    if not model.current_batch:
         return state
-        
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-    bc_name = current_gen.target_bounded_context.get("name", "Unknown")
-    retry_info = f" (retry {current_gen.retry_count})" if current_gen.retry_count > 0 else ""
-    LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Generating command actions for aggregate '{aggregate_name}' in context '{bc_name}'{retry_info}")
     
+    batch_size = len(model.current_batch)
+
     try:
+        # 워커 서브그래프 인스턴스 생성
+        worker_function = create_command_actions_worker_subgraph()
+        
+        # 각 Aggregate에 대해 워커 ID 생성 및 worker_generations에 저장
+        worker_ids = []
+        for command_generation_state in model.current_batch:
+            worker_id = str(uuid.uuid4())
+            worker_ids.append(worker_id)
+            model.worker_generations[worker_id] = command_generation_state
+        
+        def execute_single_worker(worker_id: str) -> CommandActionGenerationState:
+            """
+            단일 Aggregate를 워커에서 처리하는 함수 (메모리 최적화 버전)
+            """
+            try:
+                # 현재 스레드의 컨텍스트에 worker_id 설정
+                command_actions_worker_id_context.set(worker_id)
 
-        # 요약 서브그래프에서 처리 결과를 받아온 경우
-        if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
-            state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
-            state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
-            
-            # 요약된 결과로 상태 업데이트
-            current_gen.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
-            
-            # 요약 상태 초기화
-            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
-            
-            current_gen.is_token_over_limit = False
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Applied summarized ES value for aggregate '{aggregate_name}' from summary generator")
-    
-        # 모델명 가져오기
-        model_name = Config.get_ai_model()
-        
-        # Generator 초기화 및 실행
-        generator = CreateCommandActionsByFunction(
-            model_name=model_name,
-            client={
-                "inputs": {
-                    "summarizedESValue": current_gen.summarized_es_value,
-                    "description": current_gen.description,
-                    "targetAggregate": current_gen.target_aggregate,
-                    "requiredEventNames": current_gen.required_event_names,
-                    "extractedElementNames": current_gen.extractedElementNames
-                },
-                "preferredLanguage": state.inputs.preferedLanguage
-            }
-        )
-        
-        # 토큰 수 계산 및 제한 확인
-        token_count = generator.get_token_count()
-        model_max_input_limit = Config.get_ai_model_max_input_limit()
-        
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Token usage for aggregate '{aggregate_name}': {token_count}/{model_max_input_limit}")
-        
-        if token_count > model_max_input_limit:  # 토큰 제한 초과시 요약 처리
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Token limit exceeded for aggregate '{aggregate_name}' ({token_count} > {model_max_input_limit}), preparing summary generation")
-            
-            # 축소된 요약 없이 필수 부분만으로 토큰 계산
-            left_generator = CreateCommandActionsByFunction(
-                model_name=model_name,
-                client={
-                    "inputs": {
-                        "summarizedESValue": {},
-                        "description": current_gen.description,
-                        "targetAggregate": current_gen.target_aggregate,
-                        "requiredEventNames": current_gen.required_event_names,
-                        "extractedElementNames": current_gen.extractedElementNames
-                    },
-                    "preferredLanguage": state.inputs.preferedLanguage
-                }
-            )
-            
-            # 남은 토큰 계산
-            left_token_count = model_max_input_limit - left_generator.get_token_count()
-            if left_token_count < 50:
-                LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Insufficient tokens remaining for aggregate '{aggregate_name}' generation")
-                state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
-                return state
-            
-            # ES 요약 생성 서브그래프 호출 준비
-            # 요약 생성 모델 초기화
-            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
-                is_processing=False,
-                is_complete=False,
-                context=_build_request_context(current_gen),
-                keys_to_filter=[],
-                max_tokens=left_token_count,
-                token_calc_model_vendor=Config.get_ai_model_vendor(),
-                token_calc_model_name=Config.get_ai_model_name()
-            )
-            
-            # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
-            current_gen.is_token_over_limit = True
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Prepared ES value summary request for aggregate '{aggregate_name}' (available tokens: {left_token_count})")
-            return state
-        
-        # Generator 실행
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Executing command actions generation for aggregate '{aggregate_name}'")
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        
-        # 생성 결과가 있는지 확인
-        if not result or not result.get("result"):
-            LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] No valid result from command actions generation for aggregate '{aggregate_name}'")
-            # 실패 시 재시도 카운트 증가
-            current_gen.retry_count += 1
-            return state
-        
-        # 생성된 액션 추출
-        actions = []
-        result_actions = result["result"]
-        if "commandActions" in result_actions:
-            actions.extend(result_actions["commandActions"])
-        if "eventActions" in result_actions:
-            actions.extend(result_actions["eventActions"])
-        if "readModelActions" in result_actions:
-            actions.extend(result_actions["readModelActions"])
-        
-        # 액션 객체 변환
-        actionModels = [ActionModel(**action) for action in actions]
-        for action in actionModels:
-            action.type = "create"
-
-            if action.objectType == "Command":
-                for extractedElementName in current_gen.extractedElementNames:
-                    if extractedElementName.get("commandName") == action.args.get("commandName"):
-                        action.args["referencedSiteMapId"] = extractedElementName.get("referencedId")
-                        break
-            
-            elif action.objectType == "ReadModel":
-                for extractedElementName in current_gen.extractedElementNames:
-                    if extractedElementName.get("readModelName") == action.args.get("readModelName"):
-                        action.args["referencedSiteMapId"] = extractedElementName.get("referencedId")
-                        break
-        
-        # 필수 이벤트 검증
-        if current_gen.required_event_names:
-            missing_events = validate_required_events(current_gen.required_event_names, actionModels)
-            if missing_events:
-                # 최대 재시도 횟수에 도달하지 않은 경우 재시도
-                if current_gen.retry_count < state.subgraphs.createCommandActionsByFunctionModel.max_retry_count:
-                    current_gen.retry_count += 1
-                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Missing required events for aggregate '{aggregate_name}': {missing_events}. Retrying generation (attempt {current_gen.retry_count})")
-                    return state
+                command_generation_state = model.worker_generations[worker_id]
+                aggregate_name = command_generation_state.target_aggregate_name
+                bc_name = command_generation_state.target_bounded_context_name
+                
+                # 워커 실행
+                result_state = worker_function(state)
+                
+                # 결과에서 처리된 Command Actions 상태 추출
+                completed_command = result_state.subgraphs.createCommandActionsByFunctionModel.worker_generations.get(worker_id)
+                
+                if completed_command and completed_command.generation_complete:
+                    return completed_command
+                elif completed_command and completed_command.is_failed:
+                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_WORKER_EXECUTOR] Worker failed for aggregate '{aggregate_name}' in context '{bc_name}'")
+                    return completed_command
                 else:
-                    # 최대 재시도 횟수에 도달한 경우 경고 로그만 출력하고 계속 진행
-                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Missing required events for aggregate '{aggregate_name}': {missing_events}. Maximum retry count reached, proceeding with current result")
+                    LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_WORKER_EXECUTOR] Worker returned incomplete result for aggregate '{aggregate_name}' in context '{bc_name}'")
+                    command_generation_state.is_failed = True
+                    return command_generation_state
+                    
+            except Exception as e:
+                command_generation_state = model.worker_generations.get(worker_id)
+                if command_generation_state:
+                    aggregate_name = command_generation_state.target_aggregate_name
+                    bc_name = command_generation_state.target_bounded_context_name
+                    LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_WORKER_EXECUTOR] Worker execution failed for aggregate '{aggregate_name}' in context '{bc_name}'", e)
+                    command_generation_state.is_failed = True
+                    return command_generation_state
+                else:
+                    LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_WORKER_EXECUTOR] Worker execution failed for unknown worker_id: {worker_id}", e)
+                    # 빈 실패 상태 반환
+                    failed_state = CommandActionGenerationState()
+                    failed_state.is_failed = True
+                    return failed_state
         
-        current_gen.created_actions = actionModels
+        # ThreadPoolExecutor를 사용한 병렬 실행
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            # 모든 워커 제출
+            future_to_worker_id = {
+                executor.submit(execute_single_worker, worker_id): worker_id 
+                for worker_id in worker_ids
+            }
+            
+            # 결과 수집
+            completed_results = []
+            for future in as_completed(future_to_worker_id):
+                worker_id = future_to_worker_id[future]
+                original_command = model.worker_generations[worker_id]
+                try:
+                    result_command = future.result()
+                    completed_results.append(result_command)
+                    
+                except Exception as e:
+                    aggregate_name = original_command.target_aggregate_name
+                    bc_name = original_command.target_bounded_context_name
+                    LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to get worker result for aggregate '{aggregate_name}' in context '{bc_name}'", e)
+                    original_command.is_failed = True
+                    completed_results.append(original_command)
         
-        command_count = len(result_actions.get("commandActions", []))
-        event_count = len(result_actions.get("eventActions", []))
-        read_model_count = len(result_actions.get("readModelActions", []))
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Command actions generated successfully for aggregate '{aggregate_name}'. Commands: {command_count}, Events: {event_count}, ReadModels: {read_model_count}, Total: {len(actionModels)}")
+        # 결과를 parallel_worker_results에 저장
+        model.parallel_worker_results = completed_results
+        
+        # 사용된 worker_generations 정리 (메모리 절약)
+        for worker_id in worker_ids:
+            if worker_id in model.worker_generations:
+                del model.worker_generations[worker_id]
+        
+        successful_count = sum(1 for result in completed_results if result.generation_complete)
+        failed_count = sum(1 for result in completed_results if result.is_failed)
+        
+        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Parallel execution completed. Successful: {successful_count}, Failed: {failed_count}, Total: {len(completed_results)}")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to generate command actions for aggregate '{aggregate_name}' in context '{bc_name}'", e)
-        current_gen.retry_count += 1
+        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during parallel worker execution", e)
+        model.is_failed = True
     
     return state
 
-def postprocess_command_actions_generation(state: State) -> State:
+def collect_and_apply_results(state: State) -> State:
     """
-    생성된 Command 액션 후처리
-    - 유효한 액션만 필터링
-    - 필요한 변환 작업 수행
-    - UUID 변환 등
+    병렬 워커들의 결과를 수집하고 ES 모델에 적용
+    - parallel_worker_results에서 결과 수집
+    - 성공한 Aggregate들의 액션을 ES에 일괄 적용
+    - 완료된 Aggregate들을 completed_generations로 이동
     """
     model = state.subgraphs.createCommandActionsByFunctionModel
-    current = model.current_generation
-    es_value = {
-        "elements": state.outputs.esValue.elements,
-        "relations": state.outputs.esValue.relations
-    }
-
-    if not current:
-        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No current generation found, skipping postprocessing")
+    
+    if not model.parallel_worker_results:
         return state
-        
-    aggregate_name = current.target_aggregate.get("name", "Unknown")
-    bc_name = current.target_bounded_context.get("name", "Unknown")
-    LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Starting postprocessing for aggregate '{aggregate_name}' in context '{bc_name}'")
     
     try:
-
-        initial_action_count = len(current.created_actions)
+        # 모든 성공한 Aggregate들의 액션 수집
+        all_actions = []
+        successful_aggregates = []
+        failed_aggregates = []
         
-        # Refs 후처리
-        try:
-            EsTraceUtil.convert_refs_to_indexes(current.created_actions, current.original_description, state, "[COMMAND_ACTIONS_SUBGRAPH]")
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Successfully converted source references for aggregate '{aggregate_name}'")
-        except Exception as e:
-            LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Failed to convert source references for aggregate '{aggregate_name}'", e)
-            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
-        
-        # 유효한 액션만 필터링
-        actions = filter_valid_actions(current.created_actions)
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Filtered {initial_action_count} -> {len(actions)} valid actions for aggregate '{aggregate_name}'")
-        
-        # UUID 변환 처리
-        actions = EsAliasTransManager(es_value).trans_to_uuid_in_actions(actions)
-        
-        # 액션 복원 작업 (boundedContextId 추가 등)
-        actions = restore_actions(actions, es_value, current.target_bounded_context.get("name", ""))
-        
-        # 기존 요소와 중복되는 액션 필터링
-        actions = filter_actions(actions, es_value)
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Actions after duplicate filtering for aggregate '{aggregate_name}': {len(actions)}")
-        
-        # 처리된 액션 저장
-        current.created_actions = actions
-
-        # 생성된 액션을 ES Value에 적용
-        updated_es_value = EsActionsUtil.apply_actions(
-            state.outputs.esValue.model_dump(), 
-            current.created_actions, 
-            state.inputs.userInfo, 
-            state.inputs.information
-        )
-        
-        # 상태 업데이트
-        state.outputs.esValue = updated_es_value
-
-        current.generation_complete = True
-        
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Postprocessing completed successfully for aggregate '{aggregate_name}'. Final actions applied: {len(actions)}")
-        
-    except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Postprocessing failed for aggregate '{aggregate_name}' in context '{bc_name}'", e)
-        current.retry_count += 1
-        current.created_actions = []
-    
-    return state
-
-def validate_command_actions_generation(state: State) -> State:
-    """
-    Command 액션 생성 결과 검증 및 완료 처리
-    - 생성 결과 검증
-    - 완료 처리 또는 재시도 결정
-    """
-    current_gen = state.subgraphs.createCommandActionsByFunctionModel.current_generation
-    if not current_gen:
-        LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No current generation found, skipping validation")
-        return state
-        
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-    bc_name = current_gen.target_bounded_context.get("name", "Unknown")
-    LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Validating command actions generation for aggregate '{aggregate_name}' in context '{bc_name}'")
-    
-    try:
-
-        # 생성 완료 확인
-        if current_gen.generation_complete and not state.subgraphs.createCommandActionsByFunctionModel.is_failed:
-            # 변수 정리
-            current_gen.target_bounded_context = {}
-            current_gen.target_aggregate = {}
-            current_gen.description = ""
-            current_gen.original_description = ""
-            current_gen.summarized_es_value = {}
-            current_gen.created_actions = []
-            current_gen.required_event_names = []
-            current_gen.extractedElementNames = []
-
-            # 완료된 작업을 완료 목록에 추가
-            state.subgraphs.createCommandActionsByFunctionModel.completed_generations.append(current_gen)
-            # 현재 작업 초기화
-            state.subgraphs.createCommandActionsByFunctionModel.current_generation = None
-            state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
+        for command_result in model.parallel_worker_results:
+            aggregate_name = command_result.target_aggregate_name
+            bc_name = command_result.target_bounded_context_name
             
-            total_progress = state.outputs.totalProgressCount
-            current_progress = state.outputs.currentProgressCount
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Command actions generation validated and completed for aggregate '{aggregate_name}'. Progress: {current_progress}/{total_progress}")
-        else:
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Command actions generation not yet complete for aggregate '{aggregate_name}', continuing process")
+            if command_result.generation_complete and command_result.created_actions:
+                successful_aggregates.append(command_result)
+                all_actions.extend(command_result.created_actions)
+            else:
+                failed_aggregates.append(command_result)
+                LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Aggregate '{aggregate_name}' in context '{bc_name}' failed or has no actions")
+        
+        # ES 모델에 모든 액션 일괄 적용
+        if all_actions:   
+            updated_es_value = EsActionsUtil.apply_actions(
+                state.outputs.esValue.model_dump(),
+                all_actions,
+                state.inputs.userInfo,
+                state.inputs.information
+            )
+            
+            # 업데이트된 ES 값 저장
+            state.outputs.esValue = updated_es_value
+            
+        # 성공한 Aggregate들을 완료 목록으로 이동 (변수 정리)
+        for command_gen in successful_aggregates:
+            # 변수 정리
+            command_gen.description = ""
+            command_gen.original_description = ""
+            command_gen.summarized_es_value = {}
+            command_gen.created_actions = []
+            command_gen.extracted_element_names = ExtractedElementNameDetail()
+            
+            model.completed_generations.append(command_gen)
+        
+        # 실패한 Aggregate들도 완료 목록으로 이동 (재시도는 하지 않음)
+        for command_gen in failed_aggregates:
+            command_gen.description = ""
+            command_gen.original_description = ""
+            command_gen.summarized_es_value = {}
+            command_gen.created_actions = []
+            command_gen.extracted_element_names = ExtractedElementNameDetail()
+            
+            model.completed_generations.append(command_gen)
+        
+        # 배치 처리 완료 정리
+        model.current_batch = []
+        model.parallel_worker_results = []
+        
+        successful_count = len(successful_aggregates)
+        failed_count = len(failed_aggregates)
+        total_completed = len(model.completed_generations)
+        
+        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Result collection completed. Batch - Successful: {successful_count}, Failed: {failed_count}. Total completed: {total_completed}")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Validation failed for aggregate '{aggregate_name}' in context '{bc_name}'", e)
-        state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
-
+        LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during result collection and application", e)
+        model.is_failed = True
+    
     return state
 
 def complete_processing(state: State) -> State:
@@ -617,6 +342,7 @@ def complete_processing(state: State) -> State:
 
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["COMPLETE"]
+        state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
         subgraph_model = state.subgraphs.createCommandActionsByFunctionModel
@@ -627,15 +353,17 @@ def complete_processing(state: State) -> State:
         failed = subgraph_model.is_failed
         if failed:
             LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Command actions processing completed with failures. Successfully processed: {completed_count} aggregates")
-        else:
-            LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Command actions processing completed successfully. Total processed: {completed_count} aggregates")
 
         if not failed:
             # 변수 정리
-            subgraph_model.draft_options = {}
-            subgraph_model.current_generation = None
             subgraph_model.completed_generations = []
             subgraph_model.pending_generations = []
+
+            # 배치 처리 관련 변수들도 정리
+            subgraph_model.worker_generations = {}
+            subgraph_model.current_batch = []
+            subgraph_model.parallel_worker_results = []
+            subgraph_model.element_name_to_ui_id_dict = {}
         
         state.subgraphs.createCommandActionsByFunctionModel.end_time = time.time()
         state.subgraphs.createCommandActionsByFunctionModel.total_seconds = state.subgraphs.createCommandActionsByFunctionModel.end_time - state.subgraphs.createCommandActionsByFunctionModel.start_time
@@ -648,52 +376,33 @@ def complete_processing(state: State) -> State:
 
 def decide_next_step(state: State) -> str:
     """
-    다음 단계 결정을 위한 라우팅 함수
+    다음 실행할 단계 결정 (배치 처리 방식)
     """
-    try :
+    try:
+        model = state.subgraphs.createCommandActionsByFunctionModel
 
-        if state.subgraphs.createCommandActionsByFunctionModel.is_failed:
+        if model.is_failed:
             return "complete"
 
         # 모든 작업이 완료되었으면 완료 상태로 이동
-        if state.subgraphs.createCommandActionsByFunctionModel.all_complete:
+        if model.all_complete:
             return "complete"
         
-        # prepare 단계 직후라면 이벤트 할당 단계로 이동
-        if not state.subgraphs.createCommandActionsByFunctionModel.assign_event_names_complete:
-            return "assign_events"
+        # 병렬 워커 결과가 있으면 결과 수집 및 적용 단계로 이동
+        if model.parallel_worker_results:
+            return "collect_results"
         
-        # 현재 처리 중인 작업이 없으면 다음 작업 선택
-        if not state.subgraphs.createCommandActionsByFunctionModel.current_generation:
-            return "select_next"
+        # 현재 처리 중인 배치가 있으면 병렬 실행 단계로 이동
+        if model.current_batch:
+            return "execute_parallel"
         
-        current_gen = state.subgraphs.createCommandActionsByFunctionModel.current_generation
-        if current_gen.retry_count > state.subgraphs.createCommandActionsByFunctionModel.max_retry_count:
-            state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
-            return "complete"
-        
-        # 토큰 초과시 요약 서브그래프로 이동
-        if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
-            if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
-                return "generate"
-            else:
-                return "es_value_summary_generator"
-
-        # 현재 작업이 완료되었으면 검증 단계로 이동
-        if current_gen.generation_complete:
-            return "validate"
-        
-        # 전치리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
-        if not current_gen.summarized_es_value:
-            return "preprocess"
-        
-        # 기본적으로 생성 실행 단계로 이동
-        if not current_gen.created_actions:
-            return "generate"
-        
-        # 생성된 액션이 있으면 후처리 단계로 이동
-        return "postprocess"
-
+        # 대기 중인 작업이 있으면 배치 선택 단계로 이동
+        if model.pending_generations:
+            return "select_batch"
+            
+        # 아무것도 없으면 완료
+        return "complete"
+    
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during decide_next_step", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
@@ -702,108 +411,61 @@ def decide_next_step(state: State) -> str:
 # 서브그래프 생성 함수
 def create_command_actions_by_function_subgraph() -> Callable:
     """
-    Command 액션 생성 서브그래프 생성
+    Command 액션 생성 서브그래프 생성 (배치 처리 지원)
     """
     # 서브그래프 정의
     subgraph = StateGraph(State)
     
-    # 노드 추가
+    # 새로운 배치 처리 노드들 추가
     subgraph.add_node("prepare", prepare_command_actions_generation)
-    subgraph.add_node("assign_events", assign_events_to_aggregates)
-    subgraph.add_node("select_next", select_next_command_actions)
-    subgraph.add_node("preprocess", preprocess_command_actions_generation)
-    subgraph.add_node("generate", generate_command_actions)
-    subgraph.add_node("postprocess", postprocess_command_actions_generation)
-    subgraph.add_node("validate", validate_command_actions_generation)
+    subgraph.add_node("select_batch", select_batch_command_actions)
+    subgraph.add_node("execute_parallel", execute_parallel_workers)
+    subgraph.add_node("collect_results", collect_and_apply_results)
     subgraph.add_node("complete", complete_processing)
-    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
-    # 엣지 추가 (라우팅)
+    # 엣지 추가 (새로운 배치 처리 플로우)
     subgraph.add_conditional_edges(START, resume_from_create_command_actions, {
         "prepare": "prepare",
-        "assign_events": "assign_events",
-        "select_next": "select_next",
-        "preprocess": "preprocess",
-        "generate": "generate",
-        "postprocess": "postprocess",
-        "validate": "validate",
-        "complete": "complete",
-        "es_value_summary_generator": "es_value_summary_generator"
+        "select_batch": "select_batch",
+        "execute_parallel": "execute_parallel",
+        "collect_results": "collect_results",
+        "complete": "complete"
     })
 
+    # 새로운 배치 처리 플로우 엣지들
     subgraph.add_conditional_edges(
         "prepare",
         decide_next_step,
         {
-            "assign_events": "assign_events",
+            "select_batch": "select_batch",
             "complete": "complete"
         }
     )
     
     subgraph.add_conditional_edges(
-        "assign_events",
+        "select_batch",
         decide_next_step,
         {
-            "select_next": "select_next",
+            "select_batch": "select_batch",
+            "execute_parallel": "execute_parallel", 
             "complete": "complete"
         }
     )
     
     subgraph.add_conditional_edges(
-        "select_next",
+        "execute_parallel",
         decide_next_step,
         {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
+            "collect_results": "collect_results",
             "complete": "complete"
         }
     )
     
     subgraph.add_conditional_edges(
-        "preprocess",
+        "collect_results",
         decide_next_step,
         {
-            "generate": "generate",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "generate",
-        decide_next_step,
-        {
-            "postprocess": "postprocess",
-            "generate": "generate",
-            "es_value_summary_generator": "es_value_summary_generator",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "es_value_summary_generator",
-        decide_next_step,
-        {
-            "generate": "generate",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "postprocess",
-        decide_next_step,
-        {
-            "validate": "validate",
-            "generate": "generate",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "validate",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
+            "select_batch": "select_batch",
             "complete": "complete"
         }
     )
@@ -821,185 +483,3 @@ def create_command_actions_by_function_subgraph() -> Callable:
         return result
     
     return run_subgraph
-
-
-# 유틸리티 함수들
-def filter_valid_actions(actions: List[ActionModel]) -> List[ActionModel]:
-    """유효한 액션만 필터링"""
-    # 기본 필터링 로직
-    return [action for action in actions if 
-            action.actionName and action.objectType and action.ids and action.ids.get("aggregateId")]
-
-def restore_actions(actions: List[ActionModel], es_value: Dict[str, Any], target_bounded_context_name: str) -> List[ActionModel]:
-    """액션 복원 처리"""
-    # 타겟 BoundedContext 찾기
-    target_bounded_context = None
-    for element in es_value.get("elements", {}).values():
-        if (element and element.get("_type") == "org.uengine.modeling.model.BoundedContext" and 
-            element.get("name", "").lower() == target_bounded_context_name.lower()):
-            target_bounded_context = element
-            break
-    
-    if not target_bounded_context:
-        raise ValueError(f"{target_bounded_context_name}에 대한 정보를 찾을 수 없습니다.")
-    
-    # 각 액션 복원
-    for action in actions:
-        if action.objectType == "Command":
-            action.ids["boundedContextId"] = target_bounded_context.get("id")
-            if not action.args:
-                action.args = {}
-            action.args["isRestRepository"] = False
-        
-        elif action.objectType == "Event":
-            action.ids["boundedContextId"] = target_bounded_context.get("id")
-            if not action.args:
-                action.args = {}
-        
-        elif action.objectType == "ReadModel":
-            action.ids["boundedContextId"] = target_bounded_context.get("id")
-            if not action.args:
-                action.args = {}
-            action.args["properties"] = action.args.get("queryParameters", [])
-    
-    return actions
-
-def get_id_by_name(name: str, actions: List[ActionModel], es_value: Dict[str, Any]) -> str:
-    """이름으로 ID 찾기"""
-    # 액션에서 찾기
-    for action in actions:
-        if (action.objectType == "Command" and action.args and 
-            action.args.get("commandName") == name):
-            return action.ids.get("commandId")
-        if (action.objectType == "Event" and action.args and 
-            action.args.get("eventName") == name):
-            return action.ids.get("eventId")
-    
-    # ES Value에서 찾기
-    for element in es_value.get("elements", {}).values():
-        if element and element.get("name") == name and element.get("id"):
-            return element.get("id")
-    
-    return None
-
-def filter_actions(actions: List[ActionModel], es_value: Dict[str, Any]) -> List[ActionModel]:
-    """중복 액션 필터링"""
-    # 기존 요소 이름 목록
-    es_names = [element.get("name") for element in es_value.get("elements", {}).values()
-                if element and element.get("name")]
-    
-    display_names = [element.get("displayName").replace(" ", "") for element in es_value.get("elements", {}).values()
-                    if element and element.get("displayName")]
-    
-    # 중복 및 검색/필터 관련 액션 제외
-    filtered_actions = []
-    for action in actions:
-        if action.objectType == "Command":
-            if (action.args.get("commandName") not in es_names and
-                action.args.get("commandAlias").replace(" ", "") not in display_names and
-                "search" not in action.args.get("commandName").lower() and
-                "filter" not in action.args.get("commandName").lower()):
-                filtered_actions.append(action)
-        
-        elif action.objectType == "Event":
-            if (action.args.get("eventName") not in es_names and
-                action.args.get("eventAlias").replace(" ", "") not in display_names and
-                "search" not in action.args.get("eventName").lower() and
-                "filter" not in action.args.get("eventName").lower()):
-                filtered_actions.append(action)
-        
-        elif action.objectType == "ReadModel":
-            if (action.args.get("readModelName") not in es_names and
-                action.args.get("readModelAlias").replace(" ", "") not in display_names):
-                filtered_actions.append(action)
-    
-    # 유효하지 않은 커맨드 액션 제거
-    # 1. 모든 유효한 이벤트 ID 수집 (기존 es_value + 새로 생성된 action)
-    all_event_ids = {
-        element['id']
-        for element in es_value.get("elements", {}).values()
-        if element and element.get("_type") == "org.uengine.modeling.model.Event" and element.get('id')
-    }
-    all_event_ids.update({
-        action.ids['eventId']
-        for action in filtered_actions
-        if action.objectType == "Event" and action.ids and action.ids.get('eventId')
-    })
-
-    # 2. Command의 outputEventIds를 검증하고, 유효한 이벤트가 없는 커맨드는 제거
-    valid_commands_and_other_actions = []
-    for action in filtered_actions:
-        if action.objectType == "Command":
-            if action.args and "outputEventIds" in action.args:
-                valid_ids = [eid for eid in action.args.get("outputEventIds", []) if eid in all_event_ids]
-                if valid_ids:
-                    action.args["outputEventIds"] = valid_ids
-                    valid_commands_and_other_actions.append(action)
-                # else: 유효한 outputEventId가 하나도 없으면 커맨드 액션을 버립니다.
-            else:
-                # outputEventIds가 없는 커맨드는 그대로 유지합니다.
-                valid_commands_and_other_actions.append(action)
-        else:
-            # Command가 아닌 다른 액션들은 그대로 유지합니다.
-            valid_commands_and_other_actions.append(action)
-
-    # 호출되지 않는 이벤트 제외
-    output_event_ids = set()
-    for action in valid_commands_and_other_actions:
-        if action.objectType == "Command" and action.args and action.args.get("outputEventIds"):
-            output_event_ids.update(action.args["outputEventIds"])
-    
-    return [
-        action for action in valid_commands_and_other_actions
-        if action.objectType != "Event" or (action.ids and action.ids.get("eventId") in output_event_ids)
-    ]
-
-def _build_request_context(current_gen) -> str:
-    """
-    요약 요청 컨텍스트 빌드
-    """
-    aggregate_name = current_gen.target_aggregate.get("name", "")
-    aggregate_display_name = current_gen.target_aggregate.get("displayName", aggregate_name)
-    bounded_context_name = current_gen.target_bounded_context.get("name", "")
-    description = current_gen.description
-    
-    return f"""Creating commands, events, and read models for the following context:
-- Target Bounded Context: {bounded_context_name}
-- Target Aggregate: {aggregate_name}{ f" ({aggregate_display_name})" if aggregate_display_name and aggregate_display_name != aggregate_name else "" }
-- Business Requirements
-{description}
-
-Focus on elements that are:
-1. Directly related to the {aggregate_name} aggregate
-2. Referenced by or dependent on the target aggregate
-3. Essential for implementing the specified business requirements
-
-This context is specifically for generating:
-- Commands to handle business operations
-- Events to record state changes
-- Read models for query operations
-
-All within the scope of {bounded_context_name} bounded context and {aggregate_name} aggregate."""
-
-def validate_required_events(required_event_names: List[str], action_models: List[ActionModel]) -> List[str]:
-    """
-    필수 이벤트가 생성된 액션에 포함되어 있는지 검증
-    
-    Args:
-        required_event_names: 필수로 생성되어야 하는 이벤트 이름 목록
-        action_models: 생성된 액션 모델 목록
-    
-    Returns:
-        누락된 이벤트 이름 목록
-    """
-    # 생성된 이벤트 이름 목록 추출
-    generated_event_names = set()
-    for action in action_models:
-        if action.objectType == "Event" and action.args and action.args["eventName"]:
-            generated_event_names.add(action.args["eventName"])
-    
-    # 누락된 이벤트 찾기
-    missing_events = [event_name for event_name in required_event_names 
-                     if event_name not in generated_event_names]
-    
-    return missing_events
