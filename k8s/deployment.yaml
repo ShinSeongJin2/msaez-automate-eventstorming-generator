@@ -27,14 +27,14 @@ spec:
         - name: AI_MODEL_MAX_INPUT_LIMIT
           value: "962429"
         - name: AI_MODEL_MAX_BATCH_SIZE
-          value: "6"
+          value: "30"
 
         - name: AI_MODEL_LIGHT
           value: "openai:gpt-4.1-mini-2025-04-14"
         - name: AI_MODEL_LIGHT_MAX_INPUT_LIMIT
           value: "962429"
         - name: AI_MODEL_LIGHT_MAX_BATCH_SIZE
-          value: "30"
+          value: "150"
 
         - name: OPENAI_API_KEY
           valueFrom:
