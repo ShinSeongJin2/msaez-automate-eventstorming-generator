@@ -336,9 +336,12 @@ def collect_and_apply_results(state: State) -> State:
                     all_actions.extend(filtered_actions)
                 else:
                     successful_class_ids.append(class_id_result)
+            
+            elif class_id_result.generation_complete and not class_id_result.created_actions:
+                successful_class_ids.append(class_id_result)
             else:
                 failed_class_ids.append(class_id_result)
-                LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation '{reference_names}' failed or has no actions")
+                LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation '{reference_names}' failed")
         model.created_references = created_references
         
         # ES 모델에 모든 액션 일괄 적용
