@@ -104,7 +104,7 @@ def worker_generate_aggregate(state: State) -> State:
 
     try:
         # 모델명 가져오기
-        model_name = Config.get_ai_model_light()
+        model_name = Config.get_ai_model()
 
         # Generator 생성
         generator = CreateAggregateActionsByFunction(
@@ -242,7 +242,7 @@ def worker_assign_missing_fields(state: State) -> State:
     aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
 
     try:
-        model_name = Config.get_ai_model_light()
+        model_name = Config.get_ai_model()
 
         elementAliasToUUIDDic = {}
         elementUUIDToAliasDic = {}

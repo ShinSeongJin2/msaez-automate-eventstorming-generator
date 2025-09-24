@@ -106,7 +106,7 @@ def select_batch_aggregates(state: State) -> State:
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
         model = state.subgraphs.createAggregateByFunctionsModel
-        batch_size = Config.get_ai_model_light_max_batch_size()
+        batch_size = Config.get_ai_model_max_batch_size()*3
 
         # 모든 처리가 완료되었는지 확인
         if not model.pending_generations and not model.current_batch:
