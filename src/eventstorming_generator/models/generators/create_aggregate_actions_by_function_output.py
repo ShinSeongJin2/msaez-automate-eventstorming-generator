@@ -35,21 +35,21 @@ class AggregateArgs(BaseModelWithItem):
     """Model representing arguments for aggregate creation"""
     aggregateName: str = Field(..., description="Name of the aggregate")
     aggregateAlias: str = Field(..., description="Human-readable alias for the aggregate")
-    properties: List[PropertyModel] = Field(..., description="List of properties for the aggregate")
+    properties: List[PropertyModel] = Field(..., description="List of properties for the aggregate", min_length=1)
     refs: Refs = Field(None, description="Source reference from the functional requirements")
 
 class ValueObjectArgs(BaseModelWithItem):
     """Model representing arguments for value object creation"""
     valueObjectName: str = Field(..., description="Name of the value object")
     valueObjectAlias: str = Field(..., description="Human-readable alias for the value object")
-    properties: List[PropertyModel] = Field(..., description="List of properties for the value object")
+    properties: List[PropertyModel] = Field(..., description="List of properties for the value object", min_length=1)
     refs: Refs = Field(None, description="Source reference from the functional requirements")
 
 class EnumerationArgs(BaseModelWithItem):
     """Model representing arguments for enumeration creation"""
     enumerationName: str = Field(..., description="Name of the enumeration")
     enumerationAlias: str = Field(..., description="Human-readable alias for the enumeration")
-    properties: List[EnumPropertyModel] = Field(..., description="List of enumeration values")
+    properties: List[EnumPropertyModel] = Field(..., description="List of enumeration values", min_length=1)
     refs: Refs = Field(None, description="Source reference from the functional requirements")
 
 class AggregateAction(BaseModelWithItem):

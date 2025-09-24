@@ -63,6 +63,7 @@ class CreateAggregateActionsByFunction(XmlBaseGenerator):
                 <rule id="struct-1">Aggregates must have exactly one primary key. For composite keys, use a ValueObject.</rule>
                 <rule id="struct-2">Reference other Aggregates by class name, not ID.</rule>
                 <rule id="struct-3">ValueObjects must be directly linked to an Aggregate and should not be nested.</rule>
+                <rule id="struct-4">All generated Aggregates, ValueObjects, and Enumerations must have at least one property. Do not create elements with empty property lists.</rule>
             </category>
             
             <category name="Event-Driven and Context-Aware Design">
