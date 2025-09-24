@@ -5,7 +5,7 @@ from .create_policy_actions_by_function_sub_graph_inputs import create_policy_ac
 from .create_gwt_generator_by_function_sub_graph_inputs import create_gwt_generator_by_function_sub_graph_inputs
 from .es_value_summary_generator_sub_graph_inputs import es_value_summary_generator_sub_graph_inputs
 from .create_ui_components_subgraph_inputs import create_ui_components_subgraph_inputs
-from .worker_subgraphs_inputs import gwt_worker_subgraph_inputs, aggregate_worker_subgraph_inputs, class_id_worker_subgraph_inputs, command_actions_worker_subgraph_inputs
+from .worker_subgraphs_inputs import gwt_worker_subgraph_inputs, aggregate_worker_subgraph_inputs, class_id_worker_subgraph_inputs, command_actions_worker_subgraph_inputs, policy_actions_worker_subgraph_inputs
 from .create_element_names_by_draft_sub_graph_inputs import create_element_names_by_draft_sub_graph_inputs
 
 __all__ = [
@@ -20,6 +20,7 @@ __all__ = [
     "aggregate_worker_subgraph_inputs",
     "class_id_worker_subgraph_inputs",
     "command_actions_worker_subgraph_inputs",
+    "policy_actions_worker_subgraph_inputs",
     "create_element_names_by_draft_sub_graph_inputs"
 ]
 

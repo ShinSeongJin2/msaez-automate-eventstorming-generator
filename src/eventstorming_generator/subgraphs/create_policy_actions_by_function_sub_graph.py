@@ -1,11 +1,12 @@
 import time
+import uuid
 from typing import Callable, Dict, Any, List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from langgraph.graph import StateGraph, START
 
-from ..models import ActionModel, PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
-from ..generators import CreatePolicyActionsByFunction
-from ..utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil, EsTraceUtil
-from .es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ..models import PolicyActionGenerationState, ActionModel, State
+from ..utils import JsonUtil, EsActionsUtil, LogUtil, JobUtil, CaseConvertUtil, EsAliasTransManager, EsTraceUtil
+from .worker_subgraphs import create_policy_actions_worker_subgraph, policy_actions_worker_id_context
 from ..constants import ResumeNodes
 from ..config import Config
 
@@ -15,7 +16,8 @@ def resume_from_create_policy_actions(state: State):
 
         state.subgraphs.createPolicyActionsByFunctionModel.start_time = time.time()
         if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
-            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_POLICY_ACTIONS"].values():
+            valid_nodes = list(ResumeNodes["CREATE_POLICY_ACTIONS"].values())
+            if state.outputs.lastCompletedSubGraphNode in valid_nodes:
                 LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
                 return state.outputs.lastCompletedSubGraphNode
             else:
@@ -23,7 +25,7 @@ def resume_from_create_policy_actions(state: State):
                 LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Invalid checkpoint node: '{state.outputs.lastCompletedSubGraphNode}'")
                 return "complete"
         
-        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation process")
+        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Starting policy actions generation process (parallel mode)")
         return "prepare"
     
     except Exception as e:
@@ -31,7 +33,6 @@ def resume_from_create_policy_actions(state: State):
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
         return "complete"
 
-# 노드 정의: 초안으로부터 Policy 액션 생성 준비
 def prepare_policy_actions_generation(state: State) -> State:
     """
     초안으로부터 Policy 액션 생성을 위한 준비 작업 수행
@@ -45,7 +46,6 @@ def prepare_policy_actions_generation(state: State) -> State:
 
         # 이미 처리 중이면 상태 유지
         if state.subgraphs.createPolicyActionsByFunctionModel.is_processing:
-            LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] Policy actions generation already in progress, maintaining state")
             return state
         
         # 초안 데이터 설정
@@ -64,8 +64,6 @@ def prepare_policy_actions_generation(state: State) -> State:
             if "boundedContext" in bounded_context_data:
                 target_bounded_context.update(bounded_context_data["boundedContext"])
             
-            bc_display_name = target_bounded_context.get("displayName", bounded_context_name)
-            
             # Policy 액션 생성 상태 초기화
             generation_state = PolicyActionGenerationState(
                 target_bounded_context=target_bounded_context,
@@ -75,7 +73,6 @@ def prepare_policy_actions_generation(state: State) -> State:
                 generation_complete=False
             )
             pending_generations.append(generation_state)
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Queued policy actions generation for bounded context: '{bc_display_name}'")
         
         # 처리할 Policy 액션 목록 저장
         state.subgraphs.createPolicyActionsByFunctionModel.pending_generations = pending_generations
@@ -88,515 +85,385 @@ def prepare_policy_actions_generation(state: State) -> State:
     
     return state
 
-# 노드 정의: 다음 생성할 Policy 액션 선택
-def select_next_policy_actions(state: State) -> State:
+def select_batch_policy_actions(state: State) -> State:
     """
-    다음에 생성할 Policy 액션을 선택하고 현재 처리 상태로 설정
+    다음 배치로 처리할 Policy 액션들을 선택 (병렬 처리용)
+    - batch_size만큼의 Policy 액션을 한 번에 선택
+    - current_batch에 설정하여 병렬 처리 준비
     """
     
     try:
-
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["SELECT_NEXT"]
+        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["SELECT_BATCH"]
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        pending_count = len(state.subgraphs.createPolicyActionsByFunctionModel.pending_generations)
-        completed_count = len(state.subgraphs.createPolicyActionsByFunctionModel.completed_generations)
-        
-        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Selecting next policy actions generation. Pending: {pending_count}, Completed: {completed_count}")
+        model = state.subgraphs.createPolicyActionsByFunctionModel
+        batch_size = Config.get_ai_model_max_batch_size()
 
         # 모든 처리가 완료되었는지 확인
-        if (not state.subgraphs.createPolicyActionsByFunctionModel.pending_generations and 
-            not state.subgraphs.createPolicyActionsByFunctionModel.current_generation):
-            state.subgraphs.createPolicyActionsByFunctionModel.all_complete = True
-            state.subgraphs.createPolicyActionsByFunctionModel.is_processing = False
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] All policy actions generation completed successfully. Total processed: {completed_count} bounded contexts")
+        if not model.pending_generations and not model.current_batch:
+            model.all_complete = True
+            model.is_processing = False
             return state
         
-        # 현재 처리 중인 작업이 있으면 상태 유지
-        if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            current = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-            bc_name = current.target_bounded_context.get("displayName", current.target_bounded_context.get("name", "Unknown"))
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Current policy action generation in progress for bounded context: '{bc_name}'")
+        # 현재 처리 중인 배치가 있으면 상태 유지
+        if model.current_batch:
             return state
         
-        # 대기 중인 Policy 액션이 있으면 첫 번째 항목을 현재 처리 상태로 설정
-        if state.subgraphs.createPolicyActionsByFunctionModel.pending_generations:
-            current_gen = state.subgraphs.createPolicyActionsByFunctionModel.pending_generations.pop(0)
-            state.subgraphs.createPolicyActionsByFunctionModel.current_generation = current_gen
-            bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-            remaining_count = len(state.subgraphs.createPolicyActionsByFunctionModel.pending_generations)
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Selected policy action generation for bounded context: '{bc_name}' (remaining: {remaining_count})")
-        
+        # 대기 중인 Policy들에서 배치 크기만큼 선택
+        if model.pending_generations:
+            # 남은 Policy 수와 배치 크기 중 작은 값만큼 선택
+            actual_batch_size = min(batch_size, len(model.pending_generations))
+            
+            current_batch = []
+            for _ in range(actual_batch_size):
+                if model.pending_generations:
+                    current_batch.append(model.pending_generations.pop(0))
+            
+            model.current_batch = current_batch
+
     except Exception as e:
-        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed to select next policy actions generation", e)
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed to select policy batch", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
     
     return state
 
-# 노드 정의: Policy 액션 생성 전처리
-def preprocess_policy_actions_generation(state: State) -> State:
+def execute_parallel_workers(state: State) -> State:
     """
-    Policy 액션 생성을 위한 전처리 작업 수행
-    - 요약된 ES 값 생성
-    - 별칭 변환 관리자 생성
+    현재 배치의 Policy 액션들을 병렬로 처리
+    - 각 Policy 액션을 개별 워커 서브그래프에서 병렬 실행
+    - ThreadPoolExecutor를 사용하여 동시 처리
     """
-    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-    if not current_gen:
-        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to preprocess")
+    model = state.subgraphs.createPolicyActionsByFunctionModel
+    
+    if not model.current_batch:
         return state
-        
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting preprocessing for policy actions in bounded context: '{bc_name}'")
     
+    batch_size = len(model.current_batch)
+
     try:
-        # 기능 요구사항에 라인 번호 추가
-        if current_gen.description:
-            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
+        # 워커 서브그래프 인스턴스 생성
+        worker_function = create_policy_actions_worker_subgraph()
+        
+        # 각 Policy에 대해 워커 ID 생성 및 worker_generations에 저장
+        worker_ids = []
+        for policy_generation_state in model.current_batch:
+            worker_id = str(uuid.uuid4())
+            worker_ids.append(worker_id)
+            model.worker_generations[worker_id] = policy_generation_state
+        
+        def execute_single_worker(worker_id: str) -> PolicyActionGenerationState:
+            """
+            단일 Policy 액션을 워커에서 처리하는 함수 (메모리 최적화 버전)
+            """
+            try:
+                # 현재 스레드의 컨텍스트에 worker_id 설정
+                policy_actions_worker_id_context.set(worker_id)
 
-        # 현재 ES 값의 복사본 생성
-        es_value = {
-            "elements": state.outputs.esValue.elements,
-            "relations": state.outputs.esValue.relations
-        }
+                policy_generation_state = model.worker_generations[worker_id]
+                bc_name = policy_generation_state.target_bounded_context.get("displayName", 
+                         policy_generation_state.target_bounded_context.get("name", "Unknown"))
+                
+                # 워커 실행
+                result_state = worker_function(state)
+                
+                # 결과에서 처리된 Policy 상태 추출
+                completed_policy = result_state.subgraphs.createPolicyActionsByFunctionModel.worker_generations.get(worker_id)
+                
+                if completed_policy and completed_policy.generation_complete:
+                    return completed_policy
+                elif completed_policy and completed_policy.is_failed:
+                    LogUtil.add_error_log(state, f"[POLICY_WORKER_EXECUTOR] Worker failed for Policy bounded context '{bc_name}'")
+                    return completed_policy
+                else:
+                    LogUtil.add_error_log(state, f"[POLICY_WORKER_EXECUTOR] Worker returned incomplete result for Policy bounded context '{bc_name}'")
+                    policy_generation_state.is_failed = True
+                    return policy_generation_state
+                    
+            except Exception as e:
+                policy_generation_state = model.worker_generations.get(worker_id)
+                if policy_generation_state:
+                    bc_name = policy_generation_state.target_bounded_context.get("displayName", 
+                             policy_generation_state.target_bounded_context.get("name", "Unknown"))
+                    LogUtil.add_exception_object_log(state, f"[POLICY_WORKER_EXECUTOR] Worker execution failed for Policy bounded context '{bc_name}'", e)
+                    policy_generation_state.is_failed = True
+                    return policy_generation_state
+                else:
+                    LogUtil.add_exception_object_log(state, f"[POLICY_WORKER_EXECUTOR] Worker execution failed for unknown worker_id: {worker_id}", e)
+                    # 빈 실패 상태 반환
+                    failed_state = PolicyActionGenerationState()
+                    failed_state.is_failed = True
+                    return failed_state
         
-        # 요약된 ES 값 생성
-        summarized_es_value = ESValueSummarizeWithFilter.get_summarized_es_value(
-            es_value,
-            ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateInnerStickers"] + 
-            ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["detailedProperties"],
-            EsAliasTransManager(es_value)
-        )
-        
-        # 요약된 ES 값 저장
-        current_gen.summarized_es_value = summarized_es_value
-        
-        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Preprocessing completed for bounded context: '{bc_name}'. Summary size: {len(str(summarized_es_value))} chars")
-        
-    except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Preprocessing failed for bounded context: '{bc_name}'", e)
-        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
-    
-    return state
-
-# 노드 정의: Policy 액션 생성 실행
-def generate_policy_actions(state: State) -> State:
-    """
-    Policy 액션 생성 실행
-    - Generator를 통한 Policy 액션 생성
-    """
-    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-    if not current_gen:
-        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to process")
-        return state
-        
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    retry_info = f" (retry {current_gen.retry_count})" if current_gen.retry_count > 0 else ""
-    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Generating policy actions for bounded context: '{bc_name}'{retry_info}")
-    
-    try:
-
-        es_value = {
-            "elements": state.outputs.esValue.elements,
-            "relations": state.outputs.esValue.relations
-        }
-        
-        # 요약 서브그래프에서 처리 결과를 받아온 경우
-        if (hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete') and 
-            state.subgraphs.esValueSummaryGeneratorModel.is_complete and 
-            state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value):
-            
-            # 요약된 결과로 상태 업데이트
-            current_gen.summarized_es_value = state.subgraphs.esValueSummaryGeneratorModel.processed_summarized_es_value
-            
-            # 요약 상태 초기화
-            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel()
-            
-            current_gen.is_token_over_limit = False
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Applied summarized ES value for bounded context: '{bc_name}' from summary generator")
-
-        # 모델명 가져오기
-        model_name = Config.get_ai_model()
-        
-        # Generator 생성
-        generator = CreatePolicyActionsByFunction(
-            model_name=model_name,
-            client={
-                "inputs": {
-                    "summarizedESValue": current_gen.summarized_es_value,
-                    "description": current_gen.description
-                },
-                "preferredLanguage": state.inputs.preferedLanguage
+        # ThreadPoolExecutor를 사용한 병렬 실행
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            # 모든 워커 제출
+            future_to_worker_id = {
+                executor.submit(execute_single_worker, worker_id): worker_id 
+                for worker_id in worker_ids
             }
-        )
-        
-        # 토큰 초과 체크
-        token_count = generator.get_token_count()
-        model_max_input_limit = Config.get_ai_model_max_input_limit()
-        
-        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Token usage for bounded context '{bc_name}': {token_count}/{model_max_input_limit}")
-        
-        if token_count > model_max_input_limit:  # 토큰 제한 초과시 요약 처리
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Token limit exceeded for bounded context '{bc_name}' ({token_count} > {model_max_input_limit}), requesting summarization")
             
-            left_generator = CreatePolicyActionsByFunction(
-                model_name=model_name,
-                client={
-                    "inputs": {
-                        "summarizedESValue": {},
-                        "description": current_gen.description
-                    },
-                    "preferredLanguage": state.inputs.preferedLanguage
-                }
-            )
-            
-            left_token_count = model_max_input_limit - left_generator.get_token_count()
-            if left_token_count < 50:
-                LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Insufficient token space for bounded context '{bc_name}' summarization")
-                state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
-                return state
-            
-            # ES 요약 생성 서브그래프 호출 준비
-            # 요약 생성 모델 초기화
-            state.subgraphs.esValueSummaryGeneratorModel = ESValueSummaryGeneratorModel(
-                is_processing=False,
-                is_complete=False,
-                context=_build_request_context(current_gen),
-                keys_to_filter=ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateInnerStickers"] + 
-                               ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["detailedProperties"],
-                max_tokens=left_token_count,
-                token_calc_model_vendor=Config.get_ai_model_vendor(),
-                token_calc_model_name=Config.get_ai_model_name()
-            )
-            
-            # 토큰 초과시 요약 서브그래프 호출하고 현재 상태 반환
-            current_gen.is_token_over_limit = True
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Prepared ES value summary request for bounded context '{bc_name}' (available tokens: {left_token_count})")
-            return state
-
-        # Generator 실행 결과
-        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Executing policy actions generation for bounded context '{bc_name}' with {token_count} tokens")
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+            # 결과 수집
+            completed_results = []
+            for future in as_completed(future_to_worker_id):
+                worker_id = future_to_worker_id[future]
+                original_policy = model.worker_generations[worker_id]
+                try:
+                    result_policy = future.result()
+                    completed_results.append(result_policy)
+                                   
+                except Exception as e:
+                    bc_name = original_policy.target_bounded_context.get("displayName", 
+                             original_policy.target_bounded_context.get("name", "Unknown"))
+                    LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to get worker result for Policy bounded context '{bc_name}'", e)
+                    original_policy.is_failed = True
+                    completed_results.append(original_policy)
         
-        # 결과에서 Policy 추출
-        policies = []
-        if result and "result" in result:
-            policies = result["result"].get("extractedPolicies", [])
+        # 결과를 parallel_worker_results에 저장
+        model.parallel_worker_results = completed_results
         
-        # Policy를 액션으로 변환
-        actions = _to_policy_creation_actions(
-            policies, 
-            EsAliasTransManager(es_value), 
-            es_value,
-            current_gen.target_bounded_context.get("id", "")
-        )
+        # 사용된 worker_generations 정리 (메모리 절약)
+        for worker_id in worker_ids:
+            if worker_id in model.worker_generations:
+                del model.worker_generations[worker_id]
         
-        actionModels = [ActionModel(**action) for action in actions]
+        successful_count = sum(1 for result in completed_results if result.generation_complete)
+        failed_count = sum(1 for result in completed_results if result.is_failed)
         
-        # 생성된 액션 저장
-        current_gen.created_actions = actionModels
-
-        if len(current_gen.created_actions) == 0:
-            current_gen.generation_complete = True
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] No policy actions generated for bounded context: '{bc_name}'. Proceeding to completion.")
-        else:
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Generated {len(current_gen.created_actions)} policy actions for bounded context: '{bc_name}' from {len(policies)} extracted policies")
-    
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Parallel execution completed. Successful: {successful_count}, Failed: {failed_count}, Total: {len(completed_results)}")
+        
     except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to generate policy actions for bounded context: '{bc_name}'", e)
-        if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during parallel worker execution", e)
+        model.is_failed = True
     
     return state
 
-# 노드 정의: Policy 액션 생성 후처리
-def postprocess_policy_actions_generation(state: State) -> State:
+def collect_and_apply_results(state: State) -> State:
     """
-    Policy 액션 생성 후처리 작업 수행
-    - 생성된 액션 적용
-    - ES 값 업데이트
+    병렬 워커들의 결과를 수집하고 ES 모델에 적용
+    - parallel_worker_results에서 결과 수집
+    - 성공한 Policy 액션들의 액션을 ES에 일괄 적용
+    - 완료된 Policy들을 completed_generations로 이동
     """
-    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-    if not current_gen:
-        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to postprocess")
+    model = state.subgraphs.createPolicyActionsByFunctionModel
+    
+    if not model.parallel_worker_results:
         return state
-        
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Starting postprocessing for policy actions in bounded context: '{bc_name}'")
     
     try:
-
-        # 생성된 액션이 없으면 재시도 증가
-        if not current_gen.created_actions:
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] No created actions to postprocess for bounded context: '{bc_name}', incrementing retry count")
-            current_gen.retry_count += 1
-            return state
+        # 모든 성공한 Policy 액션들의 액션 수집
+        all_actions = []
+        successful_policies = []
+        failed_policies = []
+        es_value = {
+            "elements": state.outputs.esValue.elements,
+            "relations": state.outputs.esValue.relations
+        }
         
-        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Applying {len(current_gen.created_actions)} policy actions for bounded context: '{bc_name}'")
-        
-        # Refs 후처리
-        try:
-            EsTraceUtil.convert_refs_to_indexes(current_gen.created_actions, current_gen.original_description, state, "[POLICY_ACTIONS_SUBGRAPH]")
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Successfully converted source references for '{bc_name}'")
-        except Exception as e:
-            LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to convert source references for '{bc_name}'", e)
-            # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
-
-        # 액션 적용하여 ES 값 업데이트
-        updated_es_value = EsActionsUtil.apply_actions(
-            state.outputs.esValue.model_dump(),
-            current_gen.created_actions,
-            state.inputs.userInfo,
-            state.inputs.information
-        )
-        
-        # ES 값 업데이트
-        state.outputs.esValue = updated_es_value
-        current_gen.generation_complete = True
-        
-        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Postprocessing completed successfully for bounded context: '{bc_name}'. Applied {len(current_gen.created_actions)} policy actions to ES value")
-    
-    except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Postprocessing failed for bounded context: '{bc_name}'", e)
-        if state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            state.subgraphs.createPolicyActionsByFunctionModel.current_generation.retry_count += 1
-            state.subgraphs.createPolicyActionsByFunctionModel.current_generation.created_actions = []
-    
-    return state
-
-# 노드 정의: Policy 액션 생성 검증 및 완료 처리
-def validate_policy_actions_generation(state: State) -> State:
-    """
-    Policy 액션 생성 결과 검증 및 완료 처리
-    - 생성 결과 검증
-    - 완료 처리 또는 재시도 결정
-    """
-    current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
-    if not current_gen:
-        LogUtil.add_info_log(state, "[POLICY_ACTIONS_SUBGRAPH] No current policy action generation to validate")
-        return state
-        
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Validating policy actions generation for bounded context: '{bc_name}'")
-    
-    try:
-
-        # 생성 완료 확인
-        if current_gen.generation_complete and not state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
-            # 변수 정리
-            current_gen.target_bounded_context = {}
-            current_gen.description = ""
-            current_gen.original_description = ""
-            current_gen.summarized_es_value = {}
-            current_gen.created_actions = []
-            current_gen.subject_text = ""
-
-            # 완료된 작업을 완료 목록에 추가
-            state.subgraphs.createPolicyActionsByFunctionModel.completed_generations.append(current_gen)
-            # 현재 작업 초기화
-            state.subgraphs.createPolicyActionsByFunctionModel.current_generation = None
-            state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
+        for policy_result in model.parallel_worker_results:
+            bc_name = policy_result.target_bounded_context.get("displayName", 
+                     policy_result.target_bounded_context.get("name", "Unknown"))
             
-            total_progress = state.outputs.totalProgressCount
-            current_progress = state.outputs.currentProgressCount
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy action generation completed successfully for bounded context: '{bc_name}'. Progress: {current_progress}/{total_progress}")
+            if policy_result.generation_complete and policy_result.extractedPolicies:
+                successful_policies.append(policy_result)
+                
+                created_actions_result = _to_policy_creation_actions(
+                    policy_result.extractedPolicies, 
+                    EsAliasTransManager(es_value),
+                    es_value,
+                    policy_result.target_bounded_context.get("id", ""),
+                    model.created_policy_relations
+                )
+                model.created_policy_relations = created_actions_result["processed_policy_relations"]
+                if not created_actions_result["created_actions"]:
+                    continue
 
-        elif current_gen.retry_count >= state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count:
-            # 최대 재시도 횟수 초과 시 실패로 처리하고 다음 작업으로 이동
-            state.subgraphs.createPolicyActionsByFunctionModel.completed_generations.append(current_gen)
-            state.subgraphs.createPolicyActionsByFunctionModel.current_generation = None
-            LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy action generation failed after {current_gen.retry_count} retries for bounded context: '{bc_name}'. Moving to next context.")
-        else:
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Retrying policy action generation for bounded context: '{bc_name}' (attempt {current_gen.retry_count + 1}/{state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count})")
+                created_actions = [ActionModel(**action) for action in created_actions_result["created_actions"] if action]
+
+                try:
+                    EsTraceUtil.convert_refs_to_indexes(created_actions, policy_result.original_description, state, "[POLICY_ACTIONS_SUBGRAPH]", use_xml_tags=True)
+                except Exception as e:
+                    LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to convert source references for '{bc_name}'", e)
+
+                all_actions.extend(created_actions)
+    
+            else:
+                failed_policies.append(policy_result)
+                LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy bounded context '{bc_name}' failed or has no actions")
+        
+        if all_actions:   
+            updated_es_value = EsActionsUtil.apply_actions(
+                state.outputs.esValue.model_dump(),
+                all_actions,
+                state.inputs.userInfo,
+                state.inputs.information
+            )
+            
+            state.outputs.esValue = updated_es_value
+            
+        # 성공한 Policy들을 완료 목록으로 이동 (변수 정리)
+        for policy in successful_policies:
+            # 메모리 절약을 위한 변수 정리
+            policy.target_bounded_context = {}
+            policy.description = ""
+            policy.original_description = ""
+            policy.summarized_es_value = {}
+            policy.extractedPolicies = []
+
+            model.completed_generations.append(policy)
+        
+        # 실패한 Policy들도 완료 목록으로 이동 (재시도는 하지 않음)
+        for policy in failed_policies:
+            policy.target_bounded_context = {}
+            policy.description = ""
+            policy.original_description = ""
+            policy.summarized_es_value = {}
+            policy.extractedPolicies = []
+            
+            model.completed_generations.append(policy)
+        
+        # 배치 처리 완료 정리
+        model.current_batch = []
+        model.parallel_worker_results = []
+        
+        successful_count = len(successful_policies)
+        failed_count = len(failed_policies)
+        total_completed = len(model.completed_generations)
+        
+        LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Result collection completed. Batch - Successful: {successful_count}, Failed: {failed_count}. Total completed: {total_completed}")
         
     except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Validation failed for bounded context: '{bc_name}'", e)
-        state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
+        LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during result collection and application", e)
+        model.is_failed = True
     
     return state
 
-# 단순 완료 처리를 위한 함수
 def complete_processing(state: State) -> State:
     """
     Policy 액션 생성 프로세스 완료
     """
-    try :
+    
+    try:
 
         state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_POLICY_ACTIONS"]
         state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_POLICY_ACTIONS"]["COMPLETE"]
+        state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
+        # 완료된 작업 수 정보 로그
         completed_count = len(state.subgraphs.createPolicyActionsByFunctionModel.completed_generations)
         failed = state.subgraphs.createPolicyActionsByFunctionModel.is_failed
         
         if failed:
-            LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed with failures. Successfully processed: {completed_count} bounded contexts")
-        else:
-            LogUtil.add_info_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed successfully. Total processed: {completed_count} bounded contexts")
-
+            LogUtil.add_error_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Policy actions generation process completed with failures. Successfully processed: {completed_count} bounded context tasks")
+        
         if not failed:
             # 변수 정리
             subgraph_model = state.subgraphs.createPolicyActionsByFunctionModel
             subgraph_model.draft_options = {}
-            subgraph_model.current_generation = None
             subgraph_model.completed_generations = []
             subgraph_model.pending_generations = []
         
         state.subgraphs.createPolicyActionsByFunctionModel.end_time = time.time()
         state.subgraphs.createPolicyActionsByFunctionModel.total_seconds = state.subgraphs.createPolicyActionsByFunctionModel.end_time - state.subgraphs.createPolicyActionsByFunctionModel.start_time
-    
+
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during policy actions generation process completion", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
 
     return state
 
-# 라우팅 함수: 다음 단계 결정
 def decide_next_step(state: State) -> str:
     """
-    다음 실행할 단계 결정
+    다음 실행할 단계 결정 (배치 처리 방식)
     """
-    try :
+    try:
+        model = state.subgraphs.createPolicyActionsByFunctionModel
 
-        if state.subgraphs.createPolicyActionsByFunctionModel.is_failed:
+        if model.is_failed:
             return "complete"
 
         # 모든 작업이 완료되었으면 완료 상태로 이동
-        if state.subgraphs.createPolicyActionsByFunctionModel.all_complete:
+        if model.all_complete:
             return "complete"
         
-        # 현재 처리 중인 작업이 없으면 다음 작업 선택
-        if not state.subgraphs.createPolicyActionsByFunctionModel.current_generation:
-            return "select_next"
+        # 병렬 워커 결과가 있으면 결과 수집 및 적용 단계로 이동
+        if model.parallel_worker_results:
+            return "collect_results"
         
-        current_gen = state.subgraphs.createPolicyActionsByFunctionModel.current_generation
+        # 현재 처리 중인 배치가 있으면 병렬 실행 단계로 이동
+        if model.current_batch:
+            return "execute_parallel"
         
-        # 최대 재시도 횟수 초과 시 검증 단계로 이동 (실패 처리)
-        if current_gen.retry_count >= state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count:
-            return "validate"
-        
-        # 현재 작업이 완료되었으면 검증 단계로 이동
-        if current_gen.generation_complete:
-            return "validate"
-        
-        # 토큰 초과 상태 확인
-        if current_gen.is_token_over_limit and hasattr(state.subgraphs.esValueSummaryGeneratorModel, 'is_complete'):
-            if state.subgraphs.esValueSummaryGeneratorModel.is_complete:
-                return "generate"
-            else:
-                return "es_value_summary_generator"
-        
-        # 전처리로 인한 요약 정보가 없을 경우, 전처리 단계로 이동
-        if not current_gen.summarized_es_value:
-            return "preprocess"
-        
-        # 기본적으로 생성 실행 단계로 이동
-        if not current_gen.created_actions:
-            return "generate"
-        
-        # 생성된 액션이 있으면 후처리 단계로 이동
-        return "postprocess"
+        # 대기 중인 작업이 있으면 배치 선택 단계로 이동
+        if model.pending_generations:
+            return "select_batch"
+            
+        # 아무것도 없으면 완료
+        return "complete"
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[POLICY_ACTIONS_SUBGRAPH] Failed during decide_next_step", e)
         state.subgraphs.createPolicyActionsByFunctionModel.is_failed = True
         return "complete"
 
-# 서브그래프 생성 함수
 def create_policy_actions_by_function_subgraph() -> Callable:
     """
-    Policy 액션 생성 서브그래프 생성
+    Policy 액션 생성 서브그래프 생성 (병렬 처리 지원)
     """
     # 서브그래프 정의
     subgraph = StateGraph(State)
     
-    # 노드 추가
+    # 새로운 병렬 처리 노드들 추가
     subgraph.add_node("prepare", prepare_policy_actions_generation)
-    subgraph.add_node("select_next", select_next_policy_actions)
-    subgraph.add_node("preprocess", preprocess_policy_actions_generation)
-    subgraph.add_node("generate", generate_policy_actions)
-    subgraph.add_node("postprocess", postprocess_policy_actions_generation)
-    subgraph.add_node("validate", validate_policy_actions_generation)
+    subgraph.add_node("select_batch", select_batch_policy_actions)
+    subgraph.add_node("execute_parallel", execute_parallel_workers)
+    subgraph.add_node("collect_results", collect_and_apply_results)
     subgraph.add_node("complete", complete_processing)
-    subgraph.add_node("es_value_summary_generator", create_es_value_summary_generator_subgraph())
     
-    # 엣지 추가 (라우팅)
+    # 엣지 추가 (새로운 병렬 처리 플로우)
     subgraph.add_conditional_edges(START, resume_from_create_policy_actions, {
         "prepare": "prepare",
-        "select_next": "select_next",
-        "preprocess": "preprocess",
-        "generate": "generate",
-        "postprocess": "postprocess",
-        "validate": "validate",
-        "complete": "complete",
-        "es_value_summary_generator": "es_value_summary_generator"
+        "select_batch": "select_batch",
+        "execute_parallel": "execute_parallel",
+        "collect_results": "collect_results",
+        "complete": "complete"
     })
 
+    # 새로운 병렬 처리 플로우 엣지들
     subgraph.add_conditional_edges(
         "prepare",
         decide_next_step,
         {
-            "select_next": "select_next",
+            "select_batch": "select_batch",
             "complete": "complete"
         }
     )
     
     subgraph.add_conditional_edges(
-        "select_next",
+        "select_batch",
         decide_next_step,
         {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
+            "select_batch": "select_batch",
+            "execute_parallel": "execute_parallel", 
             "complete": "complete"
         }
     )
     
     subgraph.add_conditional_edges(
-        "preprocess",
+        "execute_parallel",
         decide_next_step,
         {
-            "generate": "generate",
+            "collect_results": "collect_results",
             "complete": "complete"
         }
     )
     
     subgraph.add_conditional_edges(
-        "generate",
+        "collect_results",
         decide_next_step,
         {
-            "postprocess": "postprocess",
-            "generate": "generate",
-            "validate": "validate",
-            "es_value_summary_generator": "es_value_summary_generator",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "es_value_summary_generator",
-        decide_next_step,
-        {
-            "generate": "generate",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "postprocess",
-        decide_next_step,
-        {
-            "validate": "validate",
-            "generate": "generate",
-            "complete": "complete"
-        }
-    )
-    
-    subgraph.add_conditional_edges(
-        "validate",
-        decide_next_step,
-        {
-            "select_next": "select_next",
-            "preprocess": "preprocess",
+            "select_batch": "select_batch",
             "complete": "complete"
         }
     )
@@ -615,97 +482,58 @@ def create_policy_actions_by_function_subgraph() -> Callable:
     
     return run_subgraph
 
-
-# 유틸리티 함수: Policy 생성 액션으로 변환
 def _to_policy_creation_actions(policies: List[Dict[str, Any]], 
-                                es_alias_trans_manager: Any, 
+                                es_alias_trans_manager: Any,
                                 es_value: Dict[str, Any],
-                                sourceBoundedContextId: str) -> List[Dict[str, Any]]:
+                                sourceBoundedContextId: str,
+                                created_policy_relations: List[str]) -> List[Dict[str, Any]]:
     """
     AI가 생성한 정책 정의를 새로운 Policy 생성 액션으로 변환합니다.
     - 중복 정책 생성을 방지하는 로직을 포함합니다.
     """
-    actions = []
+    created_actions = []
+    processed_policy_relations = created_policy_relations.copy()
     
-    # 1. 기존 정책과 이벤트 연결 관계 수집
-    existing_policies = {}  # { policy_id: {"inputs": {uuid, ...}, "outputs": {uuid, ...}} }
-    all_elements = es_value.get("elements", {})
-    all_relations = es_value.get("relations", {}).values()
-
-    for element_id, element in all_elements.items():
-        if element and element.get("_type") == "org.uengine.modeling.model.Policy":
-            existing_policies[element_id] = {"inputs": set(), "outputs": set()}
-
-    for relation in all_relations:
-        if not relation:
-            continue
-        
-        source_el = relation.get("sourceElement", {})
-        target_el = relation.get("targetElement", {})
-        
-        source_id = source_el.get("id")
-        target_id = target_el.get("id")
-
-        # 정책 입력: Event -> Policy
-        if target_id in existing_policies and source_el.get("_type") == "org.uengine.modeling.model.Event":
-            existing_policies[target_id]["inputs"].add(source_id)
-
-        # 정책 출력: Policy -> Event
-        if source_id in existing_policies and target_el.get("_type") == "org.uengine.modeling.model.Event":
-            existing_policies[source_id]["outputs"].add(target_id)
-            
-    # 2. 생성된 정책을 순회하며 중복이 아닌 경우 액션 생성
     for policy in policies:
-        from_event_ids_aliases = policy.get("fromEventIds", [])
+        from_event_id_alias = policy.get("fromEventId", "")
         to_event_ids_aliases = policy.get("toEventIds", [])
-
-        if not from_event_ids_aliases or not to_event_ids_aliases:
+        if not from_event_id_alias or not to_event_ids_aliases:
             continue
 
-        # 비교를 위해 별칭을 UUID로 변환
-        from_event_uuids = {es_alias_trans_manager.alias_to_uuid_dic.get(alias) for alias in from_event_ids_aliases}
-        to_event_uuids = {es_alias_trans_manager.alias_to_uuid_dic.get(alias) for alias in to_event_ids_aliases}
-        
-        from_event_uuids.discard(None)
-        to_event_uuids.discard(None)
-
-        if not from_event_uuids or not to_event_uuids:
+        from_event_uuid = es_alias_trans_manager.alias_to_uuid_dic.get(from_event_id_alias)
+        to_event_uuids = [es_alias_trans_manager.alias_to_uuid_dic.get(alias) for alias in to_event_ids_aliases]
+        to_event_uuids = [uuid for uuid in to_event_uuids if uuid]
+        if not from_event_uuid or not to_event_uuids:
             continue
 
-        # 중복 확인
-        is_duplicate = False
-        for existing_policy_data in existing_policies.values():
-            if (existing_policy_data["inputs"] == from_event_uuids and 
-                existing_policy_data["outputs"] == to_event_uuids):
-                is_duplicate = True
-                break
-        
-        if is_duplicate:
+        element = es_value["elements"].get(from_event_uuid)
+        if not element or "aggregate" not in element or "id" not in element["aggregate"]:
+            continue
+        from_aggregate_id = element["aggregate"]["id"]
+
+        filtered_to_event_uuids = []
+        for to_event_uuid in to_event_uuids:
+            element = es_value["elements"].get(to_event_uuid)
+            if not element or "aggregate" not in element or "id" not in element["aggregate"]:
+                continue
+            
+            to_aggregate_id = element["aggregate"]["id"]
+            if not to_aggregate_id or to_aggregate_id == from_aggregate_id:
+                continue
+
+            check_key = "-".join(sorted([from_event_uuid, to_event_uuid]))
+            if check_key in processed_policy_relations:
+                continue
+
+            processed_policy_relations.append(check_key)
+            filtered_to_event_uuids.append(to_event_uuid)
+        if not filtered_to_event_uuids:
             continue
 
-        # from 이벤트들의 애그리거트 ID 집합을 구함
-        from_aggregate_ids = set()
-        for from_uuid in from_event_uuids:
-            element = es_value["elements"].get(from_uuid)
-            if element and "aggregate" in element and "id" in element["aggregate"]:
-                from_aggregate_ids.add(element["aggregate"]["id"])
-
-        # to 이벤트들의 애그리거트 ID 집합을 구함
-        to_aggregate_ids = set()
-        for to_uuid in to_event_uuids:
-            element = es_value["elements"].get(to_uuid)
-            if element and "aggregate" in element and "id" in element["aggregate"]:
-                to_aggregate_ids.add(element["aggregate"]["id"])
-
-        # from 이벤트 애그리거트와 to 이벤트 애그리거트 간에 겹치는 것이 하나라도 있으면 해당 정책은 생성하지 않음
-        if not from_aggregate_ids.isdisjoint(to_aggregate_ids):
-            continue
-
-        # 3. 새로운 Policy 생성 액션 생성
         policy_name = policy.get("name")
         policy_id = f"pol-{CaseConvertUtil.camel_case(policy_name)}"
 
-        actions.append({
+        created_actions.append({
             "objectType": "Policy",
             "type": "create",
             "ids": {
@@ -715,33 +543,14 @@ def _to_policy_creation_actions(policies: List[Dict[str, Any]],
                 "policyName": policy_name,
                 "policyAlias": policy.get("alias", ""),
                 "reason": policy.get("reason", ""),
-                "inputEventIds": list(from_event_uuids),
-                "outputEventIds": list(to_event_uuids),
+                "inputEventIds": [from_event_uuid],
+                "outputEventIds": filtered_to_event_uuids,
                 "refs": policy.get("refs"),
                 "sourceBoundedContextId": sourceBoundedContextId
             }
         })
-        
-        # 동일 배치 내 중복 생성을 막기 위해 새로 추가된 정책도 기존 목록에 추가
-        existing_policies[policy_id] = {"inputs": from_event_uuids, "outputs": to_event_uuids}
 
-    return actions
-
-# 요약 요청 컨텍스트 빌드 함수
-def _build_request_context(current_gen) -> str:
-    """
-    요약 요청 컨텍스트 빌드
-    """
-    bounded_context_name = current_gen.target_bounded_context.get("name", "")
-    bounded_context_display_name = current_gen.target_bounded_context.get("displayName", bounded_context_name)
-    
-    return f"""Task: Creating policies for {bounded_context_display_name} Bounded Context
-    
-Business Context:
-{current_gen.description}
-
-Focus:
-- Events that should trigger commands in different aggregates or bounded contexts
-- Business rules that require automatic reactions to system events
-- Integration points between different parts of the domain
-- Process flows that need automation through policies"""
+    return {
+        "created_actions": created_actions,
+        "processed_policy_relations": processed_policy_relations
+    }

@@ -200,9 +200,7 @@ def execute_parallel_workers(state: State) -> State:
                 try:
                     result_ui = future.result()
                     completed_results.append(result_ui)
-                    
-                    ui_name = original_ui.target_ui_component.get("name", "Unknown")
-                    
+
                 except Exception as e:
                     ui_name = original_ui.target_ui_component.get("name", "Unknown")
                     LogUtil.add_exception_object_log(state, f"[UI_COMPONENTS_SUBGRAPH] Failed to get worker result for UI component '{ui_name}'", e)
@@ -330,8 +328,6 @@ def complete_processing(state: State) -> State:
         
         if failed:
             LogUtil.add_error_log(state, f"[UI_COMPONENTS_SUBGRAPH] UI Components generation process completed with failures. Successfully processed: {completed_count} UI component tasks")
-        else:
-            LogUtil.add_info_log(state, f"[UI_COMPONENTS_SUBGRAPH] UI Components generation process completed successfully. Total processed: {completed_count} UI component tasks")
         
         if not failed:
             # 변수 정리
