@@ -279,7 +279,6 @@ def collect_and_apply_results(state: State) -> State:
             ui.target_ui_component = {}
             ui.ai_request_type = ""
             ui.ai_input_data = {}
-            ui.related_site_map_object = {}
             ui.ui_replace_actions = []
             
             model.completed_generations.append(ui)
@@ -289,7 +288,6 @@ def collect_and_apply_results(state: State) -> State:
             ui.target_ui_component = {}
             ui.ai_request_type = ""
             ui.ai_input_data = {}
-            ui.related_site_map_object = {}
             ui.ui_replace_actions = []
             
             model.completed_generations.append(ui)

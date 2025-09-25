@@ -24,13 +24,12 @@ class CommandProcessor:
         bounded_context_id = action.ids.get("boundedContextId", "")
         aggregate_id = action.ids.get("aggregateId", "")
         command_id = action.ids.get("commandId", EsUtils.get_uuid())
-        referenced_site_map_id = action.args.get("referencedSiteMapId", None)
         refs = action.args.get("refs", [])
         
         # Command 객체 생성
         command_object = CommandProcessor._get_command_base(
             user_info, command_name, command_alias, api_verb, [], is_rest_repository,
-            bounded_context_id, aggregate_id, 0, 0, command_id, refs, referenced_site_map_id
+            bounded_context_id, aggregate_id, 0, 0, command_id, refs
         )
         
         # 출력 이벤트 설정
@@ -75,8 +74,7 @@ class CommandProcessor:
     def _get_command_base(user_info: Dict[str, Any], name: str, display_name: str, 
                          api_verb: str, output_events: List[str], is_rest_repository: bool, 
                          bounded_context_id: str, aggregate_id: str, x: int, y: int, 
-                         element_uuid: str = None, refs: List[List[List[Any]]] = [], 
-                         referenced_site_map_id: str = None) -> Dict[str, Any]:
+                         element_uuid: str = None, refs: List[List[List[Any]]] = []) -> Dict[str, Any]:
         """Command 기본 객체를 생성합니다"""
         element_uuid_to_use = element_uuid or EsUtils.get_uuid()
 
@@ -136,8 +134,7 @@ class CommandProcessor:
             "rotateStatus": False,
             "selected": False,
             "trigger": "@PrePersist",
-            "refs": refs,
-            "referencedSiteMapId": referenced_site_map_id
+            "refs": refs
         }
     
     @staticmethod

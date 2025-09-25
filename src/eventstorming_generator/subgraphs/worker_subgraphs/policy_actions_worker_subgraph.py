@@ -11,7 +11,7 @@ from typing import Optional
 from contextvars import ContextVar
 from langgraph.graph import StateGraph, START
 
-from ...models import PolicyActionGenerationState, State, ESValueSummaryGeneratorModel
+from ...models import PolicyActionGenerationState, State, ESValueSummaryGeneratorModel, CreatePolicyActionsByFunctionOutput
 from ...utils import JsonUtil, LogUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsTraceUtil
 from ...generators import CreatePolicyActionsByFunction
 from ..es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
@@ -54,7 +54,7 @@ def worker_preprocess_policy_actions(state: State) -> State:
     try:
         # 기능 요구사항에 라인 번호 추가
         if current_gen.description:
-            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description, use_xml_tags=True)
+            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
 
         # 현재 ES 값의 복사본 생성
         es_value = {
@@ -175,15 +175,9 @@ def worker_generate_policy_actions(state: State) -> State:
             LogUtil.add_info_log(state, f"[POLICY_WORKER] Prepared ES value summary request for bounded context '{bc_name}' (available tokens: {left_token_count})")
             return state
 
-        # Generator 실행 결과
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        
-        # 결과에서 Policy 추출
-        policies = []
-        if result and "result" in result:
-            policies = result["result"].get("extractedPolicies", [])
-        
-        current_gen.extractedPolicies = policies
+        generator_output: CreatePolicyActionsByFunctionOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+
+        current_gen.extractedPolicies = [policy.model_dump() for policy in generator_output.result.extractedPolicies]
         current_gen.generation_complete = True
 
     except Exception as e:

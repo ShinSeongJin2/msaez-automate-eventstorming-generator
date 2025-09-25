@@ -5,7 +5,7 @@ from ..utils import XmlUtil
 
 class CreateElementNamesByDrafts(XmlBaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
-        self.inputs_types_to_check = ["previousElementNames", "targetBoundedContextName", "aggregateDraft", "description", "siteMap", "requestedEventNames", "requestedCommandNames", "requestedReadModelNames"]
+        self.inputs_types_to_check = ["previousElementNames", "targetBoundedContextName", "aggregateDraft", "description", "requestedEventNames", "requestedCommandNames", "requestedReadModelNames"]
         super().__init__(model_name, CreateElementNamesByDraftsOutput, model_kwargs, client)
 
     def _build_persona_info(self) -> Dict[str, str]:
@@ -20,8 +20,8 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
     <core_instructions>
         <title>Task: Generate Element Names for Aggregates</title>
         <task_description>
-            Based on the provided Bounded Context information, including user requirements, aggregate drafts, and a site map, your task is to comprehensively identify and generate the names for Commands, Events, and Read Models for each aggregate.
-            You should not only use explicitly requested names from the site map and requested name lists but also infer additional necessary elements by deeply analyzing the domain description and context.
+            Based on the provided Bounded Context information, including user requirements, and aggregate drafts, your task is to comprehensively identify and generate the names for Commands, Events, and Read Models for each aggregate.
+            You should not only use explicitly requested names from the requested name lists but also infer additional necessary elements by deeply analyzing the domain description and context.
             The generated names must follow specific conventions and accurately reflect the business logic described.
         </task_description>
         
@@ -31,7 +31,6 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
             <section name="targetBoundedContextName">The name of the Bounded Context you are currently processing.</section>
             <section name="aggregateDraft">A list of draft aggregates within the target Bounded Context. You must generate element names for these aggregates.</section>
             <section name="description">Detailed user requirements, including user stories, DDL, and key events. This is the primary source for identifying necessary elements.</section>
-            <section name="siteMap">A map of the UI, outlining user interactions (Commands) and data displays (Views/Read Models).</section>
             <section name="requestedEventNames">A list of specific event names that must be generated and assigned to an aggregate.</section>
             <section name="requestedCommandNames">A list of specific command names that must be generated and assigned to an aggregate.</section>
             <section name="requestedReadModelNames">A list of specific read model names that must be generated and assigned to an aggregate.</section>
@@ -43,10 +42,6 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
             <rule id="command_format">Commands MUST follow the `Verb + Noun` pattern (e.g., `CreateOrder`, `UpdateCustomerDetails`).</rule>
             <rule id="event_format">Events MUST follow the `Noun + PastParticiple` pattern (e.g., `OrderCreated`, `CustomerDetailsUpdated`).</rule>
             <rule id="readmodel_format">Read Models MUST follow the `Noun + Purpose` pattern (e.g., `OrderSummary`, `CustomerDashboard`).</rule>
-            <rule id="sitemap_mapping">
-                - Site map items with `function_type: "command"` (e.g., `BookCreateCommand`) should be converted to a command name following the convention (e.g., `CreateBook`).
-                - Site map items with `function_type: "view"` (e.g., `BookListView`) should be converted to a read model name.
-            </rule>
         </naming_conventions>
 
         <output_rules>
@@ -81,11 +76,10 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
             </guideline>
             <guideline id="analysis_process">
                 1.  Thoroughly analyze the `description` (user stories, DDL, events) to understand the underlying business processes and identify key actions, state changes, and data requirements.
-                2.  Cross-reference with the `siteMap` to identify user-initiated commands and required data views.
-                3.  For each aggregate in `aggregateDraft`, compile a list of associated commands, events, and read models.
-                4.  Crucially, you must also infer and add element names that are logically necessary based on the domain description, even if they are not explicitly mentioned in the `siteMap` or `requested` lists. For instance, if a process described implies a status change, you should infer a corresponding `Update...Status` command and `...StatusChanged` event.
-                5.  Ensure all `requestedEventNames`, `requestedCommandNames`, and `requestedReadModelNames` are included for the appropriate aggregates.
-                6.  Apply the naming conventions strictly.
+                2.  For each aggregate in `aggregateDraft`, compile a list of associated commands, events, and read models.
+                3.  Crucially, you must also infer and add element names that are logically necessary based on the domain description, even if they are not explicitly mentioned in the `requested` lists. For instance, if a process described implies a status change, you should infer a corresponding `Update...Status` command and `...StatusChanged` event.
+                4.  Ensure all `requestedEventNames`, `requestedCommandNames`, and `requestedReadModelNames` are included for the appropriate aggregates.
+                5.  Apply the naming conventions strictly.
             </guideline>
         </inference_guidelines>
     </core_instructions>
@@ -106,38 +100,6 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
                 }
             ]),
             "description": "# Bounded Context Overview: BookManagement\n\n## Role\nManages the lifecycle of books, including registration, status updates, and disposal. It also handles author information and their relationship with books.\n\n## Key Events\n- BookRegistered\n- BookStatusChanged\n- BookDisposed\n- AuthorRegistered\n- AuthorProfileUpdated",
-            "siteMap": XmlUtil.from_dict([
-                {
-                    "name": "BookListView",
-                    "title": "Book List View",
-                    "description": "Displays a list of books and their current status.",
-                    "function_type": "view"
-                },
-                {
-                    "name": "BookCreateCommand",
-                    "title": "Create Book",
-                    "description": "Registers a new book.",
-                    "function_type": "command"
-                },
-                {
-                    "name": "BookDisposeCommand",
-                    "title": "Dispose Book",
-                    "description": "Disposes of a lost or damaged book.",
-                    "function_type": "command"
-                },
-                {
-                    "name": "AuthorCreateCommand",
-                    "title": "Create Author",
-                    "description": "Registers a new author.",
-                    "function_type": "command"
-                },
-                {
-                    "name": "AuthorDetailView",
-                    "title": "Author Detail View",
-                    "description": "Displays detailed information about an author.",
-                    "function_type": "view"
-                }
-            ]),
             "requestedEventNames": XmlUtil.from_dict([
                 "BookRegistered",
                 "BookStatusChanged",
@@ -145,13 +107,20 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
                 "AuthorRegistered",
                 "AuthorProfileUpdated"
             ]),
-            "requestedCommandNames": XmlUtil.from_dict([]),
-            "requestedReadModelNames": XmlUtil.from_dict([])
+            "requestedCommandNames": XmlUtil.from_dict([
+                "CreateBook", 
+                "DisposeBook",
+                "CreateAuthor"
+            ]),
+            "requestedReadModelNames": XmlUtil.from_dict([
+                "BookList",
+                "AuthorDetail"
+            ])
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "The user requirements for the 'BookManagement' Bounded Context describe managing books and authors. For the 'Book' aggregate, the site map lists 'BookCreateCommand' and 'BookDisposeCommand', which translate to `CreateBook` and `DisposeBook`. The description mentions 'status updates' and the `BookStatusChanged` event is requested, so I have inferred an `UpdateBookStatus` command. The 'BookListView' corresponds to the `BookList` read model. For the 'Author' aggregate, the site map includes 'AuthorCreateCommand' leading to the `CreateAuthor` command, and 'AuthorDetailView' for the `AuthorDetail` read model. The description and requested events imply a need to change author information, so I have inferred an `UpdateAuthorProfile` command which corresponds to the `AuthorProfileUpdated` event. All requested events (`BookRegistered`, `BookStatusChanged`, `BookDisposed`, `AuthorRegistered`, `AuthorProfileUpdated`) have been assigned to their respective aggregates.",
+            "inference": "The user requirements for the 'BookManagement' Bounded Context describe managing books and authors. For the 'Book' aggregate, the `CreateBook` and `DisposeBook` commands are explicitly requested. The description mentions 'status updates' and the `BookStatusChanged` event is requested, so I have inferred an `UpdateBookStatus` command. The `BookList` read model is also requested. For the 'Author' aggregate, the `CreateAuthor` command is requested, and `AuthorDetail` read model is requested. The description and requested events imply a need to change author information, so I have inferred an `UpdateAuthorProfile` command which corresponds to the `AuthorProfileUpdated` event. All requested commands, events, and read models have been assigned to their respective aggregates.",
             "result": {
                 "extracted_element_names": {
                     "Book": {
@@ -193,7 +162,6 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
             "targetBoundedContextName": inputs.get("targetBoundedContextName"),
             "aggregateDraft": XmlUtil.from_dict(inputs.get("aggregateDraft")),
             "description": inputs.get("description"),
-            "siteMap": XmlUtil.from_dict([site_map.model_dump() for site_map in inputs.get("siteMap", [])]),
             "requestedEventNames": XmlUtil.from_dict(inputs.get("requestedEventNames")),
             "requestedCommandNames": XmlUtil.from_dict(inputs.get("requestedCommandNames")),
             "requestedReadModelNames": XmlUtil.from_dict(inputs.get("requestedReadModelNames")),

@@ -169,7 +169,7 @@ CREATE TABLE order_items (
     price DECIMAL(10, 2) NOT NULL
 );
 ```"""
-        description_with_line_numbers = EsTraceUtil.add_line_numbers_to_description(description, use_xml_tags=True)
+        description_with_line_numbers = EsTraceUtil.add_line_numbers_to_description(description)
 
         return {
             "summarized_existing_event_storming_model": XmlUtil.from_dict({

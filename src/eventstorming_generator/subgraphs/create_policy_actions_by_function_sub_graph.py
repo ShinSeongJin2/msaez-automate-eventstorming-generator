@@ -281,7 +281,7 @@ def collect_and_apply_results(state: State) -> State:
                 created_actions = [ActionModel(**action) for action in created_actions_result["created_actions"] if action]
 
                 try:
-                    EsTraceUtil.convert_refs_to_indexes(created_actions, policy_result.original_description, state, "[POLICY_ACTIONS_SUBGRAPH]", use_xml_tags=True)
+                    EsTraceUtil.convert_refs_to_indexes(created_actions, policy_result.original_description, state, "[POLICY_ACTIONS_SUBGRAPH]")
                 except Exception as e:
                     LogUtil.add_exception_object_log(state, f"[POLICY_ACTIONS_SUBGRAPH] Failed to convert source references for '{bc_name}'", e)
 

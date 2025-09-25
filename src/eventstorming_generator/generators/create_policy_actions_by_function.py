@@ -124,7 +124,7 @@ CREATE TABLE reservations (
 - **Interaction**: Reservation Service publishes `ReservationConfirmed` events. The Kitchen Service subscribes to trigger preparation.
 - **Reason**: The kitchen needs to prepare for confirmed reservations.
 """
-        description_with_line_numbers = EsTraceUtil.add_line_numbers_to_description(description, use_xml_tags=True)
+        description_with_line_numbers = EsTraceUtil.add_line_numbers_to_description(description)
         
         return {
             "summarizedESValue": XmlUtil.from_dict({

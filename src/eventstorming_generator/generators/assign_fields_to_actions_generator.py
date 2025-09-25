@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional
+
 from .xml_base import XmlBaseGenerator
 from ..models import AssignFieldsToActionsGeneratorOutput
 from ..utils import EsTraceUtil, XmlUtil
@@ -122,7 +123,7 @@ CREATE TABLE courses (
 );
 ```
 """
-        line_numbered_description = EsTraceUtil.add_line_numbers_to_description(description, use_xml_tags=True)
+        line_numbered_description = EsTraceUtil.add_line_numbers_to_description(description)
         return {
             "functional_requirements": line_numbered_description,
             "existing_model_structure": XmlUtil.from_dict([

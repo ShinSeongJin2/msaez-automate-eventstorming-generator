@@ -3,13 +3,6 @@ from pydantic import Field
 
 from ..base import BaseModelWithItem
 
-class SiteMapInfo(BaseModelWithItem):
-    """Site Map Info"""
-    name: str = Field(default_factory=str)
-    title: str = Field(default_factory=str)
-    description: str = Field(default_factory=str)
-    function_type: str = Field(default_factory=str)
-
 class ExtractedElementNameDetail(BaseModelWithItem):
     """Extracted Element Name Details"""
     command_names: List[str] = Field(default_factory=list)
@@ -22,7 +15,6 @@ class ElementNamesGenerationState(BaseModelWithItem):
     target_bounded_context_name: str = Field(default_factory=str)
     aggregate_draft: List[Dict[str, Any]] = Field(default_factory=list)
     description: str = ""
-    site_map: List[SiteMapInfo] = Field(default_factory=list)
     requested_event_names: List[str] = Field(default_factory=list)
     requested_command_names: List[str] = Field(default_factory=list)
     requested_read_model_names: List[str] = Field(default_factory=list)

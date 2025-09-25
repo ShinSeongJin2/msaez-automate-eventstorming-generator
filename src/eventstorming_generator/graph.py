@@ -168,7 +168,7 @@ def complete(state: State):
     return state
 
 def get_total_global_progress_count(draftOptions: Dict[str, Any]):
-    return len(draftOptions) + 6
+    return len(draftOptions) + 6 + 1
 
 graph_builder = StateGraph(State)
 

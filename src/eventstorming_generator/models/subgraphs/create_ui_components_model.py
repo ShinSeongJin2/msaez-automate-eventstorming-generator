@@ -10,8 +10,8 @@ class CreateUiComponentsGenerationState(BaseModelWithItem):
     target_ui_component: Dict[str, Any] = Field(default_factory=dict)
     ai_request_type: str = ""
     ai_input_data: Dict[str, Any] = Field(default_factory=dict)
-    related_site_map_object: Dict[str, Any] = Field(default_factory=dict)
     ui_replace_actions: List[ActionModel] = Field(default_factory=list)
+    
     retry_count: int = 0
     generation_complete: bool = False
     is_failed: bool = False

@@ -11,7 +11,7 @@ from typing import Optional
 from contextvars import ContextVar
 from langgraph.graph import StateGraph, START
 
-from ...models import CreateUiComponentsGenerationState, ActionModel, State
+from ...models import CreateUiComponentsGenerationState, ActionModel, State, CreateCommandWireFrameOutput, CreateReadModelWireFrameOutput
 from ...utils import JsonUtil, LogUtil
 from ...generators import CreateCommandWireFrame, CreateReadModelWireFrame
 from ...config import Config
@@ -51,14 +51,6 @@ def worker_preprocess_ui_component(state: State) -> State:
     ui_name = current_gen.target_ui_component.get("name", "Unknown")
     
     try:
-        site_map_id_info_dict = {}
-        for _, draft_option in state.inputs.selectedDraftOptions.items():
-            siteMap = draft_option.get("boundedContext", {}).get("requirements", {}).get("siteMap", None)
-            if not siteMap: 
-                continue
-            for site_map_object in siteMap:
-                site_map_id_info_dict[site_map_object.get("id")] = site_map_object
-
         target_ui_component = current_gen.target_ui_component
         
         if target_ui_component.get("command"):
@@ -78,31 +70,12 @@ def worker_preprocess_ui_component(state: State) -> State:
                 api_path = command_element.get("controllerInfo", {}).get("apiPath") or "N/A"
                 api = f"{api_method} {api_path}"
                 
-                referenced_site_map_id = command_element.get("referencedSiteMapId")
-                additional_requirements = ""
-                if referenced_site_map_id and referenced_site_map_id in site_map_id_info_dict:
-                    site_map_object = site_map_id_info_dict[referenced_site_map_id]
-                    current_gen.related_site_map_object = site_map_object
-                    additional_requirements = f"""<request type="site_map_info">
-<guide>This UI is included as part of the given sitemap. Please create the UI with these points in mind.</guide>
-<site_map_info>
-<bounded_context>{site_map_object.get("boundedContext", {})}</bounded_context>
-<title>{site_map_object.get("title")}</title>
-<description>{site_map_object.get("description")}</description>
-</site_map_info>
-</request>
-<request type="user_requirements_for_site_map">
-<guide>The following information details user requirements related to the provided Sitemap. Please proceed with UI generation, appropriately utilizing content related to the UI you intend to create.</guide>
-<user_requirements>{site_map_object.get("uiRequirements")}</user_requirements>
-</request>"""
-                
                 current_gen.ai_request_type = "Command"
                 current_gen.ai_input_data = {
                     "commandName": command_element.get("name"),
                     "commandDisplayName": command_element.get("displayName"),
                     "fields": fields,
-                    "api": api,
-                    "additionalRequirements": additional_requirements
+                    "api": api
                 }
                 
         elif target_ui_component.get("readModel"):
@@ -128,33 +101,13 @@ def worker_preprocess_ui_component(state: State) -> State:
                                 "name": field.get("name"),
                                 "type": field.get("className") or "String"
                             })
-                
-                referenced_site_map_id = read_model_element.get("referencedSiteMapId")
-                additional_requirements = ""
-                if referenced_site_map_id and referenced_site_map_id in site_map_id_info_dict:
-                    site_map_object = site_map_id_info_dict[referenced_site_map_id]
-                    current_gen.related_site_map_object = site_map_object
-                    additional_requirements = f"""<request type="site_map_info">
-<guide>This UI is included as part of the given sitemap. Please create the UI with these points in mind.</guide>
-<site_map_info>
-<bounded_context>{site_map_object.get("boundedContext", {})}</bounded_context>
-<title>{site_map_object.get("title")}</title>
-<description>{site_map_object.get("description")}</description>
-</site_map_info>
-</request>
-<request type="user_requirements_for_site_map">
-<guide>The following information details user requirements related to the provided Sitemap. Please proceed with UI generation, appropriately utilizing content related to the UI you intend to create.</guide>
-<user_requirements>{site_map_object.get("uiRequirements")}</user_requirements>
-</request>
-"""
-                
+
                 current_gen.ai_request_type = "ReadModel"
                 current_gen.ai_input_data = {
                     "viewName": read_model_element.get("name"),
                     "viewDisplayName": read_model_element.get("displayName"),
                     "aggregateFields": aggregate_fields,
-                    "viewQueryParameters": view_query_parameters,
-                    "additionalRequirements": additional_requirements
+                    "viewQueryParameters": view_query_parameters
                 }
         
         else:
@@ -180,11 +133,12 @@ def worker_generate_ui_component(state: State) -> State:
     ui_name = current_gen.target_ui_component.get("name", "Unknown")
     
     try:
-        # 모델명 가져오기
+
         model_name = Config.get_ai_model_light()
         
-        # AI 요청 타입에 따라 적절한 생성기 선택
         generator = None
+        generated_html = ""
+        generated_inference = ""
         if current_gen.ai_request_type == "Command":
             generator = CreateCommandWireFrame(
                 model_name=model_name,
@@ -193,6 +147,10 @@ def worker_generate_ui_component(state: State) -> State:
                     "preferredLanguage": state.inputs.preferedLanguage
                 }
             )
+            generator_output: CreateCommandWireFrameOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+            generated_html = generator_output.result.html
+            generated_inference = generator_output.inference
+
         elif current_gen.ai_request_type == "ReadModel":
             generator = CreateReadModelWireFrame(
                 model_name=model_name,
@@ -201,37 +159,20 @@ def worker_generate_ui_component(state: State) -> State:
                     "preferredLanguage": state.inputs.preferedLanguage
                 }
             )
+            generator_output: CreateReadModelWireFrameOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+            generated_html = generator_output.result.html
+            generated_inference = generator_output.inference
+
         else:
             LogUtil.add_error_log(state, f"[UI_WORKER] Invalid AI request type '{current_gen.ai_request_type}' for UI component '{ui_name}'")
             current_gen.is_failed = True
             return state
         
-        # 생성기 실행
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        
-        # 결과 검증
-        if not result or "result" not in result or not result["result"].get("html"):
-            LogUtil.add_error_log(state, f"[UI_WORKER] No valid HTML result from wireframe generation for UI component '{ui_name}'")
-            current_gen.retry_count += 1
-            return state
-        
-        # HTML 결과 추출
-        generated_html = result["result"]["html"]
 
         action_description = ""
-        if current_gen.related_site_map_object:
-            site_map_title = current_gen.related_site_map_object.get("title", "")
-            if site_map_title:
-                action_description += "- Used SiteMap Title: " + site_map_title + "\n"
-
-            site_map_description = current_gen.related_site_map_object.get("description", "")
-            if site_map_description:
-                action_description += "- Used SiteMap Description: " + site_map_description + "\n"
+        if generated_inference:
+            action_description += "* Inference(When generating the wireframe)\n" + generated_inference + "\n"
         
-        if result["inference"]:
-            action_description += "* Inference(When generating the wireframe)\n" + result["inference"] + "\n"
-        
-        # ActionModel 생성 - UI 업데이트용
         ui_update_action = ActionModel(
             objectType="UI",
             type="update",
@@ -239,7 +180,6 @@ def worker_generate_ui_component(state: State) -> State:
             args={"runTimeTemplateHtml": generated_html, "description": action_description}
         )
         
-        # 생성된 액션 저장
         current_gen.ui_replace_actions = [ui_update_action]
     
     except Exception as e:

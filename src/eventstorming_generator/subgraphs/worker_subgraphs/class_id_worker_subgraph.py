@@ -11,7 +11,7 @@ from typing import Optional
 from contextvars import ContextVar
 from langgraph.graph import StateGraph, START
 
-from ...models import ClassIdGenerationState, ActionModel, State
+from ...models import State, ClassIdGenerationState, ActionModel, CreateAggregateClassIdByDraftsOutput
 from ...utils import JsonUtil, LogUtil, ESValueSummarizeWithFilter, EsAliasTransManager, EsUtils, CaseConvertUtil
 from ...generators import CreateAggregateClassIdByDrafts
 from ...config import Config
@@ -99,12 +99,8 @@ def worker_generate_class_id(state: State) -> State:
             "relations": state.outputs.esValue.relations
         }
         
-        # 모델명 가져오기
-        model_name = Config.get_ai_model_light()
-        
-        # Generator 생성
         generator = CreateAggregateClassIdByDrafts(
-            model_name=model_name,
+            model_name=Config.get_ai_model_light(),
             client={
                 "inputs": {
                     "summarizedESValue": current_gen.summarized_es_value,
@@ -115,24 +111,16 @@ def worker_generate_class_id(state: State) -> State:
             }
         )
 
-        # Generator 실행 결과
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        
-        # 결과에서 액션 추출
-        actions = []
-        if result and "result" in result and "actions" in result["result"]:
-            actions = result["result"]["actions"]
+        generator_output: CreateAggregateClassIdByDraftsOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        actions = [action.model_dump() for action in generator_output.result.actions]
         if len(actions) == 0:
-            LogUtil.add_info_log(state, f"[CLASS_ID_WORKER] No actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
             current_gen.generation_complete = True
             return state
         
-        # 유효한 액션만 필터링
         es_alias_trans_manager = EsAliasTransManager(es_value)
         filtered_actions = _filter_invalid_actions(actions, current_gen.target_references, es_value, es_alias_trans_manager)
         filtered_actions = _filter_bidirectional_actions(filtered_actions, es_value, es_alias_trans_manager)
         if len(filtered_actions) == 0:
-            LogUtil.add_info_log(state, f"[CLASS_ID_WORKER] No valid actions created for class ID generation. References: {', '.join(current_gen.target_references)}")
             current_gen.generation_complete = True
             return state
         
@@ -140,7 +128,6 @@ def worker_generate_class_id(state: State) -> State:
         for action in actionModels:
             action.type = "create"
 
-        # 생성된 액션 저장
         current_gen.created_actions = actionModels
     
     except Exception as e:

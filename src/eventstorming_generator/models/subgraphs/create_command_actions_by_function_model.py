@@ -37,5 +37,3 @@ class CreateCommandActionsByFunctionModel(BaseModelWithItem):
     total_seconds: float = 0.0
     start_time: float = 0.0
     end_time: float = 0.0
-
-    element_name_to_ui_id_dict: Dict[str, str] = Field(default_factory=dict)

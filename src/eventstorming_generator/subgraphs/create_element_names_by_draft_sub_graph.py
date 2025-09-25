@@ -3,7 +3,7 @@ import re
 from typing import Callable
 from langgraph.graph import StateGraph, START
 
-from ..models import State, ElementNamesGenerationState, SiteMapInfo, ExtractedElementNameDetail
+from ..models import State, ElementNamesGenerationState, CreateElementNamesByDraftsOutput
 from ..generators import CreateElementNamesByDrafts
 from ..utils import JsonUtil, LogUtil, JobUtil
 from ..constants import ResumeNodes
@@ -54,17 +54,6 @@ def prepare_element_names_generation(state: State) -> State:
             aggregateDraft = []
             for structure in draft_option.get("structure", []):
                 aggregateDraft.append(structure.get("aggregate", {}))
-            
-            siteMap = draft_option.get("boundedContext", None).get("requirements", None).get("siteMap", None)
-            filteredSiteMap = []
-            if siteMap:
-                for siteInfo in siteMap:
-                    filteredSiteMap.append(SiteMapInfo(
-                        name=siteInfo.get("name", ""),
-                        title=siteInfo.get("title", ""),
-                        description=siteInfo.get("description", ""),
-                        function_type=siteInfo.get("functionType", "")
-                    ))
 
             bounded_context = draft_option.get("boundedContext", {})
             bc_events = bounded_context.get("requirements", {}).get("event", [])
@@ -83,10 +72,9 @@ def prepare_element_names_generation(state: State) -> State:
                 target_bounded_context_name=bc_name,
                 aggregate_draft=aggregateDraft,
                 description=draft_option.get("description", ""),
-                site_map=filteredSiteMap,
                 requested_event_names=event_names,
-                requested_command_names=[],
-                requested_read_model_names=[],
+                requested_command_names=bounded_context.get("requirements", {}).get("commandNames", []),
+                requested_read_model_names=bounded_context.get("requirements", {}).get("readModelNames", []),
                 retry_count=0,
                 generation_complete=False
             )
@@ -166,19 +154,14 @@ def generate_element_names(state: State) -> State:
     
     try:
 
-        # 모델명 가져오기
-        model_name = Config.get_ai_model()
-        
-        # Generator 생성
         generator = CreateElementNamesByDrafts(
-            model_name=model_name,
+            model_name=Config.get_ai_model(),
             client={
                 "inputs": {
                     "previousElementNames": current_gen.previousElementNames,
                     "targetBoundedContextName": current_gen.target_bounded_context_name,
                     "aggregateDraft": current_gen.aggregate_draft,
                     "description": current_gen.description,
-                    "siteMap": current_gen.site_map,
                     "requestedEventNames": current_gen.requested_event_names,
                     "requestedCommandNames": current_gen.requested_command_names,
                     "requestedReadModelNames": current_gen.requested_read_model_names,
@@ -187,22 +170,8 @@ def generate_element_names(state: State) -> State:
             }
         )
     
-        # Generator 실행 결과
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        
-        # 결과에서 Extracted Element Names 추출
-        extracted_element_names = {}
-        if result and "result" in result and result["result"]:
-            extracted_element_names = result["result"].get("extracted_element_names", {})
-            for aggregate_name, extracted_element_name_detail in extracted_element_names.items():
-                extracted_element_names[aggregate_name] = ExtractedElementNameDetail(
-                    command_names=extracted_element_name_detail.get("command_names", []),
-                    event_names=extracted_element_name_detail.get("event_names", []),
-                    read_model_names=extracted_element_name_detail.get("read_model_names", [])
-                )
-        
-        # 생성된 액션 저장
-        current_gen.extracted_element_names = extracted_element_names
+        generator_output:CreateElementNamesByDraftsOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        current_gen.extracted_element_names = generator_output.result.extracted_element_names
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[CREATE_ELEMENT_NAMES_SUBGRAPH] Failed to generate element names for bounded context: '{bc_name}'", e)
@@ -255,7 +224,6 @@ def validate_element_names_generation(state: State) -> State:
             current_gen.target_bounded_context_name = ""
             current_gen.aggregate_draft = []
             current_gen.description = ""
-            current_gen.site_map = []
             current_gen.requested_event_names = []
             current_gen.requested_command_names = []
             current_gen.requested_read_model_names = []

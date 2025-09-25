@@ -2,7 +2,7 @@
 ## 설명
 기존 [MSAEZ](https://github.com/msa-ez/platform)에서 사용하는 유저 시나리오 기반 이벤트 스토밍 생성 프로세스에서 이벤트 스토밍 생성 부분을 LangGraph를 활용하여 백엔드로 자동화시키기 위한 프로젝트입니다.
 
-## 설치 & 실행
+## 기본 설치 및 실행
 1. .env.example 파일을 참조해서 적절한 .env 파일을 생성
 2. 프로젝트 루트 터미널에서 아래 명령어 실행
 ```bash
@@ -11,8 +11,14 @@ uv pip install -U "langgraph-cli[inmem]"
 uv run langgraph dev
 ```
 
-## 단위 테스트
-1. 프로젝트 루트 터미널에서 아래 명령어 실행
+## Pod에서 실행
+- Pod상에서 파이어베이스의 Job을 처리하기 위해서는 main.py를 실행
 ```bash
-uv run python ./src/eventstorming_generator/test.py
+uv run python ./src/eventstorming_generator/main.py
+```
+
+## 단독 실행
+- 일부 로직을 Mock 데이터로 독립적으로 실행하기 위해서 run.py를 실행
+```bash
+uv run python ./src/eventstorming_generator/run.py
 ```

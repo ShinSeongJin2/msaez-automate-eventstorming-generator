@@ -150,11 +150,7 @@ class XmlBaseGenerator(ABC):
         )
         result = structured_model.invoke(messages)
         result = self._post_process_to_structured_output(result)
-
-        if isinstance(result, BaseModelWithItem):
-            return result.model_dump()
-        else:
-            return result
+        return result
 
     def _post_process_to_structured_output(self, structured_output: BaseModelWithItem) -> BaseModelWithItem:
         return structured_output

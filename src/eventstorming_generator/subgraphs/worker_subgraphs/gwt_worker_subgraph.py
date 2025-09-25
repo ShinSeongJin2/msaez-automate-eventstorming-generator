@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from langgraph.graph import StateGraph, START
 
-from ...models import GWTGenerationState, State, ESValueSummaryGeneratorModel
+from ...models import GWTGenerationState, State, ESValueSummaryGeneratorModel, CreateGWTGeneratorByFunctionOutput
 from ...utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil
 from ...generators import CreateGWTGeneratorByFunction
 from ..es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
@@ -157,35 +157,30 @@ def worker_generate_gwt_generation(state: State) -> State:
             LogUtil.add_info_log(state, f"[GWT_WORKER] Token limit exceeded, will request ES summary for command '{current_gen.target_command_id}'")
             return state
         
-        # Generator 실행 결과
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        
-        # 결과에서 GWT 추출 및 적용
-        command_to_replace = {}
-        
-        es_value = {
-            "elements": state.outputs.esValue.elements,
-            "relations": state.outputs.esValue.relations
-        }
-        if result and "result" in result and "gwts" in result["result"]:
-            es_alias_trans_manager = EsAliasTransManager(es_value)
-            gwts = result["result"]["gwts"]
+        generator_output: CreateGWTGeneratorByFunctionOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        gwts = [gwt.model_dump() for gwt in generator_output.result.gwts]
 
-            if gwts and len(gwts) > 0:
-                target_command_id = es_alias_trans_manager.alias_to_uuid_dic.get(
-                    current_gen.target_command_alias, current_gen.target_command_id
-                )
+        command_to_replace = {}
+        if gwts and len(gwts) > 0:
+            es_value = {
+                "elements": state.outputs.esValue.elements,
+                "relations": state.outputs.esValue.relations
+            }
+
+            es_alias_trans_manager = EsAliasTransManager(es_value)
+            target_command_id = es_alias_trans_manager.alias_to_uuid_dic.get(
+                current_gen.target_command_alias, current_gen.target_command_id
+            )
+            
+            if target_command_id and target_command_id in es_value["elements"]:
+                target_command = deepcopy(es_value["elements"][target_command_id])
                 
-                if target_command_id and target_command_id in es_value["elements"]:
-                    target_command = deepcopy(es_value["elements"][target_command_id])
-                    
-                    target_command["description"] = _make_command_description(gwts, result.get("inference", ""))
-                    examples = _get_examples(gwts, es_value)
-                    if examples and len(examples) > 0:
-                        target_command["examples"] = examples
-                        command_to_replace = target_command
+                target_command["description"] = _make_command_description(gwts, generator_output.inference)
+                examples = _get_examples(gwts, es_value)
+                if examples and len(examples) > 0:
+                    target_command["examples"] = examples
+                    command_to_replace = target_command
         
-        # 생성된 GWT 저장
         current_gen.command_to_replace = command_to_replace
     
     except Exception as e:

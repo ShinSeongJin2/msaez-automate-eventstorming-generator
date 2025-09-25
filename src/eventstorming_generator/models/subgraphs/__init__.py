@@ -6,7 +6,7 @@ from .create_policy_actions_by_function_model import CreatePolicyActionsByFuncti
 from .create_gwt_generator_by_function_model import CreateGwtGeneratorByFunctionModel, GWTGenerationState
 from .es_value_summary_generator_model import ESValueSummaryGeneratorModel
 from .create_ui_components_model import CreateUiComponentsModel, CreateUiComponentsGenerationState
-from .create_element_names_by_draft_model import CreateElementNamesByDraftsModel, ElementNamesGenerationState, SiteMapInfo, ExtractedElementNameDetail
+from .create_element_names_by_draft_model import CreateElementNamesByDraftsModel, ElementNamesGenerationState, ExtractedElementNameDetail
 
 class SubgraphsModel(BaseModelWithItem):
     createAggregateByFunctionsModel: CreateAggregateByFunctionsModel = CreateAggregateByFunctionsModel()
@@ -26,7 +26,6 @@ __all__ = [
     "ClassIdGenerationState",
     "CreateElementNamesByDraftsModel",
     "ElementNamesGenerationState",
-    "SiteMapInfo",
     "ExtractedElementNameDetail",
     "CreateCommandActionsByFunctionModel",
     "CommandActionGenerationState",

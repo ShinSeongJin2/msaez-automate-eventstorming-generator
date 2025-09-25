@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
+
 from .xml_base import XmlBaseGenerator
-from ..utils import ESValueSummarizeWithFilter, EsTraceUtil, XmlUtil
+from ..utils import EsTraceUtil, XmlUtil
 from ..models import CreateAggregateActionsByFunctionOutput
 
 class CreateAggregateActionsByFunction(XmlBaseGenerator):
@@ -204,7 +205,7 @@ CREATE TABLE courses (
 - **Target Context**: PaymentService
 - **Reason**: When a student enrolls in a course, the CourseManagement context needs to initiate a payment process synchronously.
 - **Interaction Pattern**: Makes a REST API call to the PaymentService to process the course fee."""
-        line_numbered_description = EsTraceUtil.add_line_numbers_to_description(description, use_xml_tags=True)
+        line_numbered_description = EsTraceUtil.add_line_numbers_to_description(description)
 
         return {
             "bounded_context_to_generate_actions": "CourseManagement",

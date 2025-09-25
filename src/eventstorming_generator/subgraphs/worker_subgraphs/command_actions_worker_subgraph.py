@@ -11,7 +11,7 @@ from typing import Optional, List
 from contextvars import ContextVar
 from langgraph.graph import StateGraph, START
 
-from ...models import CommandActionGenerationState, ActionModel, State, ExtractedElementNameDetail
+from ...models import CommandActionGenerationState, ActionModel, State, CreateCommandActionsByFunctionOutput
 from ...utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil, EsTraceUtil
 from ...generators import CreateCommandActionsByFunction
 from ...config import Config
@@ -53,7 +53,7 @@ def worker_preprocess_command_actions(state: State) -> State:
     
     try:
         if current_gen.description:
-            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description, use_xml_tags=True)
+            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
 
         es_value = {
             "elements": state.outputs.esValue.elements,
@@ -105,12 +105,9 @@ def worker_generate_command_actions(state: State) -> State:
     bc_name = current_gen.target_bounded_context_name
     
     try:
-        # 모델명 가져오기
-        model_name = Config.get_ai_model_light()
         
-        # Generator 초기화 및 실행
         generator = CreateCommandActionsByFunction(
-            model_name=model_name,
+            model_name=Config.get_ai_model_light(),
             client={
                 "inputs": {
                     "summarizedESValue": current_gen.summarized_es_value,
@@ -125,55 +122,22 @@ def worker_generate_command_actions(state: State) -> State:
             }
         )
         
-        # Generator 실행
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output: CreateCommandActionsByFunctionOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result = generator_output.result
         
-        # 생성 결과가 있는지 확인
-        if not result or not result.get("result"):
-            LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_WORKER] No valid result from command actions generation for aggregate '{aggregate_name}'")
-            # 실패 시 재시도 카운트 증가
-            current_gen.retry_count += 1
-            return state
-        
-        # 생성된 액션 추출
-        actions = []
-        result_actions = result["result"]
-        if "commandActions" in result_actions:
-            actions.extend(result_actions["commandActions"])
-        if "eventActions" in result_actions:
-            actions.extend(result_actions["eventActions"])
-        if "readModelActions" in result_actions:
-            actions.extend(result_actions["readModelActions"])
-        
-        # 액션 객체 변환
-        actionModels = [ActionModel(**action) for action in actions]
-        element_name_to_ui_id_dict = state.subgraphs.createCommandActionsByFunctionModel.element_name_to_ui_id_dict
-        for action in actionModels:
-            action.type = "create"
+        actions = generator_result.commandActions + generator_result.eventActions + generator_result.readModelActions
 
-            if action.objectType == "Command":
-                if action.args.get("commandName") in element_name_to_ui_id_dict:
-                    action.args["referencedSiteMapId"] = element_name_to_ui_id_dict[action.args.get("commandName")]
-                    continue
-            
-            elif action.objectType == "ReadModel":
-                if action.args.get("readModelName") in element_name_to_ui_id_dict:
-                    action.args["referencedSiteMapId"] = element_name_to_ui_id_dict[action.args.get("readModelName")]
-                    continue
-        
-        # 필수 이벤트 검증
+        actionModels = [ActionModel(**action.model_dump()) for action in actions]
         if current_gen.extracted_element_names.event_names:
             missing_events = validate_required_events(current_gen.extracted_element_names.event_names, actionModels)
             missing_commands = validate_required_commands(current_gen.extracted_element_names.command_names, actionModels)
             missing_read_models = validate_required_read_models(current_gen.extracted_element_names.read_model_names, actionModels)
             if missing_events or missing_commands or missing_read_models:
-                # 최대 재시도 횟수에 도달하지 않은 경우 재시도
                 if current_gen.retry_count < state.subgraphs.createCommandActionsByFunctionModel.max_retry_count:
                     current_gen.retry_count += 1
                     LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_WORKER] Missing required elements for aggregate '{aggregate_name}': {missing_events} {missing_commands} {missing_read_models}. Retrying generation (attempt {current_gen.retry_count})")
                     return state
                 else:
-                    # 최대 재시도 횟수에 도달한 경우 경고 로그만 출력하고 계속 진행
                     LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_WORKER] Missing required events for aggregate '{aggregate_name}': {missing_events}. Maximum retry count reached, proceeding with current result")
         
         current_gen.created_actions = actionModels
@@ -207,7 +171,7 @@ def worker_postprocess_command_actions(state: State) -> State:
     try:
         # Refs 후처리
         try:
-            EsTraceUtil.convert_refs_to_indexes(current_gen.created_actions, current_gen.original_description, state, "[COMMAND_ACTIONS_WORKER]", use_xml_tags=True)
+            EsTraceUtil.convert_refs_to_indexes(current_gen.created_actions, current_gen.original_description, state, "[COMMAND_ACTIONS_WORKER]")
         except Exception as e:
             LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_WORKER] Failed to convert source references for aggregate '{aggregate_name}'", e)
             # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김

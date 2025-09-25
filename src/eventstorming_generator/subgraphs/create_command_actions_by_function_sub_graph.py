@@ -48,16 +48,6 @@ def prepare_command_actions_generation(state: State) -> State:
             state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
             return state
         
-        # 엘리먼트명 - UI ID 딕셔너리 구성
-        draft_options = state.inputs.selectedDraftOptions
-        for bc_name, draft_option in draft_options.items():
-            siteMap = draft_option.get("boundedContext", None).get("requirements", None).get("siteMap", None)
-            if not siteMap:
-                continue
-
-            for site_map_object in siteMap:
-                state.subgraphs.createCommandActionsByFunctionModel.element_name_to_ui_id_dict[site_map_object.get("name")] = site_map_object.get("id")
-
         # 처리할 애그리거트 목록 초기화
         pending_generations = []
         total_aggregates = 0
@@ -363,7 +353,6 @@ def complete_processing(state: State) -> State:
             subgraph_model.worker_generations = {}
             subgraph_model.current_batch = []
             subgraph_model.parallel_worker_results = []
-            subgraph_model.element_name_to_ui_id_dict = {}
         
         state.subgraphs.createCommandActionsByFunctionModel.end_time = time.time()
         state.subgraphs.createCommandActionsByFunctionModel.total_seconds = state.subgraphs.createCommandActionsByFunctionModel.end_time - state.subgraphs.createCommandActionsByFunctionModel.start_time

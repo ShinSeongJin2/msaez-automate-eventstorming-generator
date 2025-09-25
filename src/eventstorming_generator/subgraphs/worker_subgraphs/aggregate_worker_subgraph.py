@@ -12,7 +12,7 @@ from contextvars import ContextVar
 from copy import deepcopy
 from langgraph.graph import StateGraph, START
 
-from ...models import AggregateGenerationState, ActionModel, State, EsValueModel
+from ...models import AggregateGenerationState, ActionModel, State, CreateAggregateActionsByFunctionOutput, AssignFieldsToActionsGeneratorOutput
 from ...utils import JsonUtil, LogUtil, CaseConvertUtil, EsAliasTransManager, EsTraceUtil
 from ...generators import CreateAggregateActionsByFunction, AssignFieldsToActionsGenerator
 from ...config import Config
@@ -54,7 +54,7 @@ def worker_preprocess_aggregate(state: State) -> State:
 
     try:
         if current_gen.description:
-            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description, use_xml_tags=True)
+            current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
 
         current_gen.draft_option = _remove_class_id_properties(deepcopy(current_gen.draft_option))  
         current_gen.is_preprocess_completed = True
@@ -103,12 +103,9 @@ def worker_generate_aggregate(state: State) -> State:
     aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
 
     try:
-        # 모델명 가져오기
-        model_name = Config.get_ai_model()
 
-        # Generator 생성
         generator = CreateAggregateActionsByFunction(
-            model_name=model_name,
+            model_name=Config.get_ai_model(),
             client={
                 "inputs": {
                     "targetBoundedContext": current_gen.target_bounded_context,
@@ -121,23 +118,15 @@ def worker_generate_aggregate(state: State) -> State:
             }
         )
         
-        # Generator 실행 결과
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output:CreateAggregateActionsByFunctionOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result = generator_output.result
+        actions = generator_result.aggregateActions + generator_result.valueObjectActions + generator_result.enumerationActions
         
-        # 결과에서 액션 추출
-        actions = []
-        if result and "result" in result:
-            aggregate_actions = result["result"].get("aggregateActions", [])
-            value_object_actions = result["result"].get("valueObjectActions", [])
-            enumeration_actions = result["result"].get("enumerationActions", [])
-            
-            actions = aggregate_actions + value_object_actions + enumeration_actions
-        
-        actionModels = [ActionModel(**action) for action in actions]
+        actionModels = [ActionModel(**action.model_dump()) for action in actions]
         for action in actionModels:
             action.type = "create"
             if action.objectType == "Aggregate":
-                action.args["description"] = "* Inference(When generating the aggregate)\n" + result.get("inference", "") + "\n"
+                action.args["description"] = "* Inference(When generating the aggregate)\n" + generator_output.inference + "\n"
 
         current_gen.created_actions = actionModels
     
@@ -215,7 +204,7 @@ def worker_postprocess_aggregate(state: State) -> State:
 
         # Refs 후처리
         try:
-            EsTraceUtil.convert_refs_to_indexes(actions, current_gen.original_description, state, "[AGGREGATE_WORKER]", use_xml_tags=True)
+            EsTraceUtil.convert_refs_to_indexes(actions, current_gen.original_description, state, "[AGGREGATE_WORKER]")
         except Exception as e:
             LogUtil.add_exception_object_log(state, f"[AGGREGATE_WORKER] Failed to convert source references for '{aggregate_name}'", e)
             # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
@@ -242,7 +231,6 @@ def worker_assign_missing_fields(state: State) -> State:
     aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
 
     try:
-        model_name = Config.get_ai_model()
 
         elementAliasToUUIDDic = {}
         elementUUIDToAliasDic = {}
@@ -296,19 +284,14 @@ def worker_assign_missing_fields(state: State) -> State:
         }
 
         generator = AssignFieldsToActionsGenerator(
-            model_name=model_name,
+            model_name=Config.get_ai_model(),
             client={"inputs": generator_inputs, "preferredLanguage": state.inputs.preferedLanguage}
         )
         
-        result = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output: AssignFieldsToActionsGeneratorOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
 
-        if not result or "result" not in result or "assignments" not in result["result"]:
-            LogUtil.add_error_log(state, f"[AGGREGATE_WORKER] AssignFieldsToActionsGenerator failed for '{aggregate_name}'. Retrying.")
-            current_gen.retry_count += 1
-            return state
-
-        assignments = result["result"]["assignments"]
-        invalid_properties = set(result["result"].get("invalid_properties", []))
+        assignments = generator_output.result.assignments
+        invalid_properties = set(generator_output.result.invalid_properties)
 
         # Remove invalid properties from the list of fields to be checked against in the future.
         # This prevents the postprocess <-> assign_missing_fields loop.
@@ -323,7 +306,7 @@ def worker_assign_missing_fields(state: State) -> State:
         assigned_fields = set()
         if assignments:
             for assignment in assignments:
-                parent_id_alias = assignment.get("parent_id")
+                parent_id_alias = assignment.parent_id
                 if not parent_id_alias or parent_id_alias not in elementAliasToUUIDDic:
                     LogUtil.add_warning_log(state, f"[AGGREGATE_WORKER] Could not find parent with alias '{parent_id_alias}' to assign fields.")
                     continue
@@ -331,12 +314,12 @@ def worker_assign_missing_fields(state: State) -> State:
                 parent_id = elementAliasToUUIDDic[parent_id_alias]
                 if parent_id in actions_map:
                     parent_action = actions_map[parent_id]
-                    props_to_add = assignment.get("properties_to_add", [])
+                    props_to_add = assignment.properties_to_add
                     for prop_data in props_to_add:
-                        if prop_data.get("name"):
-                            assigned_fields.add(CaseConvertUtil.camel_case(prop_data.get("name")))
-                            if not any(p.get("name") == prop_data.get("name") for p in parent_action.args["properties"]):
-                                parent_action.args["properties"].append(prop_data)
+                        assigned_fields.add(CaseConvertUtil.camel_case(prop_data.name))
+                        if not any(p.get("name") == prop_data.name for p in parent_action.args["properties"]):
+                            parent_action.args["properties"].append(prop_data.model_dump())
+ 
                 else:
                     LogUtil.add_warning_log(state, f"[AGGREGATE_WORKER] Could not find parent with ID '{parent_id}' to assign fields.")
 
