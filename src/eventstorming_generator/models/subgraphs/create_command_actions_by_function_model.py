@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 from pydantic import Field
 
 from ..base import BaseModelWithItem
