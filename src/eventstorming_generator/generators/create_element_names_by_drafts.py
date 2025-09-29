@@ -47,10 +47,10 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
         <output_rules>
             <title>Output Format</title>
             <rule id="json_structure">
-                The output must be a JSON object with two keys: `inference` and `result`.
-                The `result` key must contain an `extracted_element_names` object.
-                The `extracted_element_names` object will have keys corresponding to each aggregate's name from the `aggregateDraft`.
-                Each aggregate key will map to an object with three keys: `command_names`, `event_names`, and `read_model_names`, which are arrays of strings.
+                The output must be a JSON object with a single key: `extracted_element_names`.
+                The `extracted_element_names` value MUST be a list of objects.
+                Each object in the list MUST represent an aggregate and contain the following keys: `aggregate_name`, `command_names`, `event_names`, and `read_model_names`.
+                The `command_names`, `event_names`, and `read_model_names` values must be arrays of strings.
             </rule>
             <rule id="completeness">You MUST generate names for ALL aggregates listed in the `aggregateDraft`.</rule>
             <rule id="no_comments">Do not add any comments in the output JSON.</rule>
@@ -120,39 +120,38 @@ class CreateElementNamesByDrafts(XmlBaseGenerator):
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "The user requirements for the 'BookManagement' Bounded Context describe managing books and authors. For the 'Book' aggregate, the `CreateBook` and `DisposeBook` commands are explicitly requested. The description mentions 'status updates' and the `BookStatusChanged` event is requested, so I have inferred an `UpdateBookStatus` command. The `BookList` read model is also requested. For the 'Author' aggregate, the `CreateAuthor` command is requested, and `AuthorDetail` read model is requested. The description and requested events imply a need to change author information, so I have inferred an `UpdateAuthorProfile` command which corresponds to the `AuthorProfileUpdated` event. All requested commands, events, and read models have been assigned to their respective aggregates.",
-            "result": {
-                "extracted_element_names": {
-                    "Book": {
-                        "command_names": [
-                            "CreateBook",
-                            "UpdateBookStatus",
-                            "DisposeBook"
-                        ],
-                        "event_names": [
-                            "BookRegistered",
-                            "BookStatusChanged",
-                            "BookDisposed"
-                        ],
-                        "read_model_names": [
-                            "BookList"
-                        ]
-                    },
-                    "Author": {
-                        "command_names": [
-                            "CreateAuthor",
-                            "UpdateAuthorProfile"
-                        ],
-                        "event_names": [
-                            "AuthorRegistered",
-                            "AuthorProfileUpdated"
-                        ],
-                        "read_model_names": [
-                            "AuthorDetail"
-                        ]
-                    }
+            "extracted_element_names": [
+                {
+                    "aggregate_name": "Book",
+                    "command_names": [
+                        "CreateBook",
+                        "UpdateBookStatus",
+                        "DisposeBook"
+                    ],
+                    "event_names": [
+                        "BookRegistered",
+                        "BookStatusChanged",
+                        "BookDisposed"
+                    ],
+                    "read_model_names": [
+                        "BookList"
+                    ]
+                },
+                {
+                    "aggregate_name": "Author",
+                    "command_names": [
+                        "CreateAuthor",
+                        "UpdateAuthorProfile"
+                    ],
+                    "event_names": [
+                        "AuthorRegistered",
+                        "AuthorProfileUpdated"
+                    ],
+                    "read_model_names": [
+                        "AuthorDetail"
+                    ]
                 }
-            }
+            ]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:

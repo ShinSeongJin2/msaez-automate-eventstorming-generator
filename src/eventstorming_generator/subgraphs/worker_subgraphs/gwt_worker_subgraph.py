@@ -7,6 +7,7 @@
 메인 오케스트레이터에서 병렬로 여러 워커를 실행하는 데 사용됩니다.
 """
 
+import json
 from typing import Optional
 from contextvars import ContextVar
 from copy import deepcopy
@@ -157,11 +158,29 @@ def worker_generate_gwt_generation(state: State) -> State:
             LogUtil.add_info_log(state, f"[GWT_WORKER] Token limit exceeded, will request ES summary for command '{current_gen.target_command_id}'")
             return state
         
-        generator_output: CreateGWTGeneratorByFunctionOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        gwts = [gwt.model_dump() for gwt in generator_output.result.gwts]
+        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result: CreateGWTGeneratorByFunctionOutput = generator_output["result"]
+        
+        processed_gwts = []
+        for gwt in generator_result.gwts:
+            processed_gwt = {}
+            processed_gwt["scenario"] = gwt.scenario
+            processed_gwt["given"] = {
+                "aggregateName": gwt.given.aggregateName,
+                "aggregateValues": json.loads(gwt.given.aggregateValues)
+            }
+            processed_gwt["when"] = {
+                "commandName": gwt.when.commandName,
+                "commandValues": json.loads(gwt.when.commandValues)
+            }
+            processed_gwt["then"] = {
+                "eventName": gwt.then.eventName,
+                "eventValues": json.loads(gwt.then.eventValues)
+            }
+            processed_gwts.append(processed_gwt)
 
         command_to_replace = {}
-        if gwts and len(gwts) > 0:
+        if processed_gwts and len(processed_gwts) > 0:
             es_value = {
                 "elements": state.outputs.esValue.elements,
                 "relations": state.outputs.esValue.relations
@@ -175,8 +194,8 @@ def worker_generate_gwt_generation(state: State) -> State:
             if target_command_id and target_command_id in es_value["elements"]:
                 target_command = deepcopy(es_value["elements"][target_command_id])
                 
-                target_command["description"] = _make_command_description(gwts, generator_output.inference)
-                examples = _get_examples(gwts, es_value)
+                target_command["description"] = _make_command_description(processed_gwts)
+                examples = _get_examples(processed_gwts, es_value)
                 if examples and len(examples) > 0:
                     target_command["examples"] = examples
                     command_to_replace = target_command
@@ -502,7 +521,7 @@ def _build_worker_request_context(current_gen: GWTGenerationState) -> str:
     </core_instructions>
 </instruction>"""
 
-def _make_command_description(gwts, inference):
+def _make_command_description(gwts):
     """
     적절한 Command Description을 생성하는 함수
     """
@@ -512,9 +531,6 @@ def _make_command_description(gwts, inference):
         description += "* Generated example scenarios\n"
         for i, gwt in enumerate(gwts):
             description += f"{i+1}. {gwt['scenario']}\n"
-
-    if inference:
-        description += "* Inference(When generating the examples)\n" + inference + "\n"
     
     return description
 

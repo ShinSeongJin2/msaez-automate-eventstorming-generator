@@ -3,7 +3,7 @@ import re
 from typing import Callable
 from langgraph.graph import StateGraph, START
 
-from ..models import State, ElementNamesGenerationState, CreateElementNamesByDraftsOutput
+from ..models import State, ElementNamesGenerationState, CreateElementNamesByDraftsOutput, ExtractedElementNameDetail
 from ..generators import CreateElementNamesByDrafts
 from ..utils import JsonUtil, LogUtil, JobUtil
 from ..constants import ResumeNodes
@@ -170,8 +170,18 @@ def generate_element_names(state: State) -> State:
             }
         )
     
-        generator_output:CreateElementNamesByDraftsOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        current_gen.extracted_element_names = generator_output.result.extracted_element_names
+        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result:CreateElementNamesByDraftsOutput = generator_output["result"]
+
+        converted_extracted_element_names = {}
+        for extracted_element_name in generator_result.extracted_element_names:
+            converted_extracted_element_names[extracted_element_name.aggregate_name] = ExtractedElementNameDetail(
+                command_names=extracted_element_name.command_names,
+                event_names=extracted_element_name.event_names,
+                read_model_names=extracted_element_name.read_model_names
+            )
+            
+        current_gen.extracted_element_names = converted_extracted_element_names
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, f"[CREATE_ELEMENT_NAMES_SUBGRAPH] Failed to generate element names for bounded context: '{bc_name}'", e)

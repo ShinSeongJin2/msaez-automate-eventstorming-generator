@@ -39,7 +39,7 @@ class AssignFieldsToActionsGenerator(XmlBaseGenerator):
             <rule id="6">**Correct Name Usage:** When assigning to an Aggregate, use the exact `aggregateName` from the Existing Model Structure as the `parent_name`. When assigning to a Value Object, use the exact `valueObjectName` from the Existing Model Structure as the `parent_name`.</rule>
             <rule id="7">**Infer Data Types:** For each field you assign, you must also infer its likely Java data type. Use common naming conventions as clues (e.g., `_id` -> `Long`, `_date` / `_at` -> `Date`, `is_` / `has_` -> `Boolean`, `amount` -> `Double`). When in doubt, default to `String`.</rule>
             <rule id="8">**Provide Source References:** For each field you assign, you MUST provide a `refs` that links the field back to the specific text in the "Functional Requirements" it was derived from. The requirements will have line numbers prepended to each line (e.g., "1: ...", "2: ...").</rule>
-            <rule id="9">**Source Reference Format:** The format for `refs` is an array of Position Arrays: `[[[<start_line_number>, "<start_word_combination>"], [<end_line_number>, "<end_word_combination>"]]]`. The "word_combination" should be MINIMAL words (1-2 words) that uniquely identify the position in the line. Use the shortest possible phrase that can locate the specific part of requirements. For example: "course" instead of "create a course", "title" instead of "provide a title".</rule>
+            <rule id="9">**Source Reference Format:** The format for `refs` is an array of Position Arrays: `[[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]`. The "word_combination" should be MINIMAL words (1-2 words) that uniquely identify the position in the line. Use the shortest possible phrase that can locate the specific part of requirements. For example: "course" instead of "create a course", "title" instead of "provide a title".</rule>
             <rule id="10">**Structure Your Output:** Group your assignments by the parent they belong to. For each parent, list all the properties you are adding to it.</rule>
             <rule id="11">**Provide Rationale:** In the `inference` section, explain your assignment decisions and why certain fields were marked as invalid. For example, "The `disposal_date` and `disposal_reason` fields were assigned to the `Book` aggregate because they directly describe the lifecycle events of a book. The field `//검수상태:'대기','승인','반려'` was marked as invalid because it is a comment, not an actual field name."</rule>
         </guidelines>
@@ -57,42 +57,39 @@ class AssignFieldsToActionsGenerator(XmlBaseGenerator):
 
     <output_format>
         <title>JSON Output Format</title>
-        <description>The output must be a JSON object with two keys: "inference" and "result", structured as follows:</description>
+        <description>The output must be a JSON object structured as follows:</description>
         <schema>
 {
-    "inference": "<Detailed reasoning for the assignments and invalid fields>",
-    "result": {{
-        "assignments": [
-            {{
-                "parent_type": "Aggregate",
-                "parent_id": "<EXACT aggregateId from Existing Model Structure>",
-                "parent_name": "<EXACT aggregateName from Existing Model Structure>",
-                "properties_to_add": [
-                    {{
-                        "name": "<missing_field_name_1>",
-                        "type": "<inferred_java_type>",
-                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                    }}
-                ]
-            }},
-            {{
-                "parent_type": "ValueObject",
-                "parent_id": "<EXACT valueObjectId from Existing Model Structure>",
-                "parent_name": "<EXACT valueObjectName from Existing Model Structure>",
-                "properties_to_add": [
-                    {{
-                        "name": "<missing_field_name_2>",
-                        "type": "<inferred_java_type>",
-                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                    }}
-                ]
-            }}
-        ],
-        "invalid_properties": [
-            "<invalid_property_name_1>"
-        ]
-    }}
-}}
+    "assignments": [
+        {
+            "parent_type": "Aggregate",
+            "parent_id": "<EXACT aggregateId from Existing Model Structure>",
+            "parent_name": "<EXACT aggregateName from Existing Model Structure>",
+            "properties_to_add": [
+                {
+                    "name": "<missing_field_name_1>",
+                    "type": "<inferred_java_type>",
+                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                }
+            ]
+        },
+        {
+            "parent_type": "ValueObject",
+            "parent_id": "<EXACT valueObjectId from Existing Model Structure>",
+            "parent_name": "<EXACT valueObjectName from Existing Model Structure>",
+            "properties_to_add": [
+                {
+                    "name": "<missing_field_name_2>",
+                    "type": "<inferred_java_type>",
+                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                }
+            ]
+        }
+    ],
+    "invalid_properties": [
+        "<invalid_property_name_1>"
+    ]
+}
         </schema>
     </output_format>
 </instruction>"""
@@ -165,34 +162,31 @@ CREATE TABLE courses (
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "I have assigned the missing fields to the most logical parents. `description`, `instructor_id`, `created_at`, and `updated_at` are core attributes of the Course itself and belong in the `Course` aggregate. The `price_currency` field is an essential part of the price concept and belongs in the `CoursePrice` value object to ensure the price is always represented as a complete monetary value. The fields starting with '//' are comments and have been marked as invalid properties since they are not actual field names.",
-            "result": {
-                "assignments": [
-                    {
-                        "parent_type": "Aggregate",
-                        "parent_id": "agg-course",
-                        "parent_name": "Course",
-                        "properties_to_add": [
-                            { "name": "description", "type": "String", "refs": [[[7, "provide"], [7, "price"]]] },
-                            { "name": "instructor_id", "type": "Long", "refs": [[[16, "instructor_id"], [16, "NULL"]]] },
-                            { "name": "created_at", "type": "Date", "refs": [[[20, "created_at"], [20, "DEFAULT"]]] },
-                            { "name": "updated_at", "type": "Date", "refs": [[[21, "updated_at"], [21, "DEFAULT"]]] }
-                        ]
-                    },
-                    {
-                        "parent_type": "ValueObject",
-                        "parent_id": "vo-course-price",
-                        "parent_name": "CoursePrice",
-                        "properties_to_add": [
-                            { "name": "price_currency", "type": "String", "refs": [[[19, "price_currency"], [19, "(3)"]]] }
-                        ]
-                    }
-                ],
-                "invalid_properties": [
-                    "//Course status: 'draft', 'published', 'archived'",
-                    "//This is a comment field"
-                ]
-            }
+            "assignments": [
+                {
+                    "parent_type": "Aggregate",
+                    "parent_id": "agg-course",
+                    "parent_name": "Course",
+                    "properties_to_add": [
+                        { "name": "description", "type": "String", "refs": [[["7", "provide"], ["7", "price"]]] },
+                        { "name": "instructor_id", "type": "Long", "refs": [[["16", "instructor_id"], ["16", "NULL"]]] },
+                        { "name": "created_at", "type": "Date", "refs": [[["20", "created_at"], ["20", "DEFAULT"]]] },
+                        { "name": "updated_at", "type": "Date", "refs": [[["21", "updated_at"], ["21", "DEFAULT"]]] }
+                    ]
+                },
+                {
+                    "parent_type": "ValueObject",
+                    "parent_id": "vo-course-price",
+                    "parent_name": "CoursePrice",
+                    "properties_to_add": [
+                        { "name": "price_currency", "type": "String", "refs": [[["19", "price_currency"], ["19", "(3)"]]] }
+                    ]
+                }
+            ],
+            "invalid_properties": [
+                "//Course status: 'draft', 'published', 'archived'",
+                "//This is a comment field"
+            ]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:

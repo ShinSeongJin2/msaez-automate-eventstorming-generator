@@ -58,15 +58,15 @@ class RunUtil:
             entire_prompt = generator.get_entire_prompt()
 
             start_time = time.time()
-            result = generator.generate()
+            generator_output = generator.generate()
             end_time = time.time()
             total_seconds = end_time - start_time
 
-            result = result.model_dump()
-            result["total_seconds"] = total_seconds
+            generator_output["result"] = generator_output["result"].model_dump()
+            generator_output["total_seconds"] = total_seconds
 
             RunUtil.save_dict_to_temp_file(entire_prompt, f"run_input_{generator.__class__.__name__}")
-            RunUtil.save_dict_to_temp_file(result, f"run_output_{generator.__class__.__name__}")
+            RunUtil.save_dict_to_temp_file(generator_output, f"run_output_{generator.__class__.__name__}")
 
         except Exception as e:
             LoggingUtil.exception(f"run_error_{generator.__class__.__name__}", f"실행 실패", e)

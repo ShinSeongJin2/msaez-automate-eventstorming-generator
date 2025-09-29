@@ -39,11 +39,14 @@ class CreateReadModelWireFrame(XmlBaseGenerator):
         <title>Wireframe Generation Task</title>
         <task_description>You need to create an HTML wireframe for a View/Query interface based on the provided information about the read model and any additional requirements.</task_description>
 
+        <inference_guidelines>
+            <title>Inference Guidelines</title>
+            <rule id="reasoning">The reasoning should contain detailed reasoning about the wireframe design decisions, focusing on user experience, component selection, and adherence to requirements. It should not be a reference to general UI/UX strategies.</rule>
+        </inference_guidelines>
+
         <output_rules>
             <title>Output Format</title>
-            <rule id="json_structure">The output must be a JSON object with two keys: "inference" and "result".</rule>
-            <rule id="inference">The "inference" value should contain detailed reasoning about the wireframe design decisions, focusing on user experience, component selection, and adherence to requirements. It should not be a reference to general UI/UX strategies.</rule>
-            <rule id="result">The "result" value must be an object containing an "html" key. The "html" value will be the complete HTML wireframe code.</rule>
+            <rule id="json_structure">The output must be a JSON object with a single "html" key. The "html" value will be the complete HTML wireframe code.</rule>
         </output_rules>
         
         <wireframe_rules>
@@ -100,7 +103,7 @@ class CreateReadModelWireFrame(XmlBaseGenerator):
         
         <language_and_naming>
             <title>Language and Naming Conventions</title>
-            <rule id="language">All user-facing text must be in {self.client.get("preferredLanguage")}.</rule>
+            <rule id="language">All user-facing text must be in user's preferred language.</rule>
             <rule id="labels">Use clear, descriptive labels that reflect business concepts.</rule>
             <rule id="naming">Follow consistent naming patterns for UI elements.</rule>
         </language_and_naming>
@@ -155,14 +158,13 @@ class CreateReadModelWireFrame(XmlBaseGenerator):
                     "type": "Double"
                 }
             ]),
-            "additional_requirements": "Add sorting by price and creation date, include pagination with 10 items per page"
+            "additional_requirements": "Add sorting by price and creation date, include pagination with 10 items per page",
+            "user_preferred_language": "English"
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "Based on the Product Search view requirements, I will design a comprehensive search interface. I'll use common style classes for forms and buttons. For custom styles, I'll use an embedded `<style>` block for reusable classes like table and pagination link styles, and inline styles for single-use container elements to optimize the HTML structure. The search form at the top will contain fields for product name, category, and price range. Results will be in a responsive table with sortable columns for price and date. Pagination for 10 items per page is included. The design uses sample data to demonstrate the complete user experience.",
-            "result": {
-                "html": """<style>
+            "html": """<style>
     .search-form-field { flex: 1; min-width: 150px; }
     .results-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
     .results-table th, .results-table td { padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6; }
@@ -227,7 +229,6 @@ class CreateReadModelWireFrame(XmlBaseGenerator):
         <a href="#" class="pagination-link">Next</a>
     </div>
 </div>"""
-            }
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
@@ -237,14 +238,15 @@ class CreateReadModelWireFrame(XmlBaseGenerator):
             "view_display_name": inputs.get("viewDisplayName", ""),
             "aggregate_fields": XmlUtil.from_dict(inputs.get("aggregateFields", [])),
             "view_query_parameters": XmlUtil.from_dict(inputs.get("viewQueryParameters", [])),
-            "additional_requirements": inputs.get("additionalRequirements", "")
+            "additional_requirements": inputs.get("additionalRequirements", ""),
+            "user_preferred_language": self.client.get("preferredLanguage")
         }
 
     def _post_process_to_structured_output(self, output: CreateReadModelWireFrameOutput) -> CreateReadModelWireFrameOutput:
         try:
             used_common_classes = []
             for class_name in self.COMMON_STYLE_DIC.keys():
-                if class_name in output.result.html:
+                if class_name in output.html:
                     used_common_classes.append(class_name)               
             
             if used_common_classes:
@@ -252,7 +254,7 @@ class CreateReadModelWireFrame(XmlBaseGenerator):
                 for class_name in used_common_classes:
                     style_content += self.COMMON_STYLE_DIC[class_name] + "\n"
                 style_content += "</style>\n"
-                output.result.html = style_content + output.result.html
+                output.html = style_content + output.html
             
             return output
         except (json.JSONDecodeError, AttributeError):

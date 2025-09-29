@@ -61,13 +61,6 @@ class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
                 - The `fromAggregate` and `toAggregate` fields in the `args` must accurately reflect the source and target of the reference. `toAggregate` must be identical to `referenceClass`.
             </description>
         </rule>
-        <rule id="5">
-            <title>Two-Tier Inference Strategy</title>
-            <description>
-                - The root `inference` should explain your overall strategic decisions, such as why a particular unidirectional relationship was chosen over another.
-                - The `inference` within each `action` must justify the specific details of THAT action only, such as the choice of replicated properties and their immutability. Do not repeat the overall strategy here.
-            </description>
-        </rule>
     </guidelines>
     
     <inference_guidelines>
@@ -80,43 +73,39 @@ class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
 
     <output_format>
         <title>JSON Output Format</title>
-        <description>The output must be a JSON object with two keys: "inference" and "result", structured as follows. Provide clean JSON without comments.</description>
+        <description>The output must be a JSON object structured as follows. Provide clean JSON without comments.</description>
         <schema>
 {
-    "inference": "<inference>",
-    "result": {
-        "actions": [
-            {
-                "inference": "<Inference for this action>",
-                "objectType": "ValueObject",
-                "ids": {
-                    "boundedContextId": "<boundedContextId>",
-                    "aggregateId": "<aggregateId>",
-                    "valueObjectId": "<valueObjectId>"
-                },
-                "args": {
-                    "valueObjectName": "<valueObjectName>",
-                    "referenceClass": "<referenceClassName>",
-                    "fromAggregate": "<source_aggregate_name>",
-                    "toAggregate": "<target_aggregate_name>",
-                    "properties": [
-                        {
-                            "name": "<propertyName>",
-                            ["type": "<propertyType>"], // If the type is String, do not specify the type.
-                            ["isKey": true] // Write only if there is a primary key.
-                        }
-                    ]
-                }
-            }
-        ],
-        "omittedReferences": [
-            {
+    "actions": [
+        {
+            "objectType": "ValueObject",
+            "ids": {
+                "boundedContextId": "<boundedContextId>",
+                "aggregateId": "<aggregateId>",
+                "valueObjectId": "<valueObjectId>"
+            },
+            "args": {
+                "valueObjectName": "<valueObjectName>",
+                "referenceClass": "<referenceClassName>",
                 "fromAggregate": "<source_aggregate_name>",
                 "toAggregate": "<target_aggregate_name>",
-                "reason": "<reason_for_omission>"
+                "properties": [
+                    {
+                        "name": "<propertyName>",
+                        ["type": "<propertyType>"], // If the type is String, do not specify the type.
+                        ["isKey": true] // Write only if there is a primary key.
+                    }
+                ]
             }
-        ]
-    }
+        }
+    ],
+    "omittedReferences": [
+        {
+            "fromAggregate": "<source_aggregate_name>",
+            "toAggregate": "<target_aggregate_name>",
+            "reason": "<reason_for_omission>"
+        }
+    ]
 }
         </schema>
     </output_format>
@@ -224,50 +213,43 @@ class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": """- Unidirectional Reference Selection: Among the aggregates in the model (Order and Customer), the decision was made to establish a one-way reference from the Order aggregate to the Customer aggregate. This aligns with the requirement to avoid bidirectional references, ensuring that only one direction is implemented.
-- Domain & Lifecycle Considerations: The Customer aggregate is recognized as the stable, independent entity, making it the ideal candidate for being referenced by the Order. This approach addresses lifecycle dependencies and reflects real-world business invariants.
-- Property Replication: Only properties that are immutable and critical for maintaining referential integrity—namely, the primary key (customerId), alongside near-immutable properties such as gender and birthDate—are replicated. This minimizes redundancy and avoids the pitfalls of copying volatile data.
-Overall, this inference ensures that the generated ValueObject adheres to the design rules, maintains domain clarity, and promotes referential integrity without creating unwanted bidirectional dependencies.""",
-            "result": {
-                "omittedReferences": [
-                    {
-                        "fromAggregate": "Customer",
-                        "toAggregate": "Order",
-                        "reason": "A reference from Customer to Order was omitted to enforce a unidirectional relationship. The Order's lifecycle is dependent on the Customer, making Customer the more stable aggregate that should be referenced."
+            "omittedReferences": [
+                {
+                    "fromAggregate": "Customer",
+                    "toAggregate": "Order",
+                    "reason": "A reference from Customer to Order was omitted to enforce a unidirectional relationship. The Order's lifecycle is dependent on the Customer, making Customer the more stable aggregate that should be referenced."
+                }
+            ],
+            "actions": [
+                {
+                    "objectType": "ValueObject",
+                    "ids": {
+                        "boundedContextId": "bc-order",
+                        "aggregateId": "agg-order",
+                        "valueObjectId": "vo-customer-id"
+                    },
+                    "args": {
+                        "fromAggregate": "Order",
+                        "toAggregate": "Customer",
+                        "valueObjectName": "CustomerReference",
+                        "referenceClass": "Customer",
+                        "properties": [
+                            {
+                                "name": "customerId",
+                                "type": "Long",
+                                "isKey": True
+                            },
+                            {
+                                "name": "gender"
+                            },
+                            {
+                                "name": "birthDate",
+                                "type": "Date"
+                            }
+                        ]
                     }
-                ],
-                "actions": [
-                    {
-                        "inference": "The reference from Order to Customer is created because an Order's lifecycle depends on a Customer. Immutable properties like gender and birthDate are included for data consistency, along with the primary key customerId.",
-                        "objectType": "ValueObject",
-                        "ids": {
-                            "boundedContextId": "bc-order",
-                            "aggregateId": "agg-order",
-                            "valueObjectId": "vo-customer-id"
-                        },
-                        "args": {
-                            "fromAggregate": "Order",
-                            "toAggregate": "Customer",
-                            "valueObjectName": "CustomerReference",
-                            "referenceClass": "Customer",
-                            "properties": [
-                                {
-                                    "name": "customerId",
-                                    "type": "Long",
-                                    "isKey": True
-                                },
-                                {
-                                    "name": "gender"
-                                },
-                                {
-                                    "name": "birthDate",
-                                    "type": "Date"
-                                }
-                            ]
-                        }
-                    }
-                ]
-            }
+                }
+            ]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
@@ -281,12 +263,12 @@ Overall, this inference ensures that the generated ValueObject adheres to the de
     def _post_process_to_structured_output(self, output: CreateAggregateClassIdByDraftsOutput) -> CreateAggregateClassIdByDraftsOutput:
         try:
             filtered_actions = []
-            for action in output.result.actions:
+            for action in output.actions:
                 from_aggregate = action.args.fromAggregate.lower()
                 to_aggregate = action.args.toAggregate.lower()
 
                 is_exist = False
-                for omitted_reference in output.result.omittedReferences:
+                for omitted_reference in output.omittedReferences:
                     omitted_from_aggregate = omitted_reference.fromAggregate.lower()
                     omitted_to_aggregate = omitted_reference.toAggregate.lower()
 
@@ -297,7 +279,7 @@ Overall, this inference ensures that the generated ValueObject adheres to the de
                 if not is_exist:
                     filtered_actions.append(action)
         
-            output.result.actions = filtered_actions
+            output.actions = filtered_actions
             return output
         except (json.JSONDecodeError, AttributeError):
             raise ValueError("Invalid JSON format")

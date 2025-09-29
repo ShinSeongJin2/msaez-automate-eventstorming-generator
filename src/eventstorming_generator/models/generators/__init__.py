@@ -5,7 +5,6 @@ from .create_policy_actions_by_function_output import CreatePolicyActionsByFunct
 from .create_gwt_generator_by_function_output import CreateGWTGeneratorByFunctionOutput
 from .es_value_summary_generator_output import ESValueSummaryGeneratorOutput
 from .assign_fields_to_actions_generator_output import AssignFieldsToActionsGeneratorOutput
-from .assign_ddl_fields_to_aggregate_draft_output import AssignDDLFieldsToAggregateDraftOutput
 from .create_command_wire_frame_output import CreateCommandWireFrameOutput
 from .create_read_model_wire_frame_output import CreateReadModelWireFrameOutput
 from .create_element_names_by_drafts_output import CreateElementNamesByDraftsOutput
@@ -18,7 +17,6 @@ __all__ = [
     "CreateGWTGeneratorByFunctionOutput",
     "ESValueSummaryGeneratorOutput",
     "AssignFieldsToActionsGeneratorOutput",
-    "AssignDDLFieldsToAggregateDraftOutput",
     "CreateCommandWireFrameOutput",
     "CreateReadModelWireFrameOutput",
     "CreateElementNamesByDraftsOutput"

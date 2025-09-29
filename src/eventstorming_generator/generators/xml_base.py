@@ -48,10 +48,23 @@ class XmlBaseGenerator(ABC):
             raise ValueError("model_name and structured_output_class are required")
         
         if model_kwargs is None: model_kwargs = {}
-        if model_kwargs.get("temperature") is None: 
+        if model_kwargs.get("temperature") is None:
             if "gpt-4.1" in model_name:
-                model_kwargs["temperature"] = 0.2
+                model_kwargs["temperature"] = 0.3
+            
+            if "gemini" in model_name:
+                model_kwargs["temperature"] = 0.3
 
+                if model_name.endswith(":thinking"):
+                    model_kwargs["include_thoughts"] = True
+                    model_kwargs["thinking_budget"] = 8192
+                    model_name = model_name.replace(":thinking", "")
+                
+                elif model_name.endswith(":no-thinking"):
+                    model_kwargs["include_thoughts"] = False
+                    model_kwargs["thinking_budget"] = 0
+                    model_name = model_name.replace(":no-thinking", "")
+        
         if client is None: client = {}
         if not client.get("inputs"): client["inputs"] = {}
         if not client.get("preferredLanguage"): client["preferredLanguage"] = "English"
@@ -146,11 +159,23 @@ class XmlBaseGenerator(ABC):
         messages = self._get_messages(bypass_cache, retry_count)
         structured_model = self.model.with_structured_output(
             self.structured_output_class,
-            method="function_calling"
+            method="json_mode"
         )
-        result = structured_model.invoke(messages)
+
+        model_with_json_mode = structured_model.first
+        raw_response = model_with_json_mode.invoke(messages)
+
+        thinking = ""
+        if hasattr(raw_response, 'content') and len(raw_response.content) > 0 and raw_response.content[0]['type'] == 'thinking' and raw_response.content[0]['thinking']:
+            thinking = raw_response.content[0]['thinking']
+
+        parser = structured_model.last
+        result = parser.invoke(raw_response)
         result = self._post_process_to_structured_output(result)
-        return result
+        return {
+            "result": result,
+            "thinking": thinking
+        }
 
     def _post_process_to_structured_output(self, structured_output: BaseModelWithItem) -> BaseModelWithItem:
         return structured_output

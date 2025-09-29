@@ -138,7 +138,6 @@ def worker_generate_ui_component(state: State) -> State:
         
         generator = None
         generated_html = ""
-        generated_inference = ""
         if current_gen.ai_request_type == "Command":
             generator = CreateCommandWireFrame(
                 model_name=model_name,
@@ -147,9 +146,9 @@ def worker_generate_ui_component(state: State) -> State:
                     "preferredLanguage": state.inputs.preferedLanguage
                 }
             )
-            generator_output: CreateCommandWireFrameOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-            generated_html = generator_output.result.html
-            generated_inference = generator_output.inference
+            generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+            generator_result: CreateCommandWireFrameOutput = generator_output["result"]
+            generated_html = generator_result.html
 
         elif current_gen.ai_request_type == "ReadModel":
             generator = CreateReadModelWireFrame(
@@ -159,25 +158,20 @@ def worker_generate_ui_component(state: State) -> State:
                     "preferredLanguage": state.inputs.preferedLanguage
                 }
             )
-            generator_output: CreateReadModelWireFrameOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-            generated_html = generator_output.result.html
-            generated_inference = generator_output.inference
+            generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+            generator_result: CreateReadModelWireFrameOutput = generator_output["result"]
+            generated_html = generator_result.html
 
         else:
             LogUtil.add_error_log(state, f"[UI_WORKER] Invalid AI request type '{current_gen.ai_request_type}' for UI component '{ui_name}'")
             current_gen.is_failed = True
             return state
         
-
-        action_description = ""
-        if generated_inference:
-            action_description += "* Inference(When generating the wireframe)\n" + generated_inference + "\n"
-        
         ui_update_action = ActionModel(
             objectType="UI",
             type="update",
             ids={"uiId": current_gen.target_ui_component["id"]},
-            args={"runTimeTemplateHtml": generated_html, "description": action_description}
+            args={"runTimeTemplateHtml": generated_html}
         )
         
         current_gen.ui_replace_actions = [ui_update_action]

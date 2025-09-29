@@ -118,15 +118,16 @@ def worker_generate_aggregate(state: State) -> State:
             }
         )
         
-        generator_output:CreateAggregateActionsByFunctionOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        generator_result = generator_output.result
+        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result:CreateAggregateActionsByFunctionOutput = generator_output["result"]
         actions = generator_result.aggregateActions + generator_result.valueObjectActions + generator_result.enumerationActions
         
         actionModels = [ActionModel(**action.model_dump()) for action in actions]
         for action in actionModels:
             action.type = "create"
             if action.objectType == "Aggregate":
-                action.args["description"] = "* Inference(When generating the aggregate)\n" + generator_output.inference + "\n"
+                if generator_output["thinking"]:
+                    action.args["description"] = "* Inference(When generating the aggregate)\n" + generator_output["thinking"] + "\n"
 
         current_gen.created_actions = actionModels
     
@@ -288,10 +289,11 @@ def worker_assign_missing_fields(state: State) -> State:
             client={"inputs": generator_inputs, "preferredLanguage": state.inputs.preferedLanguage}
         )
         
-        generator_output: AssignFieldsToActionsGeneratorOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result:AssignFieldsToActionsGeneratorOutput = generator_output["result"]
 
-        assignments = generator_output.result.assignments
-        invalid_properties = set(generator_output.result.invalid_properties)
+        assignments = generator_result.assignments
+        invalid_properties = set(generator_result.invalid_properties)
 
         # Remove invalid properties from the list of fields to be checked against in the future.
         # This prevents the postprocess <-> assign_missing_fields loop.

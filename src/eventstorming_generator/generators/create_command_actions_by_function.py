@@ -16,7 +16,7 @@ class CreateCommandActionsByFunction(XmlBaseGenerator):
         }
 
     def _build_task_instruction_prompt(self) -> str:
-        return f"""<instruction>
+        return """<instruction>
     <core_instructions>
         <title>Action Generation Task</title>
         <task_description>Your task is to generate the specified Commands, Events, and ReadModels for a given Aggregate. You must adhere strictly to the list of elements provided and derive their properties from the functional requirements and existing model structure.</task_description>
@@ -32,7 +32,7 @@ class CreateCommandActionsByFunction(XmlBaseGenerator):
             <title>General Guidelines</title>
             <rule id="1">**Data Types:** Use appropriate Java types (String, Long, Integer, Double, Boolean, Date, List<Type>, etc.). Custom types must be defined as Enumeration or ValueObject within the Aggregate.</rule>
             <rule id="2">**Traceability:** For every created element and its properties, you MUST provide `refs` linking back to the "Functional Requirements". Format is `[[["<start_line_number>", "<start_word_combination>"], ["<end_line_number>", "<end_word_combination>"]]]`. Use minimal word combinations (1-2 words).</rule>
-            <rule id="3">**Naming and Language:** Technical names (classes, properties) must be in English. Display names (aliases) must be in {self.client.get("preferredLanguage")}.</rule>
+            <rule id="3">**Naming and Language:** Technical names (classes, properties) must be in English. Display names (aliases) must be in user's preferred language.</rule>
             <rule id="4">**Naming Patterns:**
                 - Commands: Verb + Noun (e.g., CreateOrder)
                 - Events: Noun + Past Participle (e.g., OrderCreated)
@@ -58,87 +58,84 @@ class CreateCommandActionsByFunction(XmlBaseGenerator):
 
     <output_format>
         <title>JSON Output Format</title>
-        <description>The output must be a JSON object with two keys: "inference" and "result", structured as follows:</description>
+        <description>The output must be a JSON object structured as follows:</description>
         <schema>
-{{
-    "inference": "<inference>",
-    "result": {{
-        "commandActions": [
-            {{
-                "actionName": "<actionName>",
-                "objectType": "Command",
-                "ids": {{
-                    "aggregateId": "<aggregateId>",
-                    "commandId": "<commandId>"
-                }},
-                "args": {{
-                    "commandName": "<commandName>",
-                    "commandAlias": "<commandAlias>",
-                    "api_verb": "<'POST' | 'PUT' | 'DELETE'>",
-                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-                    "properties": [
-                        {{
-                            "name": "<propertyName>",
-                            "type?": "<propertyType>",
-                            "isKey?": "<true|false>",
-                            "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                        }}
-                    ],
-                    "outputEventIds": ["<outputEventId>"],
-                    "actor": "<actorName>"
-                }}
-            }}
-        ],
-        "eventActions": [
-            {{
-                "actionName": "<actionName>",
-                "objectType": "Event",
-                "ids": {{
-                    "aggregateId": "<aggregateId>",
-                    "eventId": "<eventId>"
-                }},
-                "args": {{
-                    "eventName": "<eventName>",
-                    "eventAlias": "<eventAlias>",
-                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-                    "properties": [
-                        {{
-                            "name": "<propertyName>",
-                            "type?": "<propertyType>",
-                            "isKey?": "<true|false>",
-                            "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                        }}
-                    ]
-                }}
-            }}
-        ],
-        "readModelActions": [
-            {{
-                "actionName": "<actionName>",
-                "objectType": "ReadModel",
-                "ids": {{
-                    "aggregateId": "<aggregateId>",
-                    "readModelId": "<readModelId>"
-                }},
-                "args": {{
-                    "readModelName": "<readModelName>",
-                    "readModelAlias": "<readModelAlias>",
-                    "isMultipleResult": "<true|false>",
-                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-                    "queryParameters": [
-                        {{
-                            "name": "<propertyName>",
-                            "type?": "<propertyType>",
-                            "isKey?": "<true|false>",
-                            "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                        }}
-                    ],
-                    "actor": "<actorName>"
-                }}
-            }}
-        ]
-    }}
-}}
+{
+    "commandActions": [
+        {
+            "actionName": "<actionName>",
+            "objectType": "Command",
+            "ids": {
+                "aggregateId": "<aggregateId>",
+                "commandId": "<commandId>"
+            },
+            "args": {
+                "commandName": "<commandName>",
+                "commandAlias": "<commandAlias>",
+                "api_verb": "<'POST' | 'PUT' | 'DELETE'>",
+                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
+                "properties": [
+                    {
+                        "name": "<propertyName>",
+                        "type?": "<propertyType>",
+                        "isKey?": "<true|false>",
+                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                    }
+                ],
+                "outputEventIds": ["<outputEventId>"],
+                "actor": "<actorName>"
+            }
+        }
+    ],
+    "eventActions": [
+        {
+            "actionName": "<actionName>",
+            "objectType": "Event",
+            "ids": {
+                "aggregateId": "<aggregateId>",
+                "eventId": "<eventId>"
+            },
+            "args": {
+                "eventName": "<eventName>",
+                "eventAlias": "<eventAlias>",
+                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
+                "properties": [
+                    {
+                        "name": "<propertyName>",
+                        "type?": "<propertyType>",
+                        "isKey?": "<true|false>",
+                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                    }
+                ]
+            }
+        }
+    ],
+    "readModelActions": [
+        {
+            "actionName": "<actionName>",
+            "objectType": "ReadModel",
+            "ids": {
+                "aggregateId": "<aggregateId>",
+                "readModelId": "<readModelId>"
+            },
+            "args": {
+                "readModelName": "<readModelName>",
+                "readModelAlias": "<readModelAlias>",
+                "isMultipleResult": "<true|false>",
+                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
+                "queryParameters": [
+                    {
+                        "name": "<propertyName>",
+                        "type?": "<propertyType>",
+                        "isKey?": "<true|false>",
+                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                    }
+                ],
+                "actor": "<actorName>"
+            }
+        }
+    ]
+}
         </schema>
     </output_format>
 </instruction>"""
@@ -198,64 +195,62 @@ CREATE TABLE order_items (
             "target_aggregate_name": "Order",
             "command_names_to_generate": ["PlaceOrder"],
             "event_names_to_generate": ["OrderPlaced"],
-            "read_model_names_to_generate": ["OrderDetails"]
+            "read_model_names_to_generate": ["OrderDetails"],
+            "user_preferred_language": "English"
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "Based on the functional requirements, the primary action is `PlaceOrder`. This command should be created in the `Order` aggregate, taking `customerId` and `orderItems` as input. When the order is successfully placed, an `OrderPlaced` event is triggered, containing the full order details. Additionally, a `OrderDetails` read model is required for customers to view their placed order, queried by `orderId`.",
-            "result": {
-                "commandActions": [{
-                    "actionName": "PlaceOrderCommand",
-                    "objectType": "Command",
-                    "ids": { "aggregateId": "agg-order", "commandId": "cmd-place-order" },
-                    "args": {
-                        "commandName": "PlaceOrder",
-                        "commandAlias": "Place Order",
-                        "api_verb": "POST",
-                        "refs": [[[4, "place an"], [4, "my order"]]],
-                        "properties": [
-                            {"name": "customerId", "type": "Long", "refs": [[[11, "customer_id"], [11, "NULL"]]]},
-                            {"name": "items", "type": "List<OrderItem>", "refs": [[[4, "items in"], [4, "cart"]]]}
-                        ],
-                        "outputEventIds": ["evt-order-placed"],
-                        "actor": "Customer"
-                    }
-                }],
-                "eventActions": [{
-                    "actionName": "OrderPlacedEvent",
-                    "objectType": "Event",
-                    "ids": { "aggregateId": "agg-order", "eventId": "evt-order-placed" },
-                    "args": {
-                        "eventName": "OrderPlaced",
-                        "eventAlias": "Order Placed",
-                        "refs": [[[4, "an order"], [4, "confirm"]]],
-                        "properties": [
-                            {"name": "orderId", "type": "Long", "isKey": True, "refs": [[[10, "order_id"], [10, "KEY"]]]},
-                            {"name": "customerId", "type": "Long", "refs": [[[11, "customer_id"], [11, "NULL"]]]},
-                            {"name": "orderDate", "type": "Date", "refs": [[[12, "order_date"], [12, "NULL"]]]},
-                            {"name": "totalPrice", "type": "Double", "refs": [[[13, "total_price"], [13, "NULL"]]]},
-                            {"name": "status", "type": "OrderStatus", "refs": [[[14, "status"], [14, "NULL"]]]},
-                            {"name": "items", "type": "List<OrderItem>", "refs": [[[18, "TABLE"], [18, "items"]]]}
-                        ]
-                    }
-                }],
-                "readModelActions": [{
-                    "actionName": "OrderDetailsReadModel",
-                    "objectType": "ReadModel",
-                    "ids": { "aggregateId": "agg-order", "readModelId": "read-order-details" },
-                    "args": {
-                        "readModelName": "OrderDetails",
-                        "readModelAlias": "View Order Details",
-                        "isMultipleResult": False,
-                        "refs": [[[4, "view"], [4, "details"]]],
-                        "queryParameters": [
-                            {"name": "orderId", "type": "Long", "isKey": True, "refs": [[[10, "order_id"], [10, "KEY"]]]}
-                        ],
-                        "actor": "Customer"
-                    }
-                }]
-            }
+            "commandActions": [{
+                "actionName": "PlaceOrderCommand",
+                "objectType": "Command",
+                "ids": { "aggregateId": "agg-order", "commandId": "cmd-place-order" },
+                "args": {
+                    "commandName": "PlaceOrder",
+                    "commandAlias": "Place Order",
+                    "api_verb": "POST",
+                    "refs": [[["4", "place an"], ["4", "my order"]]],
+                    "properties": [
+                        {"name": "customerId", "type": "Long", "refs": [[["11", "customer_id"], ["11", "NULL"]]]},
+                        {"name": "items", "type": "List<OrderItem>", "refs": [[["4", "items in"], ["4", "cart"]]]}
+                    ],
+                    "outputEventIds": ["evt-order-placed"],
+                    "actor": "Customer"
+                }
+            }],
+            "eventActions": [{
+                "actionName": "OrderPlacedEvent",
+                "objectType": "Event",
+                "ids": { "aggregateId": "agg-order", "eventId": "evt-order-placed" },
+                "args": {
+                    "eventName": "OrderPlaced",
+                    "eventAlias": "Order Placed",
+                    "refs": [[["4", "an order"], ["4", "confirm"]]],
+                    "properties": [
+                        {"name": "orderId", "type": "Long", "isKey": True, "refs": [[["10", "order_id"], ["10", "KEY"]]]},
+                        {"name": "customerId", "type": "Long", "refs": [[["11", "customer_id"], ["11", "NULL"]]]},
+                        {"name": "orderDate", "type": "Date", "refs": [[["12", "order_date"], ["12", "NULL"]]]},
+                        {"name": "totalPrice", "type": "Double", "refs": [[["13", "total_price"], ["13", "NULL"]]]},
+                        {"name": "status", "type": "OrderStatus", "refs": [[["14", "status"], ["14", "NULL"]]]},
+                        {"name": "items", "type": "List<OrderItem>", "refs": [[["18", "TABLE"], ["18", "items"]]]}
+                    ]
+                }
+            }],
+            "readModelActions": [{
+                "actionName": "OrderDetailsReadModel",
+                "objectType": "ReadModel",
+                "ids": { "aggregateId": "agg-order", "readModelId": "read-order-details" },
+                "args": {
+                    "readModelName": "OrderDetails",
+                    "readModelAlias": "View Order Details",
+                    "isMultipleResult": False,
+                    "refs": [[["4", "view"], ["4", "details"]]],
+                    "queryParameters": [
+                        {"name": "orderId", "type": "Long", "isKey": True, "refs": [[["10", "order_id"], ["10", "KEY"]]]}
+                    ],
+                    "actor": "Customer"
+                }
+            }]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
@@ -269,4 +264,5 @@ CREATE TABLE order_items (
             "command_names_to_generate": inputs.get("commandNamesToGenerate"),
             "event_names_to_generate": inputs.get("eventNamesToGenerate"),
             "read_model_names_to_generate": inputs.get("readModelNamesToGenerate"),
+            "user_preferred_language": self.client.get("preferredLanguage")
         }

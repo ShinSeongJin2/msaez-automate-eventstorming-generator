@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, Optional
 from .xml_base import XmlBaseGenerator
 from ..models import CreateGWTGeneratorByFunctionOutput
@@ -16,16 +17,14 @@ class CreateGWTGeneratorByFunction(XmlBaseGenerator):
         }
 
     def _build_task_instruction_prompt(self) -> str:
-        return f"""<instruction>
+        return """<instruction>
     <core_instructions>
         <title>GWT Scenario Generation Task</title>
         <task_description>You need to extract the right GWT (Given, When, Then) cases from the user's requirements and add them to the right commands in the given bounded context.</task_description>
         
         <output_rules>
             <title>Output Format</title>
-            <rule id="json_structure">The output must be a JSON object with two keys: "inference" and "result".</rule>
-            <rule id="inference">The "inference" value should contain detailed reasoning about the GWT design decisions, focusing on domain logic, test coverage, and adherence to requirements. It should not be a reference to general strategies.</rule>
-            <rule id="result">The "result" value must be an object containing a "gwts" key, which is a list of GWT scenarios.</rule>
+            <rule id="json_structure">The output must be a JSON object containing a "gwts" key, which holds an array of GWT scenario objects.</rule>
         </output_rules>
 
         <operational_guidelines>
@@ -55,9 +54,9 @@ class CreateGWTGeneratorByFunction(XmlBaseGenerator):
             <rule id="structure">
                 <title>GWT Structure</title>
                 <item>Scenario: A brief, descriptive text explaining what business scenario or validation rule this GWT test covers (e.g., "Valid stock addition to existing product", "Rejection of negative stock quantity", "Error when adding stock to discontinued product").</item>
-                <item>Given: For update/delete commands, this must reference a valid Aggregate state. For a create command, `aggregateValues` should be empty (`{{}}`) for a successful creation. For a failure scenario (e.g., duplicate key), it should contain only the minimal conflicting properties.</item>
+                <item>Given: For update/delete commands, this must reference a valid Aggregate state. For a create command, `aggregateValues` should be empty (`{}`) for a successful creation. For a failure scenario (e.g., duplicate key), it should contain only the minimal conflicting properties.</item>
                 <item>When: Must match Command properties exactly as defined in the schema.</item>
-                <item>Then: For a positive scenario, this must include all mandatory Event properties with expected outcomes. For a negative scenario, `eventValues` should contain an `error` key with a descriptive error code string (e.g., `{{"error": "PRODUCT_IS_DISCONTINUED"}}`).</item>
+                <item>Then: For a positive scenario, this must include all mandatory Event properties with expected outcomes. For a negative scenario, `eventValues` should contain an `error` key with a descriptive error code string (e.g., `{"error": "PRODUCT_IS_DISCONTINUED"}`).</item>
             </rule>
             <rule id="quality">
                 <title>Quality Guidelines</title>
@@ -321,88 +320,117 @@ CREATE TABLE categories (
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": """The generated output scenarios are based on a detailed analysis of the provided aggregate, command, and event definitions within the current bounded context. For 'cmd-addStock', the inference emphasizes that the 'Product' aggregate starts with specific attributes (e.g., productId, name, initial quantity, and status) and reflects a successful stock update when the 'AddStock' command is executed, resulting in a 'StockAdded' event with an updated total quantity. This systematic approach ensures that the command's GWT scenario correctly captures the intended business logic and the underlying domain constraints, providing robust and comprehensive test coverage.""",
-            "result": {
-                "gwts": [
-                    {
-                        "scenario": "Valid stock addition to existing product",
-                        "given": {
-                            "aggregateName": "Product",
-                            "aggregateValues": {
-                                "productId": "PROD-001",
-                                "name": "High-Performance Gaming Mouse",
-                                "quantity": 100,
-                                "status": "AVAILABLE"
-                            }
-                        },
-                        "when": {
-                            "commandName": "AddStock",
-                            "commandValues": {
-                                "productId": "PROD-001",
-                                "quantity": 50
-                            }
-                        },
-                        "then": {
-                            "eventName": "StockAdded",
-                            "eventValues": {
-                                "productId": "PROD-001",
-                                "quantity": 50,
-                                "newTotalQuantity": 150
-                            }
-                        }
+            "gwts": [
+                {
+                    "scenario": "Valid stock addition to existing product",
+                    "given": {
+                        "aggregateName": "Product",
+                        "aggregateValues": json.dumps({
+                            "productId": "PROD-001",
+                            "name": "High-Performance Gaming Mouse",
+                            "quantity": 100,
+                            "status": "AVAILABLE"
+                        })
                     },
-                    {
-                        "scenario": "Rejection of negative stock quantity",
-                        "given": {
-                            "aggregateName": "Product",
-                            "aggregateValues": {
-                                "productId": "PROD-001",
-                                "name": "High-Performance Gaming Mouse",
-                                "quantity": 100,
-                                "status": "AVAILABLE"
-                            }
-                        },
-                        "when": {
-                            "commandName": "AddStock",
-                            "commandValues": {
-                                "productId": "PROD-001",
-                                "quantity": -10
-                            }
-                        },
-                        "then": {
-                            "eventName": "StockAdded",
-                            "eventValues": {
-                                "error": "INVALID_STOCK_QUANTITY"
-                            }
-                        }
+                    "when": {
+                        "commandName": "AddStock",
+                        "commandValues": json.dumps({
+                            "productId": "PROD-001",
+                            "quantity": 50
+                        })
                     },
-                    {
-                        "scenario": "Error when adding stock to discontinued product",
-                        "given": {
-                            "aggregateName": "Product",
-                            "aggregateValues": {
-                                "productId": "PROD-002",
-                                "name": "Vintage Mechanical Keyboard",
-                                "quantity": 15,
-                                "status": "DISCONTINUED"
-                            }
-                        },
-                        "when": {
-                            "commandName": "AddStock",
-                            "commandValues": {
-                                "productId": "PROD-002",
-                                "quantity": 50
-                            }
-                        },
-                        "then": {
-                            "eventName": "StockAdded",
-                            "eventValues": {
-                                "error": "PRODUCT_IS_DISCONTINUED"
-                            }
-                        }
+                    "then": {
+                        "eventName": "StockAdded",
+                        "eventValues": json.dumps({
+                            "productId": "PROD-001",
+                            "quantity": 50,
+                            "newTotalQuantity": 150
+                        })
                     }
-                ]
-            }
+                },
+                {
+                    "scenario": "Rejection of negative stock quantity",
+                    "given": {
+                        "aggregateName": "Product",
+                        "aggregateValues": json.dumps({
+                            "productId": "PROD-001",
+                            "name": "High-Performance Gaming Mouse",
+                            "quantity": 100,
+                            "status": "AVAILABLE"
+                        })
+                    },
+                    "when": {
+                        "commandName": "AddStock",
+                        "commandValues": json.dumps({
+                            "productId": "PROD-001",
+                            "quantity": -10
+                        })
+                    },
+                    "then": {
+                        "eventName": "StockAdded",
+                        "eventValues": json.dumps({
+                            "error": "INVALID_STOCK_QUANTITY"
+                        })
+                    }
+                },
+                {
+                    "scenario": "Error when adding stock to discontinued product",
+                    "given": {
+                        "aggregateName": "Product",
+                        "aggregateValues": json.dumps({
+                            "productId": "PROD-002",
+                            "name": "Vintage Mechanical Keyboard",
+                            "quantity": 15,
+                            "status": "DISCONTINUED"
+                        })
+                    },
+                    "when": {
+                        "commandName": "AddStock",
+                        "commandValues": json.dumps({
+                            "productId": "PROD-002",
+                            "quantity": 50
+                        })
+                    },
+                    "then": {
+                        "eventName": "StockAdded",
+                        "eventValues": json.dumps({
+                            "error": "PRODUCT_IS_DISCONTINUED"
+                        })
+                    }
+                },
+                {
+                    "scenario": "Successfully add stock to a product with a nested category object",
+                    "given": {
+                        "aggregateName": "Product",
+                        "aggregateValues": json.dumps({
+                            "productId": "PROD-003",
+                            "name": "Ergonomic Office Chair",
+                            "quantity": 50,
+                            "status": "AVAILABLE",
+                            "category": {
+                                "categoryId": "CAT-FURNITURE",
+                                "name": "Furniture",
+                                "description": "Office and home furniture"
+                            }
+                        })
+                    },
+                    "when": {
+                        "commandName": "AddStock",
+                        "commandValues": json.dumps({
+                            "productId": "PROD-003",
+                            "quantity": 25
+                        })
+                    },
+                    "then": {
+                        "eventName": "StockAdded",
+                        "eventValues": json.dumps({
+                            "productId": "PROD-003",
+                            "quantity": 25,
+                            "newTotalQuantity": 75
+                        })
+                    }
+                }
+            ]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:

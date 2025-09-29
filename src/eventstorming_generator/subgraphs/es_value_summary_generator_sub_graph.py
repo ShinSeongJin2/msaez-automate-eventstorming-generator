@@ -108,8 +108,9 @@ def generate_es_value_summary(state: State) -> State:
             }
         )
         
-        generator_output: ESValueSummaryGeneratorOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        current_gen.sorted_element_ids = generator_output.result.sortedElementIds
+        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result: ESValueSummaryGeneratorOutput = generator_output["result"]
+        current_gen.sorted_element_ids = generator_result.sortedElementIds
     
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[ES_SUMMARY_SUBGRAPH] Failed during ES value summary generation", e)

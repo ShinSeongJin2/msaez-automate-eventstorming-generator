@@ -22,8 +22,7 @@ class ESValueSummaryGenerator(XmlBaseGenerator):
         
         <output_rules>
             <title>Output Format</title>
-            <rule id="json_structure">The output must be a JSON object with a "result" key.</rule>
-            <rule id="result">The "result" value must contain a "sortedElementIds" key, which is an array of the sorted element IDs.</rule>
+            <rule id="json_structure">The output must be a JSON object with a "sortedElementIds" key, which is an array of the sorted element IDs.</rule>
             <rule id="no_comments">Do not write comments in the output JSON object.</rule>
         </output_rules>
 
@@ -79,30 +78,28 @@ class ESValueSummaryGenerator(XmlBaseGenerator):
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "result": {
-                "sortedElementIds": [
-                    "bc-orderManagement",
-                    "agg-order",
-                    "cmd-cancelOrder",
-                    "evt-orderCanceled",
-                    "act-customer",
-                    "act-admin",
-                    "enum-orderStatus",
-                    "rm-orderHistory",
-                    "cmd-createOrder",
-                    "evt-orderCreated",
-                    "vo-money",
-                    "bc-productCatalog",
-                    "agg-product",
-                    "cmd-updateProduct",
-                    "evt-productUpdated",
-                    "rm-productInventory",
-                    "enum-productCategory",
-                    "bc-userManagement",
-                    "agg-user",
-                    "vo-address"
-                ]
-            }
+            "sortedElementIds": [
+                "bc-orderManagement",
+                "agg-order",
+                "cmd-cancelOrder",
+                "evt-orderCanceled",
+                "act-customer",
+                "act-admin",
+                "enum-orderStatus",
+                "rm-orderHistory",
+                "cmd-createOrder",
+                "evt-orderCreated",
+                "vo-money",
+                "bc-productCatalog",
+                "agg-product",
+                "cmd-updateProduct",
+                "evt-productUpdated",
+                "rm-productInventory",
+                "enum-productCategory",
+                "bc-userManagement",
+                "agg-user",
+                "vo-address"
+            ]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:

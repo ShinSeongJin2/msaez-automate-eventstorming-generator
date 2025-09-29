@@ -122,8 +122,8 @@ def worker_generate_command_actions(state: State) -> State:
             }
         )
         
-        generator_output: CreateCommandActionsByFunctionOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        generator_result = generator_output.result
+        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result: CreateCommandActionsByFunctionOutput = generator_output["result"]
         
         actions = generator_result.commandActions + generator_result.eventActions + generator_result.readModelActions
 

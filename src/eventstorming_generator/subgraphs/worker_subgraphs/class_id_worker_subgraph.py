@@ -111,8 +111,9 @@ def worker_generate_class_id(state: State) -> State:
             }
         )
 
-        generator_output: CreateAggregateClassIdByDraftsOutput = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
-        actions = [action.model_dump() for action in generator_output.result.actions]
+        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_result: CreateAggregateClassIdByDraftsOutput = generator_output["result"]
+        actions = [action.model_dump() for action in generator_result.actions]
         if len(actions) == 0:
             current_gen.generation_complete = True
             return state

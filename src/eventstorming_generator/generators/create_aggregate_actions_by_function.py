@@ -21,6 +21,7 @@ class CreateAggregateActionsByFunction(XmlBaseGenerator):
     <core_instructions>
         <title>Action Generation Task</title>
         <task_description>Based on the provided functional requirements and suggested structure, your task is to write actions to create new elements (Aggregates, ValueObjects, Enumerations) within a specified Bounded Context.</task_description>
+        <meta_rule name="Priority of Additional Requirements">If an `additional_requirements` input is provided, its rules MUST be followed strictly, even if they seem to conflict with other guidelines. The instructions in `additional_requirements` take the highest precedence.</meta_rule>
 
         <guidelines>
             <title>Guidelines</title>
@@ -50,7 +51,7 @@ class CreateAggregateActionsByFunction(XmlBaseGenerator):
 
             <category name="Traceability Rules">
                 <rule id="trace-1">For every created element (Aggregate, ValueObject, Enumeration) and each of their properties, you MUST provide `refs`.</rule>
-                <rule id="trace-2">The `refs` must link to the "Functional Requirements" using the format: `[[[(start_line_number), "(start_word_combination)"], [(end_line_number), "(end_word_combination)"]]]`.</rule>
+                <rule id="trace-2">The `refs` must link to the "Functional Requirements" using the format: `[[["(start_line_number)", "(start_word_combination)"], ["(end_line_number)", "(end_word_combination)"]]]`.</rule>
                 <rule id="trace-3">The "word_combination" must be MINIMAL (1-2 words) to uniquely identify the position.</rule>
             </category>
 
@@ -97,69 +98,66 @@ class CreateAggregateActionsByFunction(XmlBaseGenerator):
     
     <output_format>
         <title>JSON Output Format</title>
-        <description>The output must be a JSON object with two keys: "inference" and "result", structured as follows:</description>
+        <description>The output must be a JSON object structured as follows:</description>
         <schema>
 {
-    "inference": "<inference>",
-    "result": {
-        "aggregateActions": [
-            {
-                "actionName": "<actionName>",
-                "objectType": "Aggregate",
-                "ids": { "aggregateId": "<aggregateId>" },
-                "args": {
-                    "aggregateName": "<aggregateName>",
-                    "aggregateAlias": "<aggregateAlias>",
-                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-                    "properties": [
-                        {
-                            "name": "<propertyName>",
-                            "type": "<propertyType>",
-                            "isKey": true,
-                            "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                        }
-                    ]
-                }
+    "aggregateActions": [
+        {
+            "actionName": "<actionName>",
+            "objectType": "Aggregate",
+            "ids": { "aggregateId": "<aggregateId>" },
+            "args": {
+                "aggregateName": "<aggregateName>",
+                "aggregateAlias": "<aggregateAlias>",
+                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
+                "properties": [
+                    {
+                        "name": "<propertyName>",
+                        "type": "<propertyType>",
+                        "isKey": true,
+                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                    }
+                ]
             }
-        ],
-        "valueObjectActions": [
-            {
-                "actionName": "<actionName>",
-                "objectType": "ValueObject",
-                "ids": { "aggregateId": "<aggregateId>", "valueObjectId": "<valueObjectId>" },
-                "args": {
-                    "valueObjectName": "<valueObjectName>",
-                    "valueObjectAlias": "<valueObjectAlias>",
-                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-                    "properties": [
-                        {
-                            "name": "<propertyName>",
-                            "type": "<propertyType>",
-                            "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                        }
-                    ]
-                }
+        }
+    ],
+    "valueObjectActions": [
+        {
+            "actionName": "<actionName>",
+            "objectType": "ValueObject",
+            "ids": { "aggregateId": "<aggregateId>", "valueObjectId": "<valueObjectId>" },
+            "args": {
+                "valueObjectName": "<valueObjectName>",
+                "valueObjectAlias": "<valueObjectAlias>",
+                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
+                "properties": [
+                    {
+                        "name": "<propertyName>",
+                        "type": "<propertyType>",
+                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                    }
+                ]
             }
-        ],
-        "enumerationActions": [
-            {
-                "actionName": "<actionName>",
-                "objectType": "Enumeration",
-                "ids": { "aggregateId": "<aggregateId>", "enumerationId": "<enumerationId>" },
-                "args": {
-                    "enumerationName": "<enumerationName>",
-                    "enumerationAlias": "<enumerationAlias>",
-                    "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
-                    "properties": [
-                        {
-                            "name": "<propertyName>",
-                            "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-                        }
-                    ]
-                }
+        }
+    ],
+    "enumerationActions": [
+        {
+            "actionName": "<actionName>",
+            "objectType": "Enumeration",
+            "ids": { "aggregateId": "<aggregateId>", "enumerationId": "<enumerationId>" },
+            "args": {
+                "enumerationName": "<enumerationName>",
+                "enumerationAlias": "<enumerationAlias>",
+                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]],
+                "properties": [
+                    {
+                        "name": "<propertyName>",
+                        "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+                    }
+                ]
             }
-        ]
-    }
+        }
+    ]
 }
         </schema>
     </output_format>
@@ -241,72 +239,69 @@ CREATE TABLE courses (
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "The Course aggregate is designed to manage educational content, encapsulating its core attributes and lifecycle. A `CourseStatus` enumeration is introduced to manage the state (Draft, Published, Archived), and a `CoursePrice` value object is created to handle monetary values consistently. This structure directly supports the functional requirements for creating, pricing, and managing online courses.",
-            "result": {
-                "aggregateActions": [
-                    {
-                        "actionName": "CreateCourseAggregate",
-                        "objectType": "Aggregate",
-                        "ids": {
-                            "aggregateId": "agg-course"
-                        },
-                        "args": {
-                            "aggregateName": "Course",
-                            "aggregateAlias": "Online Course",
-                            "refs": [[[4, "lifecycle"], [4, "course"]]],
-                            "properties": [
-                                { "name": "courseId", "type": "Long", "isKey": True, "refs": [[[20, "course_id"], [20, "KEY"]]] },
-                                { "name": "title", "refs": [[[7, "provide"], [7, "title"]]] },
-                                { "name": "description", "type": "String", "refs": [[[7, "title"], [7, "price"]]] },
-                                { "name": "instructorId", "type": "Long", "refs": [[[23, "instructor_id"], [23, "NULL"]]] },
-                                { "name": "price", "type": "CoursePrice", "refs": [[[7, "description"], [7, "price"]]] },
-                                { "name": "status", "type": "CourseStatus", "refs": [[[4, "status"], [4, "changes"]]] },
-                                { "name": "createdAt", "type": "Date", "refs": [[[27, "created_at"], [27, "DEFAULT"]]] },
-                                { "name": "updatedAt", "type": "Date", "refs": [[[28, "updated_at"], [28, "DEFAULT"]]] }
-                            ]
-                        }
+            "aggregateActions": [
+                {
+                    "actionName": "CreateCourseAggregate",
+                    "objectType": "Aggregate",
+                    "ids": {
+                        "aggregateId": "agg-course"
+                    },
+                    "args": {
+                        "aggregateName": "Course",
+                        "aggregateAlias": "Online Course",
+                        "refs": [[["4", "lifecycle"], ["4", "course"]]],
+                        "properties": [
+                            { "name": "courseId", "type": "Long", "isKey": True, "refs": [[["20", "course_id"], ["20", "KEY"]]] },
+                            { "name": "title", "refs": [[["7", "provide"], ["7", "title"]]] },
+                            { "name": "description", "type": "String", "refs": [[["7", "title"], ["7", "price"]]] },
+                            { "name": "instructorId", "type": "Long", "refs": [[["23", "instructor_id"], ["23", "NULL"]]] },
+                            { "name": "price", "type": "CoursePrice", "refs": [[["7", "description"], ["7", "price"]]] },
+                            { "name": "status", "type": "CourseStatus", "refs": [[["4", "status"], ["4", "changes"]]] },
+                            { "name": "createdAt", "type": "Date", "refs": [[["27", "created_at"], ["27", "DEFAULT"]]] },
+                            { "name": "updatedAt", "type": "Date", "refs": [[["28", "updated_at"], ["28", "DEFAULT"]]] }
+                        ]
                     }
-                ],
-                "valueObjectActions": [
-                    {
-                        "actionName": "CreateCoursePriceVO",
-                        "objectType": "ValueObject",
-                        "ids": {
-                            "aggregateId": "agg-course",
-                            "valueObjectId": "vo-course-price"
-                        },
-                        "args": {
-                            "valueObjectName": "CoursePrice",
-                            "valueObjectAlias": "Course Price",
-                            "refs": [[[7, "price"], [7, "price"]]],
-                            "properties": [
-                                { "name": "amount", "type": "Double", "refs": [[[25, "price_amount"], [25, "(10, 2)"]]] },
-                                { "name": "currency", "refs": [[[26, "price_currency"], [26, "(3)"]]] }
-                            ]
-                        }
+                }
+            ],
+            "valueObjectActions": [
+                {
+                    "actionName": "CreateCoursePriceVO",
+                    "objectType": "ValueObject",
+                    "ids": {
+                        "aggregateId": "agg-course",
+                        "valueObjectId": "vo-course-price"
+                    },
+                    "args": {
+                        "valueObjectName": "CoursePrice",
+                        "valueObjectAlias": "Course Price",
+                        "refs": [[["7", "price"], ["7", "price"]]],
+                        "properties": [
+                            { "name": "amount", "type": "Double", "refs": [[["25", "price_amount"], ["25", "(10, 2)"]]] },
+                            { "name": "currency", "refs": [[["26", "price_currency"], ["26", "(3)"]]] }
+                        ]
                     }
-                ],
-                "enumerationActions": [
-                    {
-                        "actionName": "CreateCourseStatusEnum",
-                        "objectType": "Enumeration",
-                        "ids": {
-                            "aggregateId": "agg-course",
-                            "enumerationId": "enum-course-status"
-                        },
-                        "args": {
-                            "enumerationName": "CourseStatus",
-                            "enumerationAlias": "Course Status",
-                            "refs": [[[4, "status"], [4, "status"]]],
-                            "properties": [
-                                { "name": "DRAFT", "refs": [[[7, "Draft"], [7, "state"]]] },
-                                { "name": "PUBLISHED", "refs": [[[7, "Publish"], [7, "course"]]] },
-                                { "name": "ARCHIVED", "refs": [[[7, "Archive"], [7, "it"]]] }
-                            ]
-                        }
+                }
+            ],
+            "enumerationActions": [
+                {
+                    "actionName": "CreateCourseStatusEnum",
+                    "objectType": "Enumeration",
+                    "ids": {
+                        "aggregateId": "agg-course",
+                        "enumerationId": "enum-course-status"
+                    },
+                    "args": {
+                        "enumerationName": "CourseStatus",
+                        "enumerationAlias": "Course Status",
+                        "refs": [[["4", "status"], ["4", "status"]]],
+                        "properties": [
+                            { "name": "DRAFT", "refs": [[["7", "Draft"], ["7", "state"]]] },
+                            { "name": "PUBLISHED", "refs": [[["7", "Publish"], ["7", "course"]]] },
+                            { "name": "ARCHIVED", "refs": [[["7", "Archive"], ["7", "it"]]] }
+                        ]
                     }
-                ]
-            }
+                }
+            ]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
@@ -320,7 +315,7 @@ CREATE TABLE courses (
                 fields_str += f"<field>{field}</field>"
             fields_str += "</fields>"
             additional_requirements += f"""<category name="DDL Field Requirement">
-    <rule>The following fields are mandatory and MUST be included within the Aggregates or ValueObjects that are specified for creation in the 'aggregate_to_create' input. You must find the most relevant place within these specified structures to add the fields. DO NOT create any new Aggregates to accommodate these fields. If a perfect fit is not obvious, add them to the most closely related property group within the specified Aggregate or its associated ValueObjects. Your primary task is to ensure all these fields are present in the output, but strictly within the confines of the specified aggregates to be created.</rule>
+    <rule>The following fields are mandatory and MUST be included within the Aggregates or ValueObjects specified for creation in 'aggregate_to_create'. This is a strict directive that overrides all other guidelines, including Domain-Driven Design principles like aggregate boundary integrity. You must find the most relevant place for these fields within the specified structures. The names of these fields MUST be used exactly as provided in the `<fields>` list, without any modification, prefix, or suffix. DO NOT create new Aggregates. If a perfect fit is not obvious, add them to the most closely related property group. Your primary task is to ensure all listed fields are present in the output, confined to the specified aggregates.</rule>
     {fields_str}
 </category>
 """

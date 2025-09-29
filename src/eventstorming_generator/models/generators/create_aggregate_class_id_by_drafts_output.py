@@ -24,7 +24,6 @@ class ActionArgs(BaseModelWithItem):
 
 class ActionOutput(BaseModelWithItem):
     """Single action to create a value object"""
-    inference: str = Field(..., description="Inference for creating this specific value object reference.")
     objectType: str = Field(..., description="Type of object to create (ValueObject)")
     ids: ActionIds = Field(..., description="Target identifiers for the action")
     args: ActionArgs = Field(..., description="Arguments for creating the value object")
@@ -35,12 +34,7 @@ class OmittedReferenceOutput(BaseModelWithItem):
     toAggregate: str = Field(..., description="The aggregate that would have been referenced.")
     reason: str = Field(..., description="Justification for omitting this reference, based on DDD principles (e.g., lifecycle dependency, stability).")
 
-class ResultOutput(BaseModelWithItem):
-    """Result containing the actions to perform"""
-    omittedReferences: List[OmittedReferenceOutput] = Field(..., description="List of references that were intentionally omitted to avoid bidirectional dependencies.")
-    actions: List[ActionOutput] = Field(..., description="List of actions to create value objects")
-
 class CreateAggregateClassIdByDraftsOutput(BaseModelWithItem):
     """Output model for creating aggregate class references by drafts"""
-    inference: str = Field(..., description="Reasoning and analysis for the design decisions")
-    result: ResultOutput = Field(..., description="The resulting actions to create value objects and the list of omitted references.")
+    omittedReferences: List[OmittedReferenceOutput] = Field(..., description="List of references that were intentionally omitted to avoid bidirectional dependencies.")
+    actions: List[ActionOutput] = Field(..., description="List of actions to create value objects")

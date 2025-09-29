@@ -16,7 +16,7 @@ class CreatePolicyActionsByFunction(XmlBaseGenerator):
         }
 
     def _build_task_instruction_prompt(self) -> str:
-        return f"""<instruction>
+        return """<instruction>
     <core_instructions>
         <title>Policy Derivation Task</title>
         <task_description>You need to analyse a given event storming model to derive a policy (where events trigger other events).</task_description>
@@ -31,13 +31,13 @@ class CreatePolicyActionsByFunction(XmlBaseGenerator):
     <guidelines>
         <title>Policy Creation Guidelines</title>
         <rule id="1">Analyze the given requirements and event streams to derive business logic and create policies connecting events to subsequent events.</rule>
-        <rule id="2">The policy name should be in English, while the alias and other content should be in {self.client.get("preferredLanguage")} for user readability.</rule>
+        <rule id="2">The policy name should be in English, while the alias and other content should be in user's preferred language for user readability.</rule>
         <rule id="3">Do not write comments in the output JSON object.</rule>
         <rule id="4">Each policy must have a clear, action-oriented name and a reason explaining its business value.</rule>
         <rule id="5">Consider business rules, domain events, context relations, eventual consistency, error handling, and performance when creating policies.</rule>
         <rule id="6">Leverage provided domain events and context relations to understand event triggers, cross-context flows, and interaction patterns, ensuring policies respect bounded context boundaries.</rule>
         <rule id="7">For every created policy, you MUST provide `refs` linking it to the specific text in the "Functional Requirements".
-            - The format is `[[[<start_line_number>, "<start_word>"], [<end_line_number>, "<end_word>"]]]`.
+            - The format is `[[["<start_line_number>", "<start_word>"], ["<end_line_number>", "<end_word>"]]]`.
             - Use minimal (1-2) words to uniquely identify the position.
             - If a policy is inferred from multiple places, add multiple Position Arrays.
         </rule>
@@ -57,36 +57,28 @@ class CreatePolicyActionsByFunction(XmlBaseGenerator):
 
     <inference_guidelines>
         <title>Inference Guidelines</title>
-        <rule id="1">**Two-Tier Inference**: You must provide two levels of reasoning.
-            - **High-Level Inference**: The root `inference` field should provide a high-level summary of your overall strategy, explaining how you analyzed the requirements to derive the set of policies.
-            - **Policy-Specific Inference**: Each individual policy object in `extractedPolicies` must have its own `inference` field, detailing the specific logic, evidence, and requirements that justify that particular policy.
-        </rule>
-        <rule id="2">**Context Analysis**: Analyze the event storming model and functional requirements to understand business objectives and domain boundaries.</rule>
-        <rule id="3">**Policy Design**: Derive clear policies connecting source and target events, ensuring each delivers unique business value.</rule>
-        <rule id="4">**Validation**: Verify that policies avoid self-triggers, same-aggregate triggers, and circular dependencies. Policies where a source and target event belong to the same aggregate are strictly forbidden.</rule>
-        <rule id="5">**Source Reference Justification**: For each policy, find the exact line and minimal word combination in the functional requirements for the `refs` field. This reference must be precise.</rule>
+        <rule id="1">**Context Analysis**: Analyze the event storming model and functional requirements to understand business objectives and domain boundaries.</rule>
+        <rule id="2">**Policy Design**: Derive clear policies connecting source and target events, ensuring each delivers unique business value.</rule>
+        <rule id="3">**Validation**: Verify that policies avoid self-triggers, same-aggregate triggers, and circular dependencies. Policies where a source and target event belong to the same aggregate are strictly forbidden.</rule>
+        <rule id="4">**Source Reference Justification**: For each policy, find the exact line and minimal word combination in the functional requirements for the `refs` field. This reference must be precise.</rule>
     </inference_guidelines>
     
     <output_format>
         <title>JSON Output Format</title>
-        <description>The output must be a JSON object with two keys: "inference" and "result", structured as follows:</description>
+        <description>The output must be a JSON object structured as follows:</description>
         <schema>
-{{
-    "inference": "<High-level inference summarizing the overall strategy>",
-    "result": {{
-        "extractedPolicies": [
-            {{
-                "inference": "<Detailed reasoning for this specific policy>",
-                "name": "<name>",
-                "alias": "<alias>",
-                "reason": "<reason>",
-                "fromEventId": "<fromEventId>",
-                "toEventIds": ["<toEventId1>", "toEventId2>"],
-                "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
-            }}
-        ]
-    }}
-}}
+{
+    "extractedPolicies": [
+        {
+            "name": "<name>",
+            "alias": "<alias>",
+            "reason": "<reason>",
+            "fromEventId": "<fromEventId>",
+            "toEventIds": ["<toEventId1>", "toEventId2>"],
+            "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
+        }
+    ]
+}
         </schema>
     </output_format>
 </instruction>"""
@@ -127,7 +119,7 @@ CREATE TABLE reservations (
         description_with_line_numbers = EsTraceUtil.add_line_numbers_to_description(description)
         
         return {
-            "summarizedESValue": XmlUtil.from_dict({
+            "summarized_es_value": XmlUtil.from_dict({
                 "deletedProperties": ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["aggregateInnerStickers"] + 
                     ESValueSummarizeWithFilter.KEY_FILTER_TEMPLATES["detailedProperties"],
                 "boundedContexts": [
@@ -248,39 +240,36 @@ CREATE TABLE reservations (
                     }
                 ]
             }),
-            "description": description_with_line_numbers
+            "description": description_with_line_numbers,
+            "user_preferred_language": "English"
         }
 
     def _build_json_example_output_format(self) -> Dict[str, Any]:
         return {
-            "inference": "Based on the functional requirements and event storming model, two key policies are derived to automate the reservation workflow. The user story specifies automatic table assignment and kitchen notification, which are implemented by creating policies that connect events across different bounded contexts. The 'ReservationToKitchen' context relation further confirms the need for a Pub/Sub pattern.",
-            "result": {
-                "extractedPolicies": [
-                    {
-                        "inference": "The user story requirement \"System should automatically assign an appropriate table\" (line 7) directly implies that the `ReservationCreated` event should trigger a process for table assignment. This policy connects `evt-reservation-created` from the Reservation context to `evt-table-assigned` in the Table context, automating a critical step in the workflow and ensuring eventual consistency.",
-                        "name": "AutoTableAssignment",
-                        "alias": "Automatic Table Assignment",
-                        "reason": "Fulfills the requirement that when a customer creates a reservation, the system must automatically assign an appropriate table.",
-                        "fromEventId": "evt-reservation-created",
-                        "toEventIds": ["evt-table-assigned"],
-                        "refs": [[[7, "automatically"], [7, "table"]]]
-                    },
-                    {
-                        "inference": "This policy is derived from two sources: the user story requirement \"Kitchen should be notified for preparation\" (line 8) and the explicit `ReservationToKitchen` context relation (lines 28-31). It implements the defined Pub/Sub interaction by listening for `ReservationConfirmed` and triggering `evt-kitchen-prepared` in the Kitchen context, ensuring the kitchen is alerted to prepare for the confirmed reservation.",
-                        "name": "KitchenPreparation",
-                        "alias": "Kitchen Preparation Notification",
-                        "reason": "Implements a Pub/Sub pattern to notify the kitchen for preparation once a reservation is confirmed. This is defined in the relationship between the Reservation and Kitchen contexts.",
-                        "fromEventId": "evt-reservation-confirmed",
-                        "toEventIds": ["evt-kitchen-prepared"],
-                        "refs": [[[8, "Kitchen"], [8, "for"]], [[30, "publishes"], [30, "preparation"]]]
-                    }
-                ]
-            }
+            "extractedPolicies": [
+                {
+                    "name": "AutoTableAssignment",
+                    "alias": "Automatic Table Assignment",
+                    "reason": "Fulfills the requirement that when a customer creates a reservation, the system must automatically assign an appropriate table.",
+                    "fromEventId": "evt-reservation-created",
+                    "toEventIds": ["evt-table-assigned"],
+                    "refs": [[["7", "automatically"], ["7", "table"]]]
+                },
+                {
+                    "name": "KitchenPreparation",
+                    "alias": "Kitchen Preparation Notification",
+                    "reason": "Implements a Pub/Sub pattern to notify the kitchen for preparation once a reservation is confirmed. This is defined in the relationship between the Reservation and Kitchen contexts.",
+                    "fromEventId": "evt-reservation-confirmed",
+                    "toEventIds": ["evt-kitchen-prepared"],
+                    "refs": [[["8", "Kitchen"], ["8", "for"]], [["30", "publishes"], ["30", "preparation"]]]
+                }
+            ]
         }
     
     def _build_json_user_query_input_format(self) -> Dict[str, Any]:
         inputs = self.client.get("inputs")
         return {
-            "summarizedESValue": XmlUtil.from_dict(inputs.get("summarizedESValue")),
+            "summarized_es_value": XmlUtil.from_dict(inputs.get("summarizedESValue")),
             "description": inputs.get("description"),
+            "user_preferred_language": self.client.get("preferredLanguage")
         }
