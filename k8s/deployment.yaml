@@ -23,24 +23,24 @@ spec:
         - containerPort: 2024
         env:
         - name: AI_MODEL
-          value: "openai:gpt-4.1-2025-04-14"
+          value: "google_genai:gemini-flash-latest:thinking"
         - name: AI_MODEL_MAX_INPUT_LIMIT
-          value: "962429"
+          value: "983040"
         - name: AI_MODEL_MAX_BATCH_SIZE
           value: "30"
 
         - name: AI_MODEL_LIGHT
-          value: "openai:gpt-4.1-mini-2025-04-14"
+          value: "google_genai:gemini-flash-latest:thinking"
         - name: AI_MODEL_LIGHT_MAX_INPUT_LIMIT
-          value: "962429"
+          value: "983040"
         - name: AI_MODEL_LIGHT_MAX_BATCH_SIZE
           value: "60"
 
-        - name: OPENAI_API_KEY
+        - name: GOOGLE_API_KEY
           valueFrom:
             secretKeyRef:
               name: app-secrets
-              key: OPENAI_API_KEY
+              key: GOOGLE_API_KEY
         
         - name: LANGSMITH_TRACING
           value: "true"

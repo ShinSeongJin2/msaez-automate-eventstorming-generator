@@ -2,6 +2,7 @@ import os
 import json
 from typing import Dict, List, Any, Optional, Union, Type
 from abc import ABC, abstractmethod
+
 from langchain.chat_models import init_chat_model
 from langchain.schema import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langchain_community.cache import SQLiteCache
@@ -240,7 +241,12 @@ class XmlBaseGenerator(ABC):
             self.model = self._model_cache[cache_key]
         else:
             # 새 모델 생성 및 캐시에 저장
-            self.model = init_chat_model(model_name, **model_kwargs)
+            init_kwargs = model_kwargs.copy()
+
+            if model_name.startswith("google_genai") and not Config.is_local_run():
+                init_kwargs["google_api_key"] = os.getenv("GOOGLE_API_KEY")
+
+            self.model = init_chat_model(model_name, **init_kwargs)
             self._model_cache[cache_key] = self.model
     
     def _get_cache_key(self, model_name: str, model_kwargs: Dict[str, Any]) -> str:
