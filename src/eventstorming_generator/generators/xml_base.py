@@ -166,7 +166,7 @@ class XmlBaseGenerator(ABC):
         raw_response = model_with_json_mode.invoke(messages)
 
         thinking = ""
-        if hasattr(raw_response, 'content') and len(raw_response.content) > 0 and raw_response.content[0]['type'] == 'thinking' and raw_response.content[0]['thinking']:
+        if self.__isThinkingAttributeExist(raw_response):
             thinking = raw_response.content[0]['thinking']
 
         parser = structured_model.last
@@ -176,6 +176,13 @@ class XmlBaseGenerator(ABC):
             "result": result,
             "thinking": thinking
         }
+    def __isThinkingAttributeExist(self, raw_response: BaseMessage) -> bool:
+        return hasattr(raw_response, 'content') and \
+             type(raw_response.content) == list and \
+             len(raw_response.content) > 0 and \
+             type(raw_response.content[0]) == dict and \
+             raw_response.content[0]['type'] == 'thinking' and \
+             raw_response.content[0]['thinking']
 
     def _post_process_to_structured_output(self, structured_output: BaseModelWithItem) -> BaseModelWithItem:
         return structured_output
