@@ -34,7 +34,7 @@ spec:
         - name: AI_MODEL_LIGHT_MAX_INPUT_LIMIT
           value: "962429"
         - name: AI_MODEL_LIGHT_MAX_BATCH_SIZE
-          value: "150"
+          value: "60"
 
         - name: OPENAI_API_KEY
           valueFrom:
