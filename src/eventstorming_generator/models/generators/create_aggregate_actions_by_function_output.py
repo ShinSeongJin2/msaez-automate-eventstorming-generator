@@ -1,5 +1,5 @@
 from pydantic import Field
-from typing import List, Optional
+from typing import List
 from ..base import BaseModelWithItem
 
 Refs = List[List[List[str]]]
@@ -12,9 +12,8 @@ class EnumPropertyModel(BaseModelWithItem):
 class PropertyModel(BaseModelWithItem):
     """Model representing a property of an aggregate, value object"""
     name: str = Field(..., description="Name of the property")
-    type: Optional[str] = Field(None, description="Type of the property (optional for String type)")
-    isKey: Optional[bool] = Field(None, description="Whether this property is a primary key")
-    isForeignProperty: Optional[bool] = Field(None, description="Whether this property is a foreign key reference")
+    type: str = Field(..., description="Type of the property")
+    isKey: bool = Field(..., description="Whether this property is a primary key")
     refs: Refs = Field(..., description="Source reference from the functional requirements")
 
 class AggregateIds(BaseModelWithItem):

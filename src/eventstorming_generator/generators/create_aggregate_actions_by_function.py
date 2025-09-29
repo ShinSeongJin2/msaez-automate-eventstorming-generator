@@ -114,7 +114,7 @@ class CreateAggregateActionsByFunction(XmlBaseGenerator):
                     {
                         "name": "<propertyName>",
                         "type": "<propertyType>",
-                        "isKey": true,
+                        "isKey": <true|false>,
                         "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                     }
                 ]
@@ -134,6 +134,7 @@ class CreateAggregateActionsByFunction(XmlBaseGenerator):
                     {
                         "name": "<propertyName>",
                         "type": "<propertyType>",
+                        "isKey": <true|false>,
                         "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                     }
                 ]
@@ -252,13 +253,13 @@ CREATE TABLE courses (
                         "refs": [[["4", "lifecycle"], ["4", "course"]]],
                         "properties": [
                             { "name": "courseId", "type": "Long", "isKey": True, "refs": [[["20", "course_id"], ["20", "KEY"]]] },
-                            { "name": "title", "refs": [[["7", "provide"], ["7", "title"]]] },
-                            { "name": "description", "type": "String", "refs": [[["7", "title"], ["7", "price"]]] },
-                            { "name": "instructorId", "type": "Long", "refs": [[["23", "instructor_id"], ["23", "NULL"]]] },
-                            { "name": "price", "type": "CoursePrice", "refs": [[["7", "description"], ["7", "price"]]] },
-                            { "name": "status", "type": "CourseStatus", "refs": [[["4", "status"], ["4", "changes"]]] },
-                            { "name": "createdAt", "type": "Date", "refs": [[["27", "created_at"], ["27", "DEFAULT"]]] },
-                            { "name": "updatedAt", "type": "Date", "refs": [[["28", "updated_at"], ["28", "DEFAULT"]]] }
+                            { "name": "title", "type": "String", "isKey": False, "refs": [[["7", "provide"], ["7", "title"]]] },
+                            { "name": "description", "type": "String", "isKey": False, "refs": [[["7", "title"], ["7", "price"]]] },
+                            { "name": "instructorId", "type": "Long", "isKey": False, "refs": [[["23", "instructor_id"], ["23", "NULL"]]] },
+                            { "name": "price", "type": "CoursePrice", "isKey": False, "refs": [[["7", "description"], ["7", "price"]]] },
+                            { "name": "status", "type": "CourseStatus", "isKey": False, "refs": [[["4", "status"], ["4", "changes"]]] },
+                            { "name": "createdAt", "type": "Date", "isKey": False, "refs": [[["27", "created_at"], ["27", "DEFAULT"]]] },
+                            { "name": "updatedAt", "type": "Date", "isKey": False, "refs": [[["28", "updated_at"], ["28", "DEFAULT"]]] }
                         ]
                     }
                 }
@@ -276,8 +277,8 @@ CREATE TABLE courses (
                         "valueObjectAlias": "Course Price",
                         "refs": [[["7", "price"], ["7", "price"]]],
                         "properties": [
-                            { "name": "amount", "type": "Double", "refs": [[["25", "price_amount"], ["25", "(10, 2)"]]] },
-                            { "name": "currency", "refs": [[["26", "price_currency"], ["26", "(3)"]]] }
+                            { "name": "amount", "type": "Double", "isKey": False, "refs": [[["25", "price_amount"], ["25", "(10, 2)"]]] },
+                            { "name": "currency", "type": "String", "isKey": False, "refs": [[["26", "price_currency"], ["26", "(3)"]]] }
                         ]
                     }
                 }
