@@ -1,14 +1,14 @@
 from pydantic import Field
-from typing import List, Optional, Literal
+from typing import List, Literal
 from ..base import BaseModelWithItem
 
 Refs = List[List[List[str]]]
 
 class PropertyModel(BaseModelWithItem):
-    """Represents a property with name, optional type, and key information"""
+    """Represents a property with name, type, and key information"""
     name: str = Field(..., description="Property name")
-    type: Optional[str] = Field(None, description="Property type (omit if String)")
-    isKey: Optional[bool] = Field(None, description="Whether this property is a primary key")
+    type: str = Field(..., description="Property type")
+    isKey: bool = Field(..., description="Whether this property is a primary key")
     refs: Refs = Field(..., description="Source reference from the functional requirements")
 
 class CommandActionIds(BaseModelWithItem):

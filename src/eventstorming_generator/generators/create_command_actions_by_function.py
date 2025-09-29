@@ -77,8 +77,8 @@ class CreateCommandActionsByFunction(XmlBaseGenerator):
                 "properties": [
                     {
                         "name": "<propertyName>",
-                        "type?": "<propertyType>",
-                        "isKey?": "<true|false>",
+                        "type": "<propertyType>",
+                        "isKey": "<true|false>",
                         "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                     }
                 ],
@@ -102,8 +102,8 @@ class CreateCommandActionsByFunction(XmlBaseGenerator):
                 "properties": [
                     {
                         "name": "<propertyName>",
-                        "type?": "<propertyType>",
-                        "isKey?": "<true|false>",
+                        "type": "<propertyType>",
+                        "isKey": "<true|false>",
                         "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                     }
                 ]
@@ -126,8 +126,8 @@ class CreateCommandActionsByFunction(XmlBaseGenerator):
                 "queryParameters": [
                     {
                         "name": "<propertyName>",
-                        "type?": "<propertyType>",
-                        "isKey?": "<true|false>",
+                        "type": "<propertyType>",
+                        "isKey": "<true|false>",
                         "refs": [[["<start_line_number>", "<minimal_start_phrase>"], ["<end_line_number>", "<minimal_end_phrase>"]]]
                     }
                 ],
@@ -211,8 +211,8 @@ CREATE TABLE order_items (
                     "api_verb": "POST",
                     "refs": [[["4", "place an"], ["4", "my order"]]],
                     "properties": [
-                        {"name": "customerId", "type": "Long", "refs": [[["11", "customer_id"], ["11", "NULL"]]]},
-                        {"name": "items", "type": "List<OrderItem>", "refs": [[["4", "items in"], ["4", "cart"]]]}
+                        {"name": "customerId", "type": "Long", "isKey": False, "refs": [[["11", "customer_id"], ["11", "NULL"]]]},
+                        {"name": "items", "type": "List<OrderItem>", "isKey": False, "refs": [[["4", "items in"], ["4", "cart"]]]}
                     ],
                     "outputEventIds": ["evt-order-placed"],
                     "actor": "Customer"
@@ -228,11 +228,11 @@ CREATE TABLE order_items (
                     "refs": [[["4", "an order"], ["4", "confirm"]]],
                     "properties": [
                         {"name": "orderId", "type": "Long", "isKey": True, "refs": [[["10", "order_id"], ["10", "KEY"]]]},
-                        {"name": "customerId", "type": "Long", "refs": [[["11", "customer_id"], ["11", "NULL"]]]},
-                        {"name": "orderDate", "type": "Date", "refs": [[["12", "order_date"], ["12", "NULL"]]]},
-                        {"name": "totalPrice", "type": "Double", "refs": [[["13", "total_price"], ["13", "NULL"]]]},
-                        {"name": "status", "type": "OrderStatus", "refs": [[["14", "status"], ["14", "NULL"]]]},
-                        {"name": "items", "type": "List<OrderItem>", "refs": [[["18", "TABLE"], ["18", "items"]]]}
+                        {"name": "customerId", "type": "Long", "isKey": False, "refs": [[["11", "customer_id"], ["11", "NULL"]]]},
+                        {"name": "orderDate", "type": "Date", "isKey": False, "refs": [[["12", "order_date"], ["12", "NULL"]]]},
+                        {"name": "totalPrice", "type": "Double", "isKey": False, "refs": [[["13", "total_price"], ["13", "NULL"]]]},
+                        {"name": "status", "type": "OrderStatus", "isKey": False, "refs": [[["14", "status"], ["14", "NULL"]]]},
+                        {"name": "items", "type": "List<OrderItem>", "isKey": False, "refs": [[["18", "TABLE"], ["18", "items"]]]}
                     ]
                 }
             }],
