@@ -1,12 +1,12 @@
-from typing import List, Optional
+from typing import List
 from pydantic import Field
 from ..base import BaseModelWithItem
 
 class PropertyOutput(BaseModelWithItem):
     """Property definition for value object"""
     name: str = Field(..., description="Name of the property")
-    type: Optional[str] = Field(None, description="Type of the property (optional, defaults to String)")
-    isKey: Optional[bool] = Field(None, description="Whether this property is a primary key")
+    type: str = Field(..., description="Type of the property")
+    isKey: bool = Field(..., description="Whether this property is a primary key")
 
 class ActionIds(BaseModelWithItem):
     """Identifiers for the action target"""

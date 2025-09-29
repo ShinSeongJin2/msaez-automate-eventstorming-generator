@@ -92,8 +92,8 @@ class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
                 "properties": [
                     {
                         "name": "<propertyName>",
-                        ["type": "<propertyType>"], // If the type is String, do not specify the type.
-                        ["isKey": true] // Write only if there is a primary key.
+                        "type": "<propertyType>",
+                        "isKey": <isKey_boolean>
                     }
                 ]
             }
@@ -132,7 +132,8 @@ class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
                                     },
                                     {
                                         "name": "orderDate",
-                                        "type": "Date"
+                                        "type": "Date",
+                                        "isKey": False
                                     },
                                     {
                                         "name": "totalAmount",
@@ -150,17 +151,24 @@ class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
                                         "isKey": True
                                     },
                                     {
-                                        "name": "name"
+                                        "name": "name",
+                                        "type": "String",
+                                        "isKey": False
                                     },
                                     {
-                                        "name": "gender"
+                                        "name": "gender",
+                                        "type": "String",
+                                        "isKey": False
                                     },
                                     {
                                         "name": "birthDate",
-                                        "type": "Date"
+                                        "type": "Date",
+                                        "isKey": False
                                     },
                                     {
-                                        "name": "email"
+                                        "name": "email",
+                                        "type": "String",
+                                        "isKey": False
                                     }
                                 ]
                             }
@@ -240,11 +248,14 @@ class CreateAggregateClassIdByDrafts(XmlBaseGenerator):
                                 "isKey": True
                             },
                             {
-                                "name": "gender"
+                                "name": "gender",
+                                "type": "String",
+                                "isKey": False
                             },
                             {
                                 "name": "birthDate",
-                                "type": "Date"
+                                "type": "Date",
+                                "isKey": False
                             }
                         ]
                     }
