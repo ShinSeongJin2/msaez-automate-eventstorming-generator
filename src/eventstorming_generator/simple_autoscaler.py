@@ -271,7 +271,7 @@ class SimpleAutoScaler:
             waiting_count = 0
             for job_id, job_data in requested_jobs.items():
                 # assignedPodId가 없는 작업들이 대기 중인 작업
-                if job_data.get('assignedPodId') is None:
+                if job_data.get('assignedPodId') is None and job_data.get('status') != 'failed':
                     waiting_count += 1
             
             return waiting_count
