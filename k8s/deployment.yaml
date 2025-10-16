@@ -27,14 +27,14 @@ spec:
         - name: AI_MODEL_MAX_INPUT_LIMIT
           value: "983040"
         - name: AI_MODEL_MAX_BATCH_SIZE
-          value: "30"
+          value: "15"
 
         - name: AI_MODEL_LIGHT
           value: "google_genai:gemini-flash-latest:thinking"
         - name: AI_MODEL_LIGHT_MAX_INPUT_LIMIT
           value: "983040"
         - name: AI_MODEL_LIGHT_MAX_BATCH_SIZE
-          value: "60"
+          value: "30"
 
         - name: GOOGLE_API_KEY
           valueFrom:
