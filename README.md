@@ -17,8 +17,9 @@ uv run langgraph dev
 uv run python ./src/eventstorming_generator/main.py
 ```
 
-## 단독 실행
-- 일부 로직을 Mock 데이터로 독립적으로 실행하기 위해서 run.py를 실행
+## 터미널 활용
+- terminal.py를 실행
 ```bash
-uv run python ./src/eventstorming_generator/run.py
+uv run python ./src/eventstorming_generator/terminal.py
+>>> help
 ```

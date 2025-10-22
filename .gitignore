@@ -7,3 +7,4 @@
 .auth
 **/__pycache__/**
 **/*.egg-info
+terminal_help.md
