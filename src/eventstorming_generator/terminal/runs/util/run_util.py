@@ -1,22 +1,46 @@
 from .run_xml_util import run_xml_util
 from .run_token_counter import run_token_counter
 from .run_es_actions import run_es_actions
+from .run_job_util import run_job_util
+from .run_job_request_util import run_job_request_util
+from .run_text_chunker_util import run_text_chunker_util
+from .run_es_trace_util import run_es_trace_util
 
 run_util_registry = {
     "XmlUtil": {
         "handler": run_xml_util,
-        "description": "XML 유틸리티를 즉시 실행",
+        "description": "XmlUtil 유틸리티를 즉시 실행",
         "usage": "run runUtil XmlUtil"
     },
     "TokenCounter": {
         "handler": run_token_counter,
-        "description": "토큰 수 계산",
+        "description": "TokenCounterUtil 유틸리티를 즉시 실행",
         "usage": "run runUtil TokenCounter"
     },
     "EsActions": {
         "handler": run_es_actions,
-        "description": "ES 액션 유틸리티를 실행시켜서, 이벤트 스토밍 값 생성",
+        "description": "EsActionsUtil 유틸리티를 즉시 실행",
         "usage": "run runUtil EsActions <actions_collection | total_actions | mocked_actions>"
+    },
+    "JobUtil": {
+        "handler": run_job_util,
+        "description": "JobUtil 유틸리티를 즉시 실행",
+        "usage": "run runUtil JobUtil <createJobId>"
+    },
+    "JobRequestUtil": {
+        "handler": run_job_request_util,
+        "description": "JobRequestUtil 유틸리티를 즉시 실행",
+        "usage": "run runUtil JobRequestUtil <addJobRequestByRequirements> [<db_type>] [<requirements_type>]"
+    },
+    "TextChunkerUtil": {
+        "handler": run_text_chunker_util,
+        "description": "TextChunkerUtil 유틸리티를 즉시 실행",
+        "usage": "run runUtil TextChunkerUtil <splitIntoChunksByLine>"
+    },
+    "EsTraceUtil": {
+        "handler": run_es_trace_util,
+        "description": "EsTraceUtil 유틸리티를 즉시 실행",
+        "usage": "run runUtil EsTraceUtil <convertRefsToIndexes>"
     }
 }
 

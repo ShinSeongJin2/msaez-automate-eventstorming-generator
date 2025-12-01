@@ -1,7 +1,7 @@
 from ....models import *
 
-user_info = {"uid": "test_user"}
-information = {"projectId": "test_project"}
+user_id = "test_user"
+project_id = "test_project"
 
 bounded_context_id = '0faf38c9-6471-4a6e-b24a-d691ac7ab385'
 aggregate_id = 'a932c245-ac83-4d8e-8fe3-eb787fe5943b'

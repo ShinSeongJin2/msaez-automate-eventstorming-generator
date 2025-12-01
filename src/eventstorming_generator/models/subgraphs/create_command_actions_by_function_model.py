@@ -1,9 +1,10 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from pydantic import Field
 
 from ..base import BaseModelWithItem
 from ..action_model import ActionModel
 from ..subgraphs.create_element_names_by_draft_model import ExtractedElementNameDetail
+from ...types import RequirementIndexMapping
 
 class CommandActionGenerationState(BaseModelWithItem):
     """단일 Aggregate에 대한 Command 액션 생성 처리 상태"""
@@ -12,10 +13,13 @@ class CommandActionGenerationState(BaseModelWithItem):
     description: str = ""
     original_description: str = ""
     extracted_element_names: ExtractedElementNameDetail = Field(default_factory=ExtractedElementNameDetail)
+    requirement_index_mapping: Optional[RequirementIndexMapping] = None
+    worker_index: int = 0
+
     summarized_es_value: Dict[str, Any] = Field(default_factory=dict)
+    created_actions: List[ActionModel] = Field(default_factory=list)
 
     retry_count: int = 0
-    created_actions: List[ActionModel] = Field(default_factory=list)
     generation_complete: bool = False
     is_failed: bool = False
 

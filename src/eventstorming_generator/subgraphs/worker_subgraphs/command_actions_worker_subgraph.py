@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph, START
 from ...models import CommandActionGenerationState, ActionModel, State, CreateCommandActionsByFunctionOutput
 from ...utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil, EsTraceUtil
 from ...generators import CreateCommandActionsByFunction
+from ...constants import ELEMENT_TYPES
 from ...config import Config
 
 # 스레드로부터 안전한 컨텍스트 변수 생성
@@ -118,7 +119,8 @@ def worker_generate_command_actions(state: State) -> State:
                     "commandNamesToGenerate": current_gen.extracted_element_names.command_names,
                     "readModelNamesToGenerate": current_gen.extracted_element_names.read_model_names
                 },
-                "preferredLanguage": state.inputs.preferedLanguage
+                "preferredLanguage": state.inputs.preferedLanguage,
+                "retryCount": current_gen.retry_count
             }
         )
         
@@ -171,7 +173,10 @@ def worker_postprocess_command_actions(state: State) -> State:
     try:
         # Refs 후처리
         try:
-            EsTraceUtil.convert_refs_to_indexes(current_gen.created_actions, current_gen.original_description, state, "[COMMAND_ACTIONS_WORKER]")
+            EsTraceUtil.convert_refs_to_indexes(
+                current_gen.created_actions, current_gen.original_description, 
+                current_gen.requirement_index_mapping, state, "[COMMAND_ACTIONS_WORKER]"
+            )
         except Exception as e:
             LogUtil.add_exception_object_log(state, f"[COMMAND_ACTIONS_WORKER] Failed to convert source references for aggregate '{aggregate_name}'", e)
             # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
@@ -359,7 +364,7 @@ def restore_actions(actions: List[ActionModel], es_value, target_bounded_context
     # 타겟 BoundedContext 찾기
     target_bounded_context = None
     for element in es_value.get("elements", {}).values():
-        if (element and element.get("_type") == "org.uengine.modeling.model.BoundedContext" and 
+        if (element and element.get("_type") == ELEMENT_TYPES.BOUNDED_CONTEXT and 
             element.get("name", "").lower() == target_bounded_context_name.lower()):
             target_bounded_context = element
             break
@@ -442,7 +447,7 @@ def filter_actions(actions: List[ActionModel], es_value) -> List[ActionModel]:
     all_event_ids = {
         element['id']
         for element in es_value.get("elements", {}).values()
-        if element and element.get("_type") == "org.uengine.modeling.model.Event" and element.get('id')
+        if element and element.get("_type") == ELEMENT_TYPES.EVENT and element.get('id')
     }
     all_event_ids.update({
         action.ids['eventId']

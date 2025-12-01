@@ -6,7 +6,7 @@ from ..models import CreateAggregateActionsByFunctionOutput
 
 class CreateAggregateActionsByFunction(XmlBaseGenerator):
     def __init__(self, model_name: str, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
-        self.inputs_types_to_check = ["targetBoundedContext", "description", "draftOption", "targetAggregate"]
+        self.inputs_types_to_check = ["targetBoundedContextName", "description", "targetAggregateStructure", "attributesToGenerate"]
         super().__init__(model_name, CreateAggregateActionsByFunctionOutput, model_kwargs, client)
 
     def _build_persona_info(self) -> Dict[str, str]:
@@ -213,10 +213,8 @@ CREATE TABLE courses (
             
             "suggested_structure": XmlUtil.from_dict([
                 {
-                    "aggregate": {
-                        "name": "Course",
-                        "alias": "Online Course"
-                    },
+                    "aggregateName": "Course",
+                    "aggregateAlias": "Online Course",
                     "enumerations": [
                         {
                             "name": "CourseStatus",
@@ -309,7 +307,7 @@ CREATE TABLE courses (
         inputs = self.client.get("inputs")
         
         additional_requirements = f""
-        extracted_ddl_fields = inputs.get("extractedDdlFields")
+        extracted_ddl_fields = inputs.get("attributesToGenerate")
         if extracted_ddl_fields:
             fields_str = "<fields>"
             for field in extracted_ddl_fields:
@@ -322,13 +320,16 @@ CREATE TABLE courses (
 """
         
         return {
-            "bounded_context_to_generate_actions": inputs.get("targetBoundedContext").get("name"),
+            "bounded_context_to_generate_actions": inputs.get("targetBoundedContextName"),
 
             "functional_requirements": inputs.get("description"),
 
-            "suggested_structure": XmlUtil.from_dict(inputs.get("draftOption")),
+            "suggested_structure": XmlUtil.from_dict(inputs.get("targetAggregateStructure")),
 
-            "aggregate_to_create": XmlUtil.from_dict(inputs.get("targetAggregate")),
+            "aggregate_to_create": XmlUtil.from_dict({
+                "aggregateName": inputs.get("targetAggregateStructure").get("aggregateName"),
+                "aggregateAlias": inputs.get("targetAggregateStructure").get("aggregateAlias")
+            }),
 
             "additional_requirements": additional_requirements,
         }

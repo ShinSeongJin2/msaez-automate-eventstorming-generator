@@ -11,6 +11,7 @@ class CreateUiComponentsGenerationState(BaseModelWithItem):
     ai_request_type: str = ""
     ai_input_data: Dict[str, Any] = Field(default_factory=dict)
     ui_replace_actions: List[ActionModel] = Field(default_factory=list)
+    worker_index: int = 0
     
     retry_count: int = 0
     generation_complete: bool = False

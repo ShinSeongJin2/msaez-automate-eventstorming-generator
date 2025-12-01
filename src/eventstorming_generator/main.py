@@ -5,14 +5,13 @@ import multiprocessing
 from dotenv import load_dotenv
 load_dotenv()
 
-from eventstorming_generator.utils import JobUtil, LogUtil, DecentralizedJobManager
-from eventstorming_generator.graph import graph
+from eventstorming_generator.utils import LogUtil, LoggingUtil
+from eventstorming_generator.utils.job_utils import JobUtil, DecentralizedJobManager, A2ASessionManager
 from eventstorming_generator.models import State
-from eventstorming_generator.systems.firebase_system import FirebaseSystem
+from eventstorming_generator.systems import FirebaseSystem
 from eventstorming_generator.config import Config
-from eventstorming_generator.run_healcheck_server import run_healcheck_server
+from eventstorming_generator.run_a2a_server import run_a2a_server
 from eventstorming_generator.simple_autoscaler import start_autoscaler
-from eventstorming_generator.utils.logging_util import LoggingUtil
 
 # 전역 job_manager 인스턴스 (process_job_async에서 접근하기 위함)
 _current_job_manager: DecentralizedJobManager = None
@@ -20,7 +19,7 @@ _current_job_manager: DecentralizedJobManager = None
 def _run_graph_in_subprocess(state_dict):
     """별도 프로세스에서 graph.invoke 실행 (이벤트 루프/GIL 간섭 방지)"""
     from eventstorming_generator.models import State
-    from eventstorming_generator.utils import JobUtil
+    from eventstorming_generator.utils.job_utils import JobUtil
     from eventstorming_generator.graph import graph
 
     # 자식 프로세스 내에서 상태 복원 및 참조 추가
@@ -31,9 +30,9 @@ def _run_graph_in_subprocess(state_dict):
     graph.invoke(state, {"recursion_limit": 2147483647})
 
 async def main():
-    """메인 함수 - Flask 서버, Job 모니터링, 자동 스케일러 동시 시작"""
+    """메인 함수 - A2A 서버 (헬스체크 포함), Job 모니터링, 자동 스케일러 동시 시작"""
     
-    flask_thread = None
+    a2a_thread = None
     restart_count = 0
     
     while True:
@@ -42,12 +41,14 @@ async def main():
         
         try:
             
-            # Flask 서버 시작 (첫 실행시에만)
-            if flask_thread is None:
-                flask_thread = threading.Thread(target=run_healcheck_server, daemon=True)
-                flask_thread.start()
-                LoggingUtil.info("main", "Flask 서버가 포트 2024에서 시작되었습니다.")
-                LoggingUtil.info("main", "헬스체크 엔드포인트: http://localhost:2024/ok")
+            # A2A 서버 시작 (헬스체크 엔드포인트 포함, 첫 실행시에만)
+            if a2a_thread is None:
+                a2a_thread = threading.Thread(target=run_a2a_server, daemon=True)
+                a2a_thread.start()
+                LoggingUtil.info("main", "A2A 서버가 포트 5000에서 시작되었습니다.")
+                LoggingUtil.info("main", "헬스체크 엔드포인트: http://localhost:5000/ok")
+                LoggingUtil.info("main", "A2A 엔드포인트: http://localhost:5000/")
+                LoggingUtil.info("main", "Agent Card: http://localhost:5000/.well-known/agent.json")
 
             if restart_count > 0:
                 LoggingUtil.info("main", f"메인 함수 재시작 중... (재시작 횟수: {restart_count})")
@@ -78,6 +79,19 @@ async def main():
             # shutdown_event가 설정되었는지 확인
             if shutdown_monitor_task in done:
                 LoggingUtil.info("main", "Graceful shutdown 신호 수신. 메인 루프를 종료합니다.")
+                
+                # A2A 세션이 활성화되어 있으면 종료될 때까지 대기
+                a2a_session_manager = A2ASessionManager.instance()
+                if a2a_session_manager.has_active_sessions():
+                    active_count = a2a_session_manager.get_active_session_count()
+                    LoggingUtil.info("main", f"활성 A2A 세션이 {active_count}개 있어 종료를 대기합니다...")
+                    
+                    while a2a_session_manager.has_active_sessions():
+                        active_count = a2a_session_manager.get_active_session_count()
+                        LoggingUtil.debug("main", f"A2A 세션 대기 중... (활성 세션: {active_count}개)")
+                        await asyncio.sleep(5)
+                    
+                    LoggingUtil.info("main", "모든 A2A 세션이 종료되었습니다.")
                 
                 # 나머지 실행 중인 태스크들 취소
                 for task in pending:

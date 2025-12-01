@@ -1,24 +1,27 @@
-from typing import Dict, Any, List
+from typing import Dict, List, Optional
 from pydantic import Field
 
 from ..base import BaseModelWithItem
 from ..action_model import ActionModel
+from ..es_models import AggregateInfoModel
+from ...types import RequirementIndexMapping
 
 class AggregateGenerationState(BaseModelWithItem):
     """단일 Aggregate 생성 처리 상태"""
-    target_bounded_context: Dict[str, Any] = Field(default_factory=dict)
-    target_aggregate: Dict[str, Any] = Field(default_factory=dict)
+    target_bounded_context_name: str = ""
+    target_aggregate_structure: AggregateInfoModel = Field(default_factory=AggregateInfoModel)
     description: str = ""
     original_description: str = ""
-    requirements: Dict[str, Any] = Field(default_factory=dict)
-    draft_option: List[Dict[str, Any]] = Field(default_factory=list)
-    retry_count: int = 0
+    requirement_index_mapping: Optional[RequirementIndexMapping] = None
+    worker_index: int = 0
+
+    attributes_to_generate: List[str] = Field(default_factory=list)
+    missing_attributes: List[str] = Field(default_factory=list)
+
     created_actions: List[ActionModel] = Field(default_factory=list)
+
+    retry_count: int = 0
     generation_complete: bool = False
-    extracted_ddl_fields: List[str] = Field(default_factory=list)
-    missing_ddl_fields: List[str] = Field(default_factory=list)
-    ddl_extraction_attempted: bool = False
-    ddl_fields: List[str] = Field(default_factory=list)
     is_preprocess_completed: bool = False
     is_action_postprocess_completed: bool = False
     is_failed: bool = False

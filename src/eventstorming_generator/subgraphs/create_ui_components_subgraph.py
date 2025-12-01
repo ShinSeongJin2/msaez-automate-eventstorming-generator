@@ -5,8 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from langgraph.graph import StateGraph, START
 
 from ..models import CreateUiComponentsGenerationState, State
-from ..utils import JsonUtil, LogUtil, JobUtil, EsActionsUtil
-from ..constants import ResumeNodes
+from ..utils import JsonUtil, LogUtil, EsActionsUtil
+from ..utils.job_utils import JobUtil
+from ..constants import RESUME_NODES, ELEMENT_TYPES
 from .worker_subgraphs import create_ui_component_worker_subgraph, ui_component_worker_id_context
 from ..config import Config
 
@@ -15,9 +16,9 @@ def resume_from_create_ui_components(state: State):
     try :
 
         state.subgraphs.createUiComponentsModel.start_time = time.time()
-        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_UI_COMPONENTS"] and state.outputs.lastCompletedSubGraphNode:
-            valid_nodes = list(ResumeNodes["CREATE_UI_COMPONENTS"].values())
-            if state.outputs.lastCompletedSubGraphNode in valid_nodes:
+        if state.outputs.lastCompletedRootGraphNode == RESUME_NODES.ROOT_GRAPH.CREATE_UI_COMPONENTS and \
+           state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in RESUME_NODES.CREATE_UI_COMPONENTS.__dict__.values():
                 LogUtil.add_info_log(state, f"[UI_COMPONENTS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
                 return state.outputs.lastCompletedSubGraphNode
             else:
@@ -53,13 +54,14 @@ def prepare_ui_components_generation(state: State) -> State:
         pending_generations = []
         total_ui_components = 0
         
-        for element in state.outputs.esValue.elements.values():
-            if element and element.get("_type") == "org.uengine.modeling.model.UI":
+        for index, element in enumerate(state.outputs.esValue.elements.values()):
+            if element and element.get("_type") == ELEMENT_TYPES.UI:
                 generation_state = CreateUiComponentsGenerationState(
                     target_ui_component=element,
                     ai_request_type="",
                     ai_input_data={},
                     ui_replace_actions=[],
+                    worker_index=index,
                     retry_count=0,
                     generation_complete=False,
                     is_failed=False
@@ -84,8 +86,8 @@ def select_batch_ui_components(state: State) -> State:
     """
     
     try:
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_UI_COMPONENTS"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_UI_COMPONENTS"]["SELECT_BATCH"]
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_UI_COMPONENTS
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_UI_COMPONENTS.SELECT_BATCH
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
         model = state.subgraphs.createUiComponentsModel
@@ -244,6 +246,7 @@ def collect_and_apply_results(state: State) -> State:
         successful_uis = []
         failed_uis = []
         
+        model.parallel_worker_results.sort(key=lambda x: x.worker_index)
         for ui_result in model.parallel_worker_results:
             ui_name = ui_result.target_ui_component.get("name", "Unknown")
             
@@ -256,21 +259,12 @@ def collect_and_apply_results(state: State) -> State:
         
         # ES 모델에 모든 액션 일괄 적용
         if all_actions:   
-            # 사용자 정보와 프로젝트 정보 준비
-            user_info = {
-                "uid": state.inputs.userInfo.get("uid", "")
-            }
-            information = state.inputs.information or {}
-            
-            # EsActionsUtil을 사용하여 모든 액션 일괄 적용
             updated_es_value = EsActionsUtil.apply_actions(
                 state.outputs.esValue.model_dump(),
                 all_actions,
-                user_info,
-                information
+                state.inputs.ids.uid,
+                state.inputs.ids.projectId
             )
-            
-            # 업데이트된 ES 값 저장
             state.outputs.esValue = updated_es_value
             
         # 성공한 UI들을 완료 목록으로 이동 (변수 정리)
@@ -312,33 +306,37 @@ def complete_processing(state: State) -> State:
     """
     UI Components 생성 프로세스 완료
     """
-    
+    model = state.subgraphs.createUiComponentsModel
     try:
-
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_UI_COMPONENTS"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_UI_COMPONENTS"]["COMPLETE"]
+        if model.end_time:
+            LogUtil.add_info_log(
+                state,
+                "[UI_COMPONENTS_SUBGRAPH] Completion already recorded; skipping duplicate completion handling"
+            )
+            return state
+        
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_UI_COMPONENTS
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_UI_COMPONENTS.COMPLETE
         state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        # 완료된 작업 수 정보 로그
-        completed_count = len(state.subgraphs.createUiComponentsModel.completed_generations)
-        failed = state.subgraphs.createUiComponentsModel.is_failed
+        completed_count = len(model.completed_generations)
+        failed = model.is_failed
         
         if failed:
             LogUtil.add_error_log(state, f"[UI_COMPONENTS_SUBGRAPH] UI Components generation process completed with failures. Successfully processed: {completed_count} UI component tasks")
         
         if not failed:
-            # 변수 정리
-            subgraph_model = state.subgraphs.createUiComponentsModel
-            subgraph_model.completed_generations = []
-            subgraph_model.pending_generations = []
+            model.completed_generations = []
+            model.pending_generations = []
         
-        state.subgraphs.createUiComponentsModel.end_time = time.time()
-        state.subgraphs.createUiComponentsModel.total_seconds = state.subgraphs.createUiComponentsModel.end_time - state.subgraphs.createUiComponentsModel.start_time
+        model.end_time = time.time()
+        model.total_seconds = model.end_time - model.start_time
+        model.is_processing = False
 
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[UI_COMPONENTS_SUBGRAPH] Failed during UI Components generation process completion", e)
-        state.subgraphs.createUiComponentsModel.is_failed = True
+        model.is_failed = True
 
     return state
 

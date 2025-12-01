@@ -49,8 +49,6 @@ def worker_preprocess_policy_actions(state: State) -> State:
         LogUtil.add_error_log(state, "[POLICY_WORKER] No current generation found in worker preprocess")
         return state
         
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    
     try:
         # 기능 요구사항에 라인 번호 추가
         if current_gen.description:
@@ -74,6 +72,7 @@ def worker_preprocess_policy_actions(state: State) -> State:
         current_gen.summarized_es_value = summarized_es_value
         
     except Exception as e:
+        bc_name = current_gen.target_bounded_context_name
         LogUtil.add_exception_object_log(state, f"[POLICY_WORKER] Preprocessing failed for bounded context: '{bc_name}'", e)
         current_gen.is_failed = True
     
@@ -89,8 +88,7 @@ def worker_generate_policy_actions(state: State) -> State:
         LogUtil.add_error_log(state, "[POLICY_WORKER] No current generation found in worker generate")
         return state
         
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-
+    bc_name = current_gen.target_bounded_context_name
     try:    
         # 모델명 가져오기
         model_name = Config.get_ai_model()
@@ -128,7 +126,8 @@ def worker_generate_policy_actions(state: State) -> State:
                         "summarizedESValue": current_gen.summarized_es_value,
                         "description": current_gen.description
                     },
-                    "preferredLanguage": state.inputs.preferedLanguage
+                    "preferredLanguage": state.inputs.preferedLanguage,
+                    "retryCount": current_gen.retry_count
                 }
             )
 
@@ -146,7 +145,8 @@ def worker_generate_policy_actions(state: State) -> State:
                         "summarizedESValue": {},
                         "description": current_gen.description
                     },
-                    "preferredLanguage": state.inputs.preferedLanguage
+                    "preferredLanguage": state.inputs.preferedLanguage,
+                    "retryCount": current_gen.retry_count
                 }
             )
             
@@ -212,8 +212,7 @@ def worker_validate_policy_actions(state: State) -> State:
         LogUtil.add_error_log(state, "[POLICY_WORKER] No current generation found in worker validate")
         return state
         
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    
+    bc_name = current_gen.target_bounded_context_name
     try:
         # 최대 재시도 횟수 초과 시 실패로 처리
         if current_gen.retry_count > state.subgraphs.createPolicyActionsByFunctionModel.max_retry_count:
@@ -365,15 +364,13 @@ def create_policy_actions_worker_subgraph():
     
     return run_worker
 
-def _build_worker_request_context(current_gen) -> str:
+def _build_worker_request_context(current_gen: PolicyActionGenerationState) -> str:
     """
     요약 요청 컨텍스트 빌드
     """
-    bounded_context_name = current_gen.target_bounded_context.get("name", "")
-    bounded_context_display_name = current_gen.target_bounded_context.get("displayName", bounded_context_name)
-    
+    bounded_context_name = current_gen.target_bounded_context_name
     return f"""<context>
-    <task>Creating policies for {bounded_context_display_name} Bounded Context</task>
+    <task>Creating policies for {bounded_context_name} Bounded Context</task>
     <description>
 {current_gen.original_description}
     </description>

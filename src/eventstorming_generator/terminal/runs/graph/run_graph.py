@@ -6,7 +6,7 @@ run_graph_registry = {
     "MainGraph": {
         "handler": run_main_graph,
         "description": "메인 그래프를 전체를 즉시 실행",
-        "usage": "run runGraph MainGraph"
+        "usage": "run runGraph MainGraph [<요청 타입(fromRequirements, fromDraft)>] [<요청 요구사항 유형(library_requirements, it_system_requirements)>] [<중지 노드 이름(none)>] [<데이터베이스 타입(memory))>]"
     },
     "SubGraph": {
         "handler": run_sub_graph,

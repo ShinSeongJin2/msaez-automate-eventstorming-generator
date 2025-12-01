@@ -2,27 +2,21 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "개발 모드로 실행",
+            "label": "[local] 로컬에서 메인 프로그램 실행",
             "type": "shell",
-            "command": "uv run langgraph dev",
+            "command": "bash ./commands/local/runs/run_main_dev.sh",
             "problemMatcher": []
         },
         {
-            "label": "단위 테스트 실행",
+            "label": "[k8s] 이미지 빌드",
             "type": "shell",
-            "command": "uv run python ./src/eventstorming_generator/test.py",
+            "command": "bash ./commands/k8s/runs/deploy/build_image.sh",
             "problemMatcher": []
         },
         {
-            "label": "이미지 빌드",
+            "label": "[k8s] k8s에 배포",
             "type": "shell",
-            "command": "bash ./scripts/build_image.sh",
-            "problemMatcher": []
-        },
-        {
-            "label": "k8s에 배포",
-            "type": "shell",
-            "command": "bash ./scripts/apply_to_k8s.sh",
+            "command": "bash ./commands/k8s/runs/deploy/apply_to_k8s.sh",
             "problemMatcher": []
         }
     ]

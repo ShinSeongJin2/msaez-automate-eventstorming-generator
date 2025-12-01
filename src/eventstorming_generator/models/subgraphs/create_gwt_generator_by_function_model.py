@@ -5,18 +5,21 @@ from ..base import BaseModelWithItem
 
 class GWTGenerationState(BaseModelWithItem):
     """단일 Command의 GWT 생성 처리 상태"""
-    target_bounded_context: Dict[str, Any] = Field(default_factory=dict)
+    target_bounded_context_name: str = ""
     target_command_id: str = ""
     target_aggregate_name: str = ""
     description: str = ""
+    worker_index: int = 0
+    
     summarized_es_value: Dict[str, Any] = Field(default_factory=dict)
     target_command_alias: str = ""
-    retry_count: int = 0
     command_to_replace: Dict[str, Any] = Field(default_factory=dict)
+    
+    retry_count: int = 0
+    needs_es_summary: bool = False
     generation_complete: bool = False
     is_token_over_limit: bool = False
     
-    needs_es_summary: bool = False
     es_summary_context: str = ""
     es_summary_max_tokens: int = 0
     es_summary_processing: bool = False
@@ -24,8 +27,6 @@ class GWTGenerationState(BaseModelWithItem):
 
 class CreateGwtGeneratorByFunctionModel(BaseModelWithItem):
     """GWT 생성 관련 상태 관리 모델"""
-    draft_options: Dict[str, Any] = Field(default_factory=dict)
-    
     completed_generations: List[GWTGenerationState] = Field(default_factory=list)
     pending_generations: List[GWTGenerationState] = Field(default_factory=list)
     

@@ -24,8 +24,8 @@ RUN uv sync --frozen
 # Python 경로 설정
 ENV PYTHONPATH=/app/src
 
-# 포트 노출 (헬스체크용)
-EXPOSE 2024
+# 포트 노출 (A2A 서버)
+EXPOSE 5000
 
 # 시간 맞추기
 ENV TZ=Asia/Seoul

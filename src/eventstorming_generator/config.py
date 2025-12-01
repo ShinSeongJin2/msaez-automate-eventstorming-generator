@@ -27,6 +27,18 @@ class Config:
     def get_job_state_path(job_id: str) -> str:
         return f"{Config.get_job_state_root_path()}/{job_id}"
 
+    @staticmethod
+    def get_job_logs_path(job_id: str) -> str:
+        return f"{Config.get_job_path(job_id)}/state/outputs/logs"
+    
+    @staticmethod
+    def get_job_is_completed_path(job_id: str) -> str:
+        return f"{Config.get_job_path(job_id)}/state/outputs/isCompleted"
+    
+    @staticmethod
+    def get_job_is_failed_path(job_id: str) -> str:
+        return f"{Config.get_job_path(job_id)}/state/outputs/isFailed"
+
 
     @staticmethod
     def get_namespace() -> str:
@@ -40,6 +52,10 @@ class Config:
     @staticmethod
     def is_local_run() -> bool:
         return os.getenv('IS_LOCAL_RUN') == 'true'
+    
+    @staticmethod
+    def is_use_generator_cache() -> bool:
+        return os.getenv('USE_GENERATOR_CACHE', 'false') == 'true'
     
 
     @staticmethod
@@ -116,3 +132,47 @@ class Config:
     @staticmethod
     def get_ai_model_light_max_batch_size() -> int:
         return int(os.getenv('AI_MODEL_LIGHT_MAX_BATCH_SIZE'))
+    
+
+    @staticmethod
+    def get_msaez_es_url(dbuid: str) -> str:
+        return f"{Config.get_msaez_url()}/#/storming/{dbuid}"
+
+    @staticmethod
+    def get_msaez_url() -> str:
+        return os.getenv('MSAEZ_URL')
+
+
+    @staticmethod
+    def get_firebase_service_account_path() -> str:
+        return os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH')
+    
+    @staticmethod
+    def get_firebase_database_url() -> str:
+        return os.getenv('FIREBASE_DATABASE_URL')
+
+    @staticmethod
+    def get_db_type() -> str:
+        return os.getenv('DB_TYPE', 'firebase')
+    
+    @staticmethod
+    def set_db_type(db_type: str):
+        os.environ['DB_TYPE'] = db_type
+
+
+    @staticmethod
+    def get_text_chunker_chunk_size() -> int:
+        return int(os.getenv('TEXT_CHUNKER_CHUNK_SIZE', '25000'))
+    
+    @staticmethod
+    def get_text_chunker_spare_size() -> int:
+        return int(os.getenv('TEXT_CHUNKER_SPARE_SIZE', '2000'))
+    
+
+    @staticmethod
+    def get_llm_cache_path() -> str:
+        return os.getenv('LLM_CACHE_PATH', '.cache/llm_cache.db')
+    
+    @staticmethod
+    def set_llm_cache_path(path: str):
+        os.environ['LLM_CACHE_PATH'] = path

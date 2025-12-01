@@ -5,8 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from langgraph.graph import StateGraph, START
 
 from ..models import CommandActionGenerationState, ExtractedElementNameDetail, State
-from ..utils import JsonUtil, EsActionsUtil, LogUtil, JobUtil
-from ..constants import ResumeNodes
+from ..utils import JsonUtil, EsActionsUtil, LogUtil
+from ..utils.job_utils import JobUtil
+from ..constants import RESUME_NODES, ELEMENT_TYPES
 from .worker_subgraphs import create_command_actions_worker_subgraph, command_actions_worker_id_context
 from ..config import Config
 
@@ -15,8 +16,9 @@ def resume_from_create_command_actions(state: State):
     try :
         
         state.subgraphs.createCommandActionsByFunctionModel.start_time = time.time()
-        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"] and state.outputs.lastCompletedSubGraphNode:
-            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_COMMAND_ACTIONS"].values():
+        if state.outputs.lastCompletedRootGraphNode == RESUME_NODES.ROOT_GRAPH.CREATE_COMMAND_ACTIONS and \
+           state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in RESUME_NODES.CREATE_COMMAND_ACTIONS.__dict__.values():
                 LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
                 return state.outputs.lastCompletedSubGraphNode
             else:
@@ -41,22 +43,17 @@ def prepare_command_actions_generation(state: State) -> State:
     try:
 
         LogUtil.add_info_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Starting command actions generation preparation")
-
-        # 입력값이 있는지 확인
-        if not state.inputs.selectedDraftOptions:
-            LogUtil.add_error_log(state, "[COMMAND_ACTIONS_SUBGRAPH] No selectedDraftOptions found in input data")
-            state.subgraphs.createCommandActionsByFunctionModel.is_failed = True
-            return state
         
         # 처리할 애그리거트 목록 초기화
         pending_generations = []
         total_aggregates = 0
+        worker_index = 0
         
         extracted_element_names = state.subgraphs.createElementNamesByDraftsModel.extracted_element_names
         for bc_name, bc_extracted_element_names in extracted_element_names.items():
             for agg_name, agg_extracted_element_name_detail in bc_extracted_element_names.items():
                 for element in state.outputs.esValue.elements.values():
-                    if (not element or element.get("_type") != "org.uengine.modeling.model.Aggregate" or element.get("name") != agg_name):
+                    if (not element or element.get("_type") != ELEMENT_TYPES.AGGREGATE or element.get("name") != agg_name):
                         continue
                     
                     bounded_context_id = element.get("boundedContext", {}).get("id")
@@ -67,23 +64,29 @@ def prepare_command_actions_generation(state: State) -> State:
                     if not bounded_context or bounded_context.get("name") != bc_name:
                         continue
                     
+                    requirement_index_mapping = (state.inputs.draft.metadatas.boundedContextRequirementIndexMapping or {})\
+                                                .get(bc_name, None)
+                    
                     description = bounded_context.get("description", "")
                     generation_state = CommandActionGenerationState(
                         target_bounded_context_name=bc_name,
                         target_aggregate_name=agg_name,
                         description=description,
                         original_description=description,
-                        extracted_element_names=agg_extracted_element_name_detail
+                        extracted_element_names=agg_extracted_element_name_detail,
+                        requirement_index_mapping=requirement_index_mapping,
+                        worker_index=worker_index,
                     )
                     pending_generations.append(generation_state)
                     total_aggregates += 1
+                    worker_index += 1
 
         # 상태 업데이트
         state.subgraphs.createCommandActionsByFunctionModel.pending_generations = pending_generations
         state.subgraphs.createCommandActionsByFunctionModel.is_processing = True
         state.subgraphs.createCommandActionsByFunctionModel.all_complete = len(pending_generations) == 0
         
-        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Preparation completed. Total aggregates to process: {total_aggregates} across {len(state.inputs.selectedDraftOptions)} bounded contexts")
+        LogUtil.add_info_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Preparation completed. Total aggregates to process: {total_aggregates}")
         
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during command actions generation preparation", e)
@@ -100,8 +103,8 @@ def select_batch_command_actions(state: State) -> State:
 
     try:
 
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["SELECT_BATCH"]
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_COMMAND_ACTIONS
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_COMMAND_ACTIONS.SELECT_BATCH
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
         model = state.subgraphs.createCommandActionsByFunctionModel
@@ -263,6 +266,7 @@ def collect_and_apply_results(state: State) -> State:
         successful_aggregates = []
         failed_aggregates = []
         
+        model.parallel_worker_results.sort(key=lambda x: x.worker_index)
         for command_result in model.parallel_worker_results:
             aggregate_name = command_result.target_aggregate_name
             bc_name = command_result.target_bounded_context_name
@@ -279,8 +283,8 @@ def collect_and_apply_results(state: State) -> State:
             updated_es_value = EsActionsUtil.apply_actions(
                 state.outputs.esValue.model_dump(),
                 all_actions,
-                state.inputs.userInfo,
-                state.inputs.information
+                state.inputs.ids.uid,
+                state.inputs.ids.projectId
             )
             
             # 업데이트된 ES 값 저장
@@ -327,36 +331,40 @@ def complete_processing(state: State) -> State:
     """
     모든 처리가 완료되면 최종 상태 업데이트
     """
-    
+    model = state.subgraphs.createCommandActionsByFunctionModel
     try:
+        if model.end_time:
+            LogUtil.add_info_log(
+                state,
+                "[COMMAND_ACTIONS_SUBGRAPH] Completion already recorded; skipping duplicate completion handling"
+            )
+            return state
 
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_COMMAND_ACTIONS"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_COMMAND_ACTIONS"]["COMPLETE"]
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_COMMAND_ACTIONS
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_COMMAND_ACTIONS.COMPLETE
         state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        subgraph_model = state.subgraphs.createCommandActionsByFunctionModel
-        subgraph_model.is_processing = False
-        subgraph_model.all_complete = True
+        model.is_processing = False
+        model.all_complete = True
         
-        completed_count = len(subgraph_model.completed_generations)
-        failed = subgraph_model.is_failed
+        completed_count = len(model.completed_generations)
+        failed = model.is_failed
         if failed:
             LogUtil.add_error_log(state, f"[COMMAND_ACTIONS_SUBGRAPH] Command actions processing completed with failures. Successfully processed: {completed_count} aggregates")
 
         if not failed:
-            # 변수 정리
-            subgraph_model.completed_generations = []
-            subgraph_model.pending_generations = []
+            model.completed_generations = []
+            model.pending_generations = []
 
-            # 배치 처리 관련 변수들도 정리
-            subgraph_model.worker_generations = {}
-            subgraph_model.current_batch = []
-            subgraph_model.parallel_worker_results = []
+            model.worker_generations = {}
+            model.current_batch = []
+            model.parallel_worker_results = []
         
-        state.subgraphs.createCommandActionsByFunctionModel.end_time = time.time()
-        state.subgraphs.createCommandActionsByFunctionModel.total_seconds = state.subgraphs.createCommandActionsByFunctionModel.end_time - state.subgraphs.createCommandActionsByFunctionModel.start_time
-        
+        model.end_time = time.time()
+        model.total_seconds = model.end_time - model.start_time
+        model.is_processing = False
+
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[COMMAND_ACTIONS_SUBGRAPH] Failed during command actions processing completion", e)
         state.subgraphs.createCommandActionsByFunctionModel.is_failed = True

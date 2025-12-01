@@ -143,7 +143,8 @@ def worker_generate_ui_component(state: State) -> State:
                 model_name=model_name,
                 client={
                     "inputs": current_gen.ai_input_data,
-                    "preferredLanguage": state.inputs.preferedLanguage
+                    "preferredLanguage": state.inputs.preferedLanguage,
+                    "retryCount": current_gen.retry_count
                 }
             )
             generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
@@ -155,7 +156,8 @@ def worker_generate_ui_component(state: State) -> State:
                 model_name=model_name,
                 client={
                     "inputs": current_gen.ai_input_data,
-                    "preferredLanguage": state.inputs.preferedLanguage
+                    "preferredLanguage": state.inputs.preferedLanguage,
+                    "retryCount": current_gen.retry_count
                 }
             )
             generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)

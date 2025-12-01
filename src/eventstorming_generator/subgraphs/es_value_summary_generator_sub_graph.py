@@ -4,7 +4,7 @@ from langgraph.graph import StateGraph
 
 from ..utils import JsonUtil, ESValueSummarizeWithFilter, TokenCounter, LogUtil, XmlUtil
 from ..models import State, ESValueSummaryGeneratorOutput
-from ..utils.es_alias_trans_manager import EsAliasTransManager
+from ..utils import EsAliasTransManager
 from ..generators.es_value_summary_generator import ESValueSummaryGenerator
 from ..config import Config
 
@@ -104,7 +104,8 @@ def generate_es_value_summary(state: State) -> State:
                     "context": current_gen.context,
                     "elementIds": current_gen.element_ids
                 },
-                "preferredLanguage": state.inputs.preferedLanguage
+                "preferredLanguage": state.inputs.preferedLanguage,
+                "retryCount": current_gen.retry_count
             }
         )
         

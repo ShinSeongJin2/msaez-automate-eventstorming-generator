@@ -1,21 +1,35 @@
-from .inputs import InputsModel, InformationModel, UserInfoModel
+from .inputs import InputsModel, IdsModel, AdditionalRequestsModel, MetadatasModel, DraftModel
 from .outputs import OutputsModel, EsValueModel, LogModel
 from .action_model import ActionModel
 from .base import BaseModelWithItem
-from .subgraphs import SubgraphsModel, CreateAggregateByFunctionsModel, AggregateGenerationState, CreateAggregateClassIdByDraftsModel, ClassIdGenerationState, CreateCommandActionsByFunctionModel, CommandActionGenerationState, CreatePolicyActionsByFunctionModel, PolicyActionGenerationState, CreateGwtGeneratorByFunctionModel, GWTGenerationState, ESValueSummaryGeneratorModel, CreateUiComponentsModel, CreateUiComponentsGenerationState, CreateElementNamesByDraftsModel, ElementNamesGenerationState, ExtractedElementNameDetail
+from .subgraphs import SubgraphsModel, CreateBoundedContextByFunctionsModel, BoundedContextGenerationState, CreateContextMappingModel, ContextMappingGenerationState, CreateDraftByFunctionModel, DraftGenerationState, CreateAggregateByFunctionsModel, AggregateGenerationState, CreateAggregateClassIdByDraftsModel, ClassIdGenerationState, CreateCommandActionsByFunctionModel, CommandActionGenerationState, CreatePolicyActionsByFunctionModel, PolicyActionGenerationState, CreateGwtGeneratorByFunctionModel, GWTGenerationState, ESValueSummaryGeneratorModel, CreateUiComponentsModel, CreateUiComponentsGenerationState, CreateElementNamesByDraftsModel, ElementNamesGenerationState, ExtractedElementNameDetail
 from .state import State
-from .generators import CreateAggregateActionsByFunctionOutput, CreateAggregateClassIdByDraftsOutput, CreateCommandActionsByFunctionOutput, CreatePolicyActionsByFunctionOutput, CreateGWTGeneratorByFunctionOutput, ESValueSummaryGeneratorOutput, AssignFieldsToActionsGeneratorOutput, CreateCommandWireFrameOutput, CreateReadModelWireFrameOutput, CreateElementNamesByDraftsOutput
+from .generators import CreateBoundedContextGeneratorOutput, RequirementMappingGeneratorOutput, ContextMapping, MergeCreatedBoundedContextGeneratorOutput, CreateDraftGeneratorOutput, MergeDraftGeneratorOutput, MergedDraftInfo, MergedAggregateInfo, CreateAggregateActionsByFunctionOutput, CreateAggregateClassIdByDraftsOutput, CreateCommandActionsByFunctionOutput, CreatePolicyActionsByFunctionOutput, CreateGWTGeneratorByFunctionOutput, ESValueSummaryGeneratorOutput, AssignFieldsToActionsGeneratorOutput, CreateCommandWireFrameOutput, CreateReadModelWireFrameOutput, CreateElementNamesByDraftsOutput
+from .utils import TextChunkModel, ReferencedContextMapping
+from .es_models import BoundedContextStructureModel, BoundedContextInfoModel, AggregateInfoModel, EnumerationInfoModel, ValueObjectInfoModel, ReferencedAggregateInfoModel, AggregateInfoNoRefModel, ValueObjectInfoNoRefModel
 
 __all__ = [
     "InputsModel",
-    "InformationModel",
-    "UserInfoModel",
+    "IdsModel",
+    "AdditionalRequestsModel",
+    "MetadatasModel",
+    "DraftModel",
+
     "OutputsModel",
     "EsValueModel",
     "LogModel",
+
     "ActionModel",
+
     "BaseModelWithItem",
+
     "SubgraphsModel",
+    "CreateBoundedContextByFunctionsModel",
+    "BoundedContextGenerationState",
+    "CreateContextMappingModel",
+    "ContextMappingGenerationState",
+    "CreateDraftByFunctionModel",
+    "DraftGenerationState",
     "CreateAggregateByFunctionsModel",
     "AggregateGenerationState",
     "CreateAggregateClassIdByDraftsModel",
@@ -26,13 +40,23 @@ __all__ = [
     "PolicyActionGenerationState",
     "CreateGwtGeneratorByFunctionModel",
     "GWTGenerationState",
+    "ESValueSummaryGeneratorModel",
     "CreateUiComponentsModel",
     "CreateUiComponentsGenerationState",
     "CreateElementNamesByDraftsModel",
     "ElementNamesGenerationState",
     "ExtractedElementNameDetail",
+
     "State",
-    "ESValueSummaryGeneratorModel",
+    
+    "CreateBoundedContextGeneratorOutput",
+    "RequirementMappingGeneratorOutput",
+    "ContextMapping",
+    "MergeCreatedBoundedContextGeneratorOutput",
+    "CreateDraftGeneratorOutput",
+    "MergeDraftGeneratorOutput",
+    "MergedDraftInfo",
+    "MergedAggregateInfo",
     "CreateAggregateActionsByFunctionOutput",
     "CreateAggregateClassIdByDraftsOutput",
     "CreateCommandActionsByFunctionOutput",
@@ -42,7 +66,19 @@ __all__ = [
     "AssignFieldsToActionsGeneratorOutput",
     "CreateCommandWireFrameOutput",
     "CreateReadModelWireFrameOutput",
-    "CreateElementNamesByDraftsOutput"
+    "CreateElementNamesByDraftsOutput",
+    
+    "TextChunkModel",
+    "ReferencedContextMapping",
+
+    "BoundedContextStructureModel",
+    "BoundedContextInfoModel",
+    "AggregateInfoModel",
+    "EnumerationInfoModel",
+    "ValueObjectInfoModel",
+    "ReferencedAggregateInfoModel",
+    "AggregateInfoNoRefModel",
+    "ValueObjectInfoNoRefModel"
 ]
 
 

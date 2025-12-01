@@ -9,8 +9,11 @@ class ClassIdGenerationState(BaseModelWithItem):
     target_references: List[str] = Field(default_factory=list)
     draft_option: Dict[str, Any] = Field(default_factory=dict)
     related_aggregate_names: List[str] = Field(default_factory=list)
+    worker_index: int = 0
+
     summarized_es_value: Dict[str, Any] = Field(default_factory=dict)
     created_actions: List[ActionModel] = Field(default_factory=list)
+    
     retry_count: int = 0
     generation_complete: bool = False
     is_failed: bool = False

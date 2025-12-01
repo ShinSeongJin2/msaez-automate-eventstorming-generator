@@ -1,6 +1,4 @@
-from ...terminal_util import TerminalUtil
-from ....generators import AssignFieldsToActionsGenerator
-from ..mocks import assign_fields_to_actions_generator_inputs
+from ...commons.generator import execute_assign_fields_to_actions_generator
 
 def run_assign_fields_to_actions_generator(command_args):
-    TerminalUtil.run_generator(AssignFieldsToActionsGenerator, assign_fields_to_actions_generator_inputs, "normal")
+    execute_assign_fields_to_actions_generator(is_save_to_temp=True)

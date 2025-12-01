@@ -1,6 +1,4 @@
-from ...terminal_util import TerminalUtil
-from ....generators import CreateAggregateActionsByFunction
-from ..mocks import create_aggregate_actions_by_function_inputs
+from ...commons.generator import execute_create_aggregate_actions_by_function
 
 def run_create_aggregate_actions_by_function(command_args):
-    TerminalUtil.run_generator(CreateAggregateActionsByFunction, create_aggregate_actions_by_function_inputs, "normal")
+    execute_create_aggregate_actions_by_function(is_save_to_temp=True)

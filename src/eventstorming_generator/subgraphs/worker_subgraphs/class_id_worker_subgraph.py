@@ -107,7 +107,8 @@ def worker_generate_class_id(state: State) -> State:
                     "draftOption": current_gen.draft_option,
                     "targetReferences": current_gen.target_references
                 },
-                "preferredLanguage": state.inputs.preferedLanguage
+                "preferredLanguage": state.inputs.preferedLanguage,
+                "retryCount": current_gen.retry_count
             }
         )
 

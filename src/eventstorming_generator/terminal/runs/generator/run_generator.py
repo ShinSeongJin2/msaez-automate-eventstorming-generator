@@ -1,5 +1,10 @@
-from .run_assign_fields_to_actions_generator import run_assign_fields_to_actions_generator
+from .run_create_bounded_context_generator import run_create_bounded_context_generator
+from .run_merge_created_bounded_context_generator import run_merge_created_bounded_context_generator
+from .run_requirement_mapping_generator import run_requirement_mapping_generator
+from .run_create_draft_generator import run_create_draft_generator
+from .run_merge_draft_generator import run_merge_draft_generator
 from .run_create_aggregate_actions_by_function import run_create_aggregate_actions_by_function
+from .run_assign_fields_to_actions_generator import run_assign_fields_to_actions_generator
 from .run_create_aggregate_class_id_by_drafts import run_create_aggregate_class_id_by_drafts
 from .run_create_command_actions_by_function import run_create_command_actions_by_function
 from .run_create_command_wire_frame import run_create_command_wire_frame
@@ -10,15 +15,40 @@ from .run_create_read_model_wire_frame import run_create_read_model_wire_frame
 from .run_es_value_summary_generator import run_es_value_summary_generator
 
 run_generator_registry = {
-    "AssignFieldsToActionsGenerator": {
-        "handler": run_assign_fields_to_actions_generator,
-        "description": "AssignFieldsToActionsGenerator를 즉시 실행",
-        "usage": "run runGenerator AssignFieldsToActionsGenerator"
+    "CreateBoundedContextGenerator": {
+        "handler": run_create_bounded_context_generator,
+        "description": "CreateBoundedContextGenerator를 즉시 실행",
+        "usage": "run runGenerator CreateBoundedContextGenerator"
+    },
+    "MergeCreatedBoundedContextGenerator": {
+        "handler": run_merge_created_bounded_context_generator,
+        "description": "MergeCreatedBoundedContextGenerator를 즉시 실행",
+        "usage": "run runGenerator MergeCreatedBoundedContextGenerator"
+    },
+    "RequirementMappingGenerator": {
+        "handler": run_requirement_mapping_generator,
+        "description": "RequirementMappingGenerator를 즉시 실행",
+        "usage": "run runGenerator RequirementMappingGenerator"
+    },
+    "CreateDraftGenerator": {
+        "handler": run_create_draft_generator,
+        "description": "CreateDraftGenerator를 즉시 실행",
+        "usage": "run runGenerator CreateDraftGenerator"
+    },
+    "MergeDraftGenerator": {
+        "handler": run_merge_draft_generator,
+        "description": "MergeDraftGenerator를 즉시 실행",
+        "usage": "run runGenerator MergeDraftGenerator"
     },
     "CreateAggregateActionsByFunction": {
         "handler": run_create_aggregate_actions_by_function,
         "description": "CreateAggregateActionsByFunction를 즉시 실행",
         "usage": "run runGenerator CreateAggregateActionsByFunction"
+    },
+    "AssignFieldsToActionsGenerator": {
+        "handler": run_assign_fields_to_actions_generator,
+        "description": "AssignFieldsToActionsGenerator를 즉시 실행",
+        "usage": "run runGenerator AssignFieldsToActionsGenerator"
     },
     "CreateAggregateClassIdByDrafts": {
         "handler": run_create_aggregate_class_id_by_drafts,

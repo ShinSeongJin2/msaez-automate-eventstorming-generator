@@ -5,9 +5,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from langgraph.graph import StateGraph, START
 
 from ..models import GWTGenerationState, State
-from ..utils import JsonUtil, LogUtil, JobUtil
+from ..utils import JsonUtil, LogUtil
+from ..utils.job_utils import JobUtil
 from .worker_subgraphs import create_gwt_worker_subgraph, gwt_worker_id_context
-from ..constants import ResumeNodes
+from ..constants import RESUME_NODES, ELEMENT_TYPES
 from ..config import Config
 
 
@@ -15,9 +16,9 @@ def resume_from_create_gwt(state: State):
     try :
 
         state.subgraphs.createGwtGeneratorByFunctionModel.start_time = time.time()
-        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"] and state.outputs.lastCompletedSubGraphNode:
-            valid_nodes = list(ResumeNodes["CREATE_GWT"].values())
-            if state.outputs.lastCompletedSubGraphNode in valid_nodes:
+        if state.outputs.lastCompletedRootGraphNode == RESUME_NODES.ROOT_GRAPH.CREATE_GWT and \
+           state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in RESUME_NODES.CREATE_GWT.__dict__.values():
                 LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
                 return state.outputs.lastCompletedSubGraphNode
             else:
@@ -46,34 +47,32 @@ def prepare_gwt_generation(state: State) -> State:
         if state.subgraphs.createGwtGeneratorByFunctionModel.is_processing:
             return state
         
-        # 초안 데이터 설정
-        draft_options = state.inputs.selectedDraftOptions
-        state.subgraphs.createGwtGeneratorByFunctionModel.draft_options = draft_options
         state.subgraphs.createGwtGeneratorByFunctionModel.is_processing = True
         state.subgraphs.createGwtGeneratorByFunctionModel.all_complete = False
         
-        # 처리할 Command GWT 목록 초기화
         pending_generations = []
         total_aggregates = 0
         total_commands = 0
-        
-        for bounded_context_name, bounded_context_data in draft_options.items():
-            target_bounded_context = {"name": bounded_context_name}
-            if "boundedContext" in bounded_context_data:
-                target_bounded_context.update(bounded_context_data["boundedContext"])
-            
+        worker_index = 0
+
+        for structure in state.inputs.draft.structures:
+            bc_name = structure.boundedContextName
+            description = state.inputs.draft.metadatas.boundedContextRequirements.get(bc_name, "")
+
             target_aggregates = []
             for element in state.outputs.esValue.elements.values():
-                if element and element.get("_type") == "org.uengine.modeling.model.Aggregate" and \
-                   element.get("boundedContext", {}).get("id") == target_bounded_context.get("id"):
-                    target_aggregates.append(element)
-            
+                if element and element.get("_type") == ELEMENT_TYPES.AGGREGATE:
+                    bounded_context_id = element.get("boundedContext", {}).get("id")
+                    bounded_context = state.outputs.esValue.elements[bounded_context_id]
+                    if bounded_context and bounded_context.get("name") == bc_name:
+                        target_aggregates.append(element)
+
             for target_aggregate in target_aggregates:
                 target_command_ids = []
                 target_aggregate_name = target_aggregate.get("name", "Unknown")
                 
                 for element in state.outputs.esValue.elements.values():
-                    if element and element.get("_type") == "org.uengine.modeling.model.Command" and \
+                    if element and element.get("_type") == ELEMENT_TYPES.COMMAND and \
                        element.get("aggregate", {}).get("id") == target_aggregate.get("id"):
                         target_command_ids.append(element.get("id"))
                 
@@ -82,17 +81,19 @@ def prepare_gwt_generation(state: State) -> State:
                 
                 for target_command_id in target_command_ids:
                     generation_state = GWTGenerationState(
-                        target_bounded_context=target_bounded_context,
+                        target_bounded_context_name=bc_name,
                         target_command_id=target_command_id,
                         target_aggregate_name=target_aggregate_name,
-                        description=bounded_context_data.get("description", ""),
+                        description=description,
+                        worker_index=worker_index,
                         retry_count=0,
                         generation_complete=False
                     )
                     pending_generations.append(generation_state)
                     total_commands += 1
+                    worker_index += 1
+
                 total_aggregates += 1
-        
         state.subgraphs.createGwtGeneratorByFunctionModel.pending_generations = pending_generations
         
         LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] Preparation completed. Total tasks: {len(pending_generations)} ({total_aggregates} aggregates, {total_commands} commands)")
@@ -111,8 +112,8 @@ def select_batch_gwt_generation(state: State) -> State:
     """
     
     try:
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_GWT"]["SELECT_BATCH"]
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_GWT
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_GWT.SELECT_BATCH
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
         model = state.subgraphs.createGwtGeneratorByFunctionModel
@@ -276,6 +277,7 @@ def collect_and_apply_results(state: State) -> State:
         failed_gwts = []
         
         # 모든 성공한 GWT들의 결과 수집하고 적용
+        model.parallel_worker_results.sort(key=lambda x: x.worker_index)
         for gwt_result in model.parallel_worker_results:
             command_alias = gwt_result.target_command_alias or gwt_result.target_command_id
             aggregate_name = gwt_result.target_aggregate_name
@@ -297,7 +299,6 @@ def collect_and_apply_results(state: State) -> State:
         # 성공한 GWT들을 완료 목록으로 이동 (변수 정리)
         for gwt in successful_gwts:
             # 메모리 절약을 위한 변수 정리
-            gwt.target_bounded_context = {}
             gwt.target_command_id = ""
             gwt.target_aggregate_name = ""
             gwt.description = ""
@@ -309,7 +310,6 @@ def collect_and_apply_results(state: State) -> State:
         
         # 실패한 GWT들도 완료 목록으로 이동 (재시도는 하지 않음)
         for gwt in failed_gwts:
-            gwt.target_bounded_context = {}
             gwt.target_command_id = ""
             gwt.target_aggregate_name = ""
             gwt.description = ""
@@ -339,17 +339,22 @@ def complete_processing(state: State) -> State:
     """
     GWT 생성 프로세스 완료
     """
-    
+    model = state.subgraphs.createGwtGeneratorByFunctionModel
     try:
+        if model.end_time:
+            LogUtil.add_info_log(
+                state,
+                "[GWT_SUBGRAPH] Completion already recorded; skipping duplicate completion handling"
+            )
+            return state
 
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_GWT"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_GWT"]["COMPLETE"]
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_GWT
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_GWT.COMPLETE
         state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        # 완료된 작업 수 정보 로그
-        completed_count = len(state.subgraphs.createGwtGeneratorByFunctionModel.completed_generations)
-        failed = state.subgraphs.createGwtGeneratorByFunctionModel.is_failed
+        completed_count = len(model.completed_generations)
+        failed = model.is_failed
         
         if failed:
             LogUtil.add_error_log(state, f"[GWT_SUBGRAPH] GWT generation process completed with failures. Successfully processed: {completed_count} command tasks")
@@ -357,18 +362,16 @@ def complete_processing(state: State) -> State:
             LogUtil.add_info_log(state, f"[GWT_SUBGRAPH] GWT generation process completed successfully. Total processed: {completed_count} command tasks")
         
         if not failed:
-            # 변수 정리
-            subgraph_model = state.subgraphs.createGwtGeneratorByFunctionModel
-            subgraph_model.draft_options = {}
-            subgraph_model.completed_generations = []
-            subgraph_model.pending_generations = []
+            model.completed_generations = []
+            model.pending_generations = []
         
-        state.subgraphs.createGwtGeneratorByFunctionModel.end_time = time.time()
-        state.subgraphs.createGwtGeneratorByFunctionModel.total_seconds = state.subgraphs.createGwtGeneratorByFunctionModel.end_time - state.subgraphs.createGwtGeneratorByFunctionModel.start_time
+        model.end_time = time.time()
+        model.total_seconds = model.end_time - model.start_time
+        model.is_processing = False
 
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[GWT_SUBGRAPH] Failed during GWT generation process completion", e)
-        state.subgraphs.createGwtGeneratorByFunctionModel.is_failed = True
+        model.is_failed = True
 
     return state
 

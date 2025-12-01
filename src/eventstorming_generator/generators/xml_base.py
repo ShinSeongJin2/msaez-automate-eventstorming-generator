@@ -7,6 +7,7 @@ from langchain.chat_models import init_chat_model
 from langchain.schema import HumanMessage, SystemMessage, AIMessage, BaseMessage
 from langchain_community.cache import SQLiteCache
 from langchain_core.globals import set_llm_cache
+from langchain_core.runnables import RunnableConfig
 
 from ..models import BaseModelWithItem
 from ..utils import JsonUtil
@@ -17,9 +18,9 @@ def init_cache():
     if not os.path.exists(".cache"):
         os.makedirs(".cache")
 
-    set_llm_cache(SQLiteCache(database_path=".cache/llm_cache.db"))
+    set_llm_cache(SQLiteCache(database_path=Config.get_llm_cache_path()))
 
-if Config.is_local_run():
+if Config.is_use_generator_cache():
     init_cache()
 
 
@@ -32,8 +33,8 @@ class XmlBaseGenerator(ABC):
     일관된 프롬프트 형식을 제공합니다.
     """
     
-    # 모델 캐시를 위한 클래스 변수
     _model_cache: Dict[str, Any] = {}
+    _structured_model_cache: Dict[str, Any] = {}
     
     def __init__(self, model_name: str, structured_output_class: Type, model_kwargs: Optional[Dict[str, Any]] = None, client: Optional[Dict[str, Any]] = None):
         """
@@ -65,6 +66,12 @@ class XmlBaseGenerator(ABC):
                     model_kwargs["include_thoughts"] = False
                     model_kwargs["thinking_budget"] = 0
                     model_name = model_name.replace(":no-thinking", "")
+            
+            if model_kwargs["temperature"]:
+                # 재시도 횟수에 따른 적응형 온도 조절
+                model_kwargs["temperature"] = min(
+                    model_kwargs.get("temperature") + client.get("retryCount", 0) * 0.2, 1.0
+                )
         
         if client is None: client = {}
         if not client.get("inputs"): client["inputs"] = {}
@@ -158,13 +165,28 @@ class XmlBaseGenerator(ABC):
             bypass_cache = False
 
         messages = self._get_messages(bypass_cache, retry_count)
-        structured_model = self.model.with_structured_output(
-            self.structured_output_class,
-            method="json_mode"
+        class_name = self.__class__.__name__ 
+
+        structured_model = None
+        if class_name in self._structured_model_cache and \
+           self._structured_model_cache[class_name] is not None:
+            structured_model = self._structured_model_cache[class_name]
+        else:
+            structured_model = self.model.with_structured_output(
+                self.structured_output_class,
+                method="json_mode"
+            )
+            self._structured_model_cache[class_name] = structured_model
+
+        config = RunnableConfig(
+            metadata={
+                "generator_class": class_name,
+                "retry_count": retry_count
+            }
         )
 
         model_with_json_mode = structured_model.first
-        raw_response = model_with_json_mode.invoke(messages)
+        raw_response = model_with_json_mode.invoke(messages, config=config)
 
         thinking = ""
         if self.__isThinkingAttributeExist(raw_response):

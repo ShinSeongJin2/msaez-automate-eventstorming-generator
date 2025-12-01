@@ -5,8 +5,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from langgraph.graph import StateGraph, START
 
 from ..models import ClassIdGenerationState, State
-from ..utils import JsonUtil, EsActionsUtil, LogUtil, JobUtil
-from ..constants import ResumeNodes
+from ..utils import JsonUtil, EsActionsUtil, LogUtil
+from ..utils.job_utils import JobUtil
+from ..constants import RESUME_NODES
 from .worker_subgraphs import create_class_id_worker_subgraph, class_id_worker_id_context
 from ..config import Config
 
@@ -15,8 +16,9 @@ def resume_from_create_class_id(state: State):
     try :
 
         state.subgraphs.createAggregateClassIdByDraftsModel.start_time = time.time()
-        if state.outputs.lastCompletedRootGraphNode == ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"] and state.outputs.lastCompletedSubGraphNode:
-            if state.outputs.lastCompletedSubGraphNode in ResumeNodes["CREATE_CLASS_ID"].values():
+        if state.outputs.lastCompletedRootGraphNode == RESUME_NODES.ROOT_GRAPH.CREATE_CLASS_ID and \
+           state.outputs.lastCompletedSubGraphNode:
+            if state.outputs.lastCompletedSubGraphNode in RESUME_NODES.CREATE_CLASS_ID.__dict__.values():
                 LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Resuming from checkpoint: '{state.outputs.lastCompletedSubGraphNode}'")
                 return state.outputs.lastCompletedSubGraphNode
             else:
@@ -41,43 +43,32 @@ def prepare_class_id_generation(state: State) -> State:
     """
     
     try:
+        draft = state.inputs.draft
+
         if state.subgraphs.createAggregateClassIdByDraftsModel.is_processing:
             return state
         
-        # 초안 데이터 설정
-        draft_options = {}
-        for bounded_context_id, bounded_context_data in state.inputs.selectedDraftOptions.items():
-            draft_options[bounded_context_id] = []
-            for structure in bounded_context_data.get("structure", []):
-                draft_options[bounded_context_id].append({
-                    "aggregate": structure.get("aggregate", {}),
-                    "enumerations": structure.get("enumerations", []),
-                    "valueObjects": structure.get("valueObjects", [])
-                })
-
-        state.subgraphs.createAggregateClassIdByDraftsModel.draft_options = draft_options
         state.subgraphs.createAggregateClassIdByDraftsModel.is_processing = True
         state.subgraphs.createAggregateClassIdByDraftsModel.all_complete = False
         
-        # 참조 관계 추출
         references = []
-        for bounded_context_id, bounded_context_data in draft_options.items():
-            for structure in bounded_context_data:
-                aggregate_name = structure.get("aggregate", {}).get("name", "Unknown")
-                for vo in structure.get("valueObjects", []):
-                    if "referencedAggregate" in vo:
-                        ref_aggregate_name = vo["referencedAggregate"]["name"]
+        for structure in draft.structures:
+            for aggregate_structure in structure.aggregates:
+                aggregate_name = aggregate_structure.aggregateName
+                for vo in aggregate_structure.valueObjects:
+                    if vo.referencedAggregate:
+                        ref_aggregate_name = vo.referencedAggregate.name
                         references.append({
                             "fromAggregate": aggregate_name,
                             "toAggregate": ref_aggregate_name,
-                            "referenceName": vo["name"]
+                            "referenceName": vo.name
                         })
         
-        # 처리할 참조 목록 초기화
         if references:
             processed_pairs = set()
             pending_generations = []
-            
+            worker_index = 0
+
             for ref in references:
                 # 양방향 참조를 한 쌍으로 처리하기 위해 정렬된 키 생성
                 pair_key = "-".join(sorted([ref["fromAggregate"], ref["toAggregate"]]))
@@ -95,33 +86,38 @@ def prepare_class_id_generation(state: State) -> State:
                     target_references = [r["referenceName"] for r in bidirectional_refs]
                     
                     related_aggregate_names = set()
-                    for _, bounded_context_data in draft_options.items():
-                        for structure in bounded_context_data:
-                            for value_object in structure.get("valueObjects", []):
-                                if value_object["name"] in target_references:
-                                    related_aggregate_names.add(value_object["referencedAggregate"]["name"])
-                                    related_aggregate_names.add(structure["aggregate"]["name"])
+                    for structure in draft.structures:
+                        for aggregate_structure in structure.aggregates:
+                            for vo in aggregate_structure.valueObjects:
+                                if vo.name in target_references:
+                                    related_aggregate_names.add(vo.referencedAggregate.name)
+                                    related_aggregate_names.add(aggregate_structure.aggregateName)
 
                     specific_draft_options = {}
-                    for bounded_context_id, bounded_context_data in draft_options.items():
-                        for structure in bounded_context_data:
-                            if structure["aggregate"]["name"] in related_aggregate_names:
-                                if not specific_draft_options.get(bounded_context_id):
-                                    specific_draft_options[bounded_context_id] = []
-                                specific_draft_options[bounded_context_id].append({
-                                    "aggregate": structure["aggregate"],
-                                    "valueObjects": [value_object for value_object in structure.get("valueObjects", []) if value_object["name"] in target_references]
+                    for structure in draft.structures:
+                        for aggregate_structure in structure.aggregates:
+                            if aggregate_structure.aggregateName in related_aggregate_names:
+                                if not specific_draft_options.get(structure.boundedContextName):
+                                    specific_draft_options[structure.boundedContextName] = []
+                                specific_draft_options[structure.boundedContextName].append({
+                                    "aggregate": {
+                                        "name": aggregate_structure.aggregateName,
+                                        "alias": aggregate_structure.aggregateAlias
+                                    },
+                                    "valueObjects": [vo for vo in aggregate_structure.valueObjects if vo.name in target_references]
                                 })
 
                     generation_state = ClassIdGenerationState(
                         target_references=target_references,
                         draft_option=specific_draft_options,
                         related_aggregate_names=list(related_aggregate_names),
+                        worker_index=worker_index,
                         retry_count=0,
                         generation_complete=False
                     )
                     
                     pending_generations.append(generation_state)
+                    worker_index += 1
                     LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Queued class ID generation for references: {', '.join(target_references)} (aggregate pair: {ref['fromAggregate']} <-> {ref['toAggregate']})")
             
             # 처리할 참조 목록 저장
@@ -144,8 +140,8 @@ def select_batch_class_id(state: State) -> State:
     """
     
     try:
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_CLASS_ID"]["SELECT_BATCH"]
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_CLASS_ID
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_CLASS_ID.SELECT_BATCH
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
         model = state.subgraphs.createAggregateClassIdByDraftsModel
@@ -307,6 +303,7 @@ def collect_and_apply_results(state: State) -> State:
         failed_class_ids = []
         
         created_references = model.created_references.copy()
+        model.parallel_worker_results.sort(key=lambda x: x.worker_index)
         for class_id_result in model.parallel_worker_results:
             reference_names = ', '.join(class_id_result.target_references)
             
@@ -350,8 +347,8 @@ def collect_and_apply_results(state: State) -> State:
             updated_es_value = EsActionsUtil.apply_actions(
                 state.outputs.esValue.model_dump(),
                 all_actions,
-                state.inputs.userInfo,
-                state.inputs.information
+                state.inputs.ids.uid,
+                state.inputs.ids.projectId
             )
             
             # 업데이트된 ES 값 저장
@@ -398,17 +395,22 @@ def complete_processing(state: State) -> State:
     """
     클래스 ID 생성 프로세스 완료
     """
-    
+    model = state.subgraphs.createAggregateClassIdByDraftsModel
     try:
+        if model.end_time:
+            LogUtil.add_info_log(
+                state,
+                "[CLASS_ID_SUBGRAPH] Completion already recorded; skipping duplicate completion handling"
+            )
+            return state
 
-        state.outputs.lastCompletedRootGraphNode = ResumeNodes["ROOT_GRAPH"]["CREATE_CLASS_ID"]
-        state.outputs.lastCompletedSubGraphNode = ResumeNodes["CREATE_CLASS_ID"]["COMPLETE"]
+        state.outputs.lastCompletedRootGraphNode = RESUME_NODES.ROOT_GRAPH.CREATE_CLASS_ID
+        state.outputs.lastCompletedSubGraphNode = RESUME_NODES.CREATE_CLASS_ID.COMPLETE
         state.outputs.currentProgressCount = state.outputs.currentProgressCount + 1
         JobUtil.update_job_to_firebase_fire_and_forget(state)
 
-        # 완료된 작업 수 정보 로그
-        completed_count = len(state.subgraphs.createAggregateClassIdByDraftsModel.completed_generations)
-        failed = state.subgraphs.createAggregateClassIdByDraftsModel.is_failed
+        completed_count = len(model.completed_generations)
+        failed = model.is_failed
         
         if failed:
             LogUtil.add_error_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation process completed with failures. Successfully processed: {completed_count} class ID tasks")
@@ -416,19 +418,18 @@ def complete_processing(state: State) -> State:
             LogUtil.add_info_log(state, f"[CLASS_ID_SUBGRAPH] Class ID generation process completed successfully. Total processed: {completed_count} class ID tasks")
         
         if not failed:
-            # 변수 정리
-            subgraph_model = state.subgraphs.createAggregateClassIdByDraftsModel
-            subgraph_model.draft_options = {}
-            subgraph_model.completed_generations = []
-            subgraph_model.pending_generations = []
-            subgraph_model.created_references = []
+            model.draft_options = {}
+            model.completed_generations = []
+            model.pending_generations = []
+            model.created_references = []
         
-        state.subgraphs.createAggregateClassIdByDraftsModel.end_time = time.time()
-        state.subgraphs.createAggregateClassIdByDraftsModel.total_seconds = state.subgraphs.createAggregateClassIdByDraftsModel.end_time - state.subgraphs.createAggregateClassIdByDraftsModel.start_time
+        model.end_time = time.time()
+        model.total_seconds = model.end_time - model.start_time
+        model.is_processing = False
 
     except Exception as e:
         LogUtil.add_exception_object_log(state, "[CLASS_ID_SUBGRAPH] Failed during class ID generation process completion", e)
-        state.subgraphs.createAggregateClassIdByDraftsModel.is_failed = True
+        model.is_failed = True
 
     return state
 

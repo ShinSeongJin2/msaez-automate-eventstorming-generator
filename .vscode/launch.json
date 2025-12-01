@@ -10,6 +10,14 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Run A2A Server",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "server.server",
+            "cwd": "${workspaceFolder}/sandbox/a2a_sdk_samples/simple",
+            "console": "integratedTerminal"
         }
     ]
 }

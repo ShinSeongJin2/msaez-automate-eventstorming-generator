@@ -2,8 +2,9 @@ from typing import List
 
 from ....models import ActionModel, EsValueModel
 from ....utils import EsActionsUtil, EsAliasTransManager, LoggingUtil, ListUtil
-from ..mocks import information, user_info, actions_collection, total_actions
-from ...terminal_util import TerminalUtil
+from ..mocks import user_id, project_id, actions_collection, total_actions
+from ...terminal_helper import TerminalHelper
+from ..run_helper import RunHelper
 from .mock_actions_builder import MockActionBuilder
 
 def run_es_actions(command_args):
@@ -30,7 +31,7 @@ def run_es_actions_with_actions_collection(command_args):
         result = es_value
         for actions in actions_collection:
             uuid_actions = alias_trans_manager.trans_to_uuid_in_actions(actions)
-            result = EsActionsUtil.apply_actions(result, uuid_actions, user_info, information)
+            result = EsActionsUtil.apply_actions(result, uuid_actions, user_id, project_id)
         
 
         target_ui_element = None
@@ -47,19 +48,17 @@ def run_es_actions_with_actions_collection(command_args):
                     ids={"uiId": target_ui_element["id"]},
                     args={"runTimeTemplateHtml": "Updated Template HTML"}
                 )
-            ], user_info, information)
+            ], user_id, project_id)
         
 
-        TerminalUtil.save_dict_to_temp_file(result, run_name)
-        TerminalUtil.save_es_summarize_result_to_temp_file(result, run_name)
+        TerminalHelper.save_dict_to_temp_file(result, run_name)
+        RunHelper.save_es_summarize_result_to_temp_file(result, run_name)
 
     except Exception as e:
         LoggingUtil.exception(run_name, "실행 실패", e)
-        TerminalUtil.save_dict_to_temp_file(
+        TerminalHelper.save_dict_to_temp_file(
             {
-                "error": str(e),
-                "user_info": user_info,
-                "information": information,
+                "error": str(e)
             },
             f"{run_name}_error",
         )
@@ -70,17 +69,15 @@ def run_es_actions_with_total_actions(command_args):
 
     try:
 
-        result = EsActionsUtil.apply_actions(total_actions["esValue"], total_actions["actions"], user_info, information) 
-        TerminalUtil.save_dict_to_temp_file(result, run_name)
-        TerminalUtil.save_es_summarize_result_to_temp_file(result, run_name)
+        result = EsActionsUtil.apply_actions(total_actions["esValue"], total_actions["actions"], user_id, project_id) 
+        TerminalHelper.save_dict_to_temp_file(result, run_name)
+        RunHelper.save_es_summarize_result_to_temp_file(result, run_name)
 
     except Exception as e:
         LoggingUtil.exception(run_name, "실행 실패", e)
-        TerminalUtil.save_dict_to_temp_file(
+        TerminalHelper.save_dict_to_temp_file(
             {
-                "error": str(e),
-                "user_info": user_info,
-                "information": information,
+                "error": str(e)
             },
             f"{run_name}_error",
         )
@@ -99,18 +96,16 @@ def run_es_actions_with_mocked_actions(command_args):
         result = es_value
         for actions in mocked_actions:
             uuid_actions = alias_trans_manager.trans_to_uuid_in_actions(actions)
-            result = EsActionsUtil.apply_actions(result, uuid_actions, user_info, information)
+            result = EsActionsUtil.apply_actions(result, uuid_actions, user_id, project_id)
         
-        TerminalUtil.save_dict_to_temp_file(result, run_name)
-        TerminalUtil.save_es_summarize_result_to_temp_file(result, run_name)
+        TerminalHelper.save_dict_to_temp_file(result, run_name)
+        RunHelper.save_es_summarize_result_to_temp_file(result, run_name)
 
     except Exception as e:
         LoggingUtil.exception(run_name, "실행 실패", e)
-        TerminalUtil.save_dict_to_temp_file(
+        TerminalHelper.save_dict_to_temp_file(
             {
-                "error": str(e),
-                "user_info": user_info,
-                "information": information,
+                "error": str(e)
             },
             f"{run_name}_error",
         )

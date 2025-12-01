@@ -1,7 +1,7 @@
 """
 단일 Aggregate 처리를 위한 워커 서브그래프
 
-이 모듈은 하나의 Aggregate에 대해 preprocess -> extract_ddl_fields -> generate -> postprocess -> assign_missing_fields -> validate
+이 모듈은 하나의 Aggregate에 대해 preprocess -> generate -> postprocess -> assign_missing_fields -> validate
 순으로 처리하는 워커 서브그래프를 제공합니다.
 
 메인 오케스트레이터에서 병렬로 여러 워커를 실행하는 데 사용됩니다.
@@ -9,12 +9,12 @@
 
 from typing import Optional, List, Dict, Any
 from contextvars import ContextVar
-from copy import deepcopy
 from langgraph.graph import StateGraph, START
 
 from ...models import AggregateGenerationState, ActionModel, State, CreateAggregateActionsByFunctionOutput, AssignFieldsToActionsGeneratorOutput
-from ...utils import JsonUtil, LogUtil, CaseConvertUtil, EsAliasTransManager, EsTraceUtil
+from ...utils import JsonUtil, LogUtil, CaseConvertUtil, EsAliasTransManager, EsTraceUtil, CreateAggregateByFunctionsUtil
 from ...generators import CreateAggregateActionsByFunction, AssignFieldsToActionsGenerator
+from ...constants import ELEMENT_TYPES
 from ...config import Config
 
 # 스레드로부터 안전한 컨텍스트 변수 생성
@@ -50,42 +50,18 @@ def worker_preprocess_aggregate(state: State) -> State:
         LogUtil.add_error_log(state, "[AGGREGATE_WORKER] No current generation found in worker preprocess")
         return state
         
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-
     try:
         if current_gen.description:
             current_gen.description = EsTraceUtil.add_line_numbers_to_description(current_gen.description)
 
-        current_gen.draft_option = _remove_class_id_properties(deepcopy(current_gen.draft_option))  
+        current_gen.target_aggregate_structure = CreateAggregateByFunctionsUtil.remove_id_value_objects(
+            current_gen.target_aggregate_structure
+        )
         current_gen.is_preprocess_completed = True
         
     except Exception as e:
+        aggregate_name = current_gen.target_aggregate_structure.aggregateName
         LogUtil.add_exception_object_log(state, f"[AGGREGATE_WORKER] Preprocessing failed for aggregate '{aggregate_name}'", e)
-        current_gen.is_failed = True
-    
-    return state
-
-def worker_extract_ddl_fields(state: State) -> State:
-    """
-    사전에 할당된 DDL 필드를 extracted_ddl_fields로 설정
-    (실제 추출은 prepare_aggregate_generation에서 이미 완료됨)
-    """
-    current_gen = get_current_generation(state)
-    if not current_gen:
-        LogUtil.add_error_log(state, "[AGGREGATE_WORKER] No current generation found in worker extract_ddl_fields")
-        return state
-
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-    current_gen.ddl_extraction_attempted = True
-
-    try:
-        if current_gen.ddl_fields:
-            current_gen.extracted_ddl_fields = current_gen.ddl_fields.copy()
-        else:
-            current_gen.extracted_ddl_fields = []
-
-    except Exception as e:
-        LogUtil.add_exception_object_log(state, f"[AGGREGATE_WORKER] Failed during DDL field setup for aggregate '{aggregate_name}'", e)
         current_gen.is_failed = True
     
     return state
@@ -100,21 +76,19 @@ def worker_generate_aggregate(state: State) -> State:
         LogUtil.add_error_log(state, "[AGGREGATE_WORKER] No current generation found in worker generate")
         return state
         
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-
     try:
 
         generator = CreateAggregateActionsByFunction(
             model_name=Config.get_ai_model(),
             client={
                 "inputs": {
-                    "targetBoundedContext": current_gen.target_bounded_context,
+                    "targetBoundedContextName": current_gen.target_bounded_context_name,
                     "description": current_gen.description,
-                    "draftOption": current_gen.draft_option,
-                    "targetAggregate": current_gen.target_aggregate,
-                    "extractedDdlFields": current_gen.extracted_ddl_fields
+                    "targetAggregateStructure": current_gen.target_aggregate_structure.model_dump(),
+                    "attributesToGenerate": current_gen.attributes_to_generate
                 },
-                "preferredLanguage": state.inputs.preferedLanguage
+                "preferredLanguage": state.inputs.preferedLanguage,
+                "retryCount": current_gen.retry_count
             }
         )
         
@@ -132,6 +106,7 @@ def worker_generate_aggregate(state: State) -> State:
         current_gen.created_actions = actionModels
     
     except Exception as e:
+        aggregate_name = current_gen.target_aggregate_structure.aggregateName
         LogUtil.add_exception_object_log(state, f"[AGGREGATE_WORKER] Failed to generate aggregate '{aggregate_name}'", e)
         current_gen.retry_count += 1
     
@@ -149,16 +124,14 @@ def worker_postprocess_aggregate(state: State) -> State:
         LogUtil.add_error_log(state, "[AGGREGATE_WORKER] No current generation found in worker postprocess")
         return state
         
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
+    aggregate_name = current_gen.target_aggregate_structure.aggregateName
 
     try:
-        # 생성된 액션이 없으면 실패로 처리
         if not current_gen.created_actions:
             LogUtil.add_error_log(state, f"[AGGREGATE_WORKER] No actions generated for aggregate '{aggregate_name}', incrementing retry count")
             current_gen.retry_count += 1
             return state
         
-        # ES 값의 복사본 생성 (ID 변환용)
         es_value = {
             "elements": state.outputs.esValue.elements,
             "relations": state.outputs.esValue.relations
@@ -174,18 +147,18 @@ def worker_postprocess_aggregate(state: State) -> State:
             _restore_actions(
                 actions, 
                 es_value, 
-                current_gen.target_bounded_context.get("name", "")
+                current_gen.target_bounded_context_name
             )
             
             # Aggregate ID 필터링
             actions = _filter_valid_aggregate_id_actions(
                 actions,
-                current_gen.target_aggregate.get("name", "")
+                current_gen.target_aggregate_structure.aggregateName
             )
 
         # DDL 필드 포함 여부 검증
         missing_fields = []
-        if current_gen.extracted_ddl_fields:
+        if current_gen.attributes_to_generate:
             all_generated_fields = set()
             for action in actions:
                 if action.get("args") and "properties" in action.get("args", {}):
@@ -193,11 +166,11 @@ def worker_postprocess_aggregate(state: State) -> State:
                         if prop.get("name"):
                             all_generated_fields.add(CaseConvertUtil.camel_case(prop.get("name")))
             
-            extracted_fields_set = {f for f in current_gen.extracted_ddl_fields}
+            extracted_fields_set = {f for f in current_gen.attributes_to_generate}
             missing_fields = list(extracted_fields_set - all_generated_fields)
             
             if missing_fields:
-                current_gen.missing_ddl_fields = missing_fields
+                current_gen.missing_attributes = missing_fields
                 current_gen.created_actions = [ActionModel(**action) for action in actions] # 필터링된 액션 저장
                 current_gen.is_action_postprocess_completed = True
                 LogUtil.add_warning_log(state, f"[AGGREGATE_WORKER] DDL fields missing for '{aggregate_name}': {missing_fields}. Routing to fix.")
@@ -205,7 +178,10 @@ def worker_postprocess_aggregate(state: State) -> State:
 
         # Refs 후처리
         try:
-            EsTraceUtil.convert_refs_to_indexes(actions, current_gen.original_description, state, "[AGGREGATE_WORKER]")
+            EsTraceUtil.convert_refs_to_indexes(
+                actions, current_gen.original_description, current_gen.requirement_index_mapping, 
+                state, "[AGGREGATE_WORKER]"
+            )
         except Exception as e:
             LogUtil.add_exception_object_log(state, f"[AGGREGATE_WORKER] Failed to convert source references for '{aggregate_name}'", e)
             # 후처리 실패시에도 계속 진행하되, 에러 로그를 남김
@@ -226,11 +202,10 @@ def worker_assign_missing_fields(state: State) -> State:
     누락된 DDL 필드를 기존 Aggregate 또는 ValueObject에 할당 (워커 전용)
     """
     current_gen = get_current_generation(state)
-    if not current_gen or not current_gen.missing_ddl_fields:
+    if not current_gen or not current_gen.missing_attributes:
         return state
 
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
-
+    aggregate_name = current_gen.target_aggregate_structure.aggregateName
     try:
 
         elementAliasToUUIDDic = {}
@@ -281,12 +256,16 @@ def worker_assign_missing_fields(state: State) -> State:
         generator_inputs = {
             "description": current_gen.description,
             "existingActions": existing_actions,
-            "missingFields": current_gen.missing_ddl_fields
+            "missingFields": current_gen.missing_attributes
         }
 
         generator = AssignFieldsToActionsGenerator(
             model_name=Config.get_ai_model(),
-            client={"inputs": generator_inputs, "preferredLanguage": state.inputs.preferedLanguage}
+            client={
+                "inputs": generator_inputs,
+                "preferredLanguage": state.inputs.preferedLanguage,
+                "retryCount": current_gen.retry_count
+            }
         )
         
         generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
@@ -298,8 +277,8 @@ def worker_assign_missing_fields(state: State) -> State:
         # Remove invalid properties from the list of fields to be checked against in the future.
         # This prevents the postprocess <-> assign_missing_fields loop.
         if invalid_properties:
-            current_gen.extracted_ddl_fields = [
-                field for field in current_gen.extracted_ddl_fields
+            current_gen.attributes_to_generate = [
+                field for field in current_gen.attributes_to_generate
                 if field not in invalid_properties
             ]
 
@@ -325,16 +304,16 @@ def worker_assign_missing_fields(state: State) -> State:
                 else:
                     LogUtil.add_warning_log(state, f"[AGGREGATE_WORKER] Could not find parent with ID '{parent_id}' to assign fields.")
 
-        original_missing_fields = set(current_gen.missing_ddl_fields)
+        original_missing_fields = set(current_gen.missing_attributes)
         # 할당된 필드와 유효하지 않은 필드를 모두 제외
         remaining_fields = original_missing_fields - assigned_fields - invalid_properties
         
         if not remaining_fields:
-            current_gen.missing_ddl_fields = []
+            current_gen.missing_attributes = []
             current_gen.retry_count = 0 # Reset retry count after successful assignment
         else:
             LogUtil.add_warning_log(state, f"[AGGREGATE_WORKER] Failed to assign all missing fields. Remaining: {list(remaining_fields)}. Retrying.")
-            current_gen.missing_ddl_fields = list(remaining_fields)
+            current_gen.missing_attributes = list(remaining_fields)
             current_gen.retry_count += 1
     
     except Exception as e:
@@ -354,7 +333,7 @@ def worker_validate_aggregate(state: State) -> State:
         LogUtil.add_error_log(state, "[AGGREGATE_WORKER] No current generation found in worker validate")
         return state
         
-    aggregate_name = current_gen.target_aggregate.get("name", "Unknown")
+    aggregate_name = current_gen.target_aggregate_structure.aggregateName
 
     try:
         # 최대 재시도 횟수 초과 시 실패로 처리
@@ -391,12 +370,8 @@ def worker_decide_next_step(state: State) -> str:
         if not current_gen.is_preprocess_completed:
             return "preprocess"
         
-        # DDL 필드 설정 단계
-        if current_gen.ddl_fields and not current_gen.ddl_extraction_attempted:
-            return "extract_ddl_fields"
-        
         # 누락된 필드가 있으면 할당 단계로 이동
-        if current_gen.missing_ddl_fields:
+        if current_gen.missing_attributes:
             return "assign_missing_fields"
         
         # 기본적으로 생성 실행 단계로 이동
@@ -422,7 +397,6 @@ def create_aggregate_worker_subgraph():
     
     # 노드 추가
     worker_graph.add_node("preprocess", worker_preprocess_aggregate)
-    worker_graph.add_node("extract_ddl_fields", worker_extract_ddl_fields)
     worker_graph.add_node("generate", worker_generate_aggregate) 
     worker_graph.add_node("postprocess", worker_postprocess_aggregate)
     worker_graph.add_node("assign_missing_fields", worker_assign_missing_fields)
@@ -438,16 +412,6 @@ def create_aggregate_worker_subgraph():
         worker_decide_next_step,
         {
             "preprocess": "preprocess",
-            "extract_ddl_fields": "extract_ddl_fields",
-            "generate": "generate",
-            "complete": "complete"
-        }
-    )
-    
-    worker_graph.add_conditional_edges(
-        "extract_ddl_fields",
-        worker_decide_next_step,
-        {
             "generate": "generate",
             "complete": "complete"
         }
@@ -489,7 +453,6 @@ def create_aggregate_worker_subgraph():
         worker_decide_next_step,
         {
             "preprocess": "preprocess", 
-            "extract_ddl_fields": "extract_ddl_fields",
             "generate": "generate",
             "postprocess": "postprocess", 
             "assign_missing_fields": "assign_missing_fields",
@@ -523,24 +486,6 @@ def create_aggregate_worker_subgraph():
     return run_worker
 
 # 유틸리티 함수들
-def _remove_class_id_properties(draft_option: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    클래스 ID 속성 제거
-    """
-    if not isinstance(draft_option, list):
-        return draft_option
-    
-    return [
-        {
-            **option,
-            "valueObjects": [
-                vo for vo in option.get("valueObjects", [])
-                if not vo.get("referencedAggregate")
-            ] if "valueObjects" in option else []
-        }
-        for option in draft_option
-    ]
-
 def _filter_valid_property_actions(actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     유효한 속성 액션 필터링
@@ -615,7 +560,7 @@ def _get_target_bounded_context(es_value: Dict[str, Any], target_bounded_context
     """
     for element in es_value.get("elements", {}).values():
         if (element and 
-            element.get("_type") == "org.uengine.modeling.model.BoundedContext" and
+            element.get("_type") == ELEMENT_TYPES.BOUNDED_CONTEXT and
             element.get("name", "").lower() == target_bounded_context_name.lower()):
             return element
     

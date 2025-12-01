@@ -1,5 +1,5 @@
 from ....utils import TokenCounter, LoggingUtil
-from ...terminal_util import TerminalUtil
+from ...terminal_helper import TerminalHelper
 
 def run_token_counter(command_args):
     run_name = "run_token_counter"
@@ -11,7 +11,7 @@ def run_token_counter(command_args):
 
     except Exception as e:
         LoggingUtil.exception(run_name, f"실행 실패", e)
-        TerminalUtil.save_dict_to_temp_file({
+        TerminalHelper.save_dict_to_temp_file({
             "error": str(e)
         }, f"{run_name}_error")
         raise

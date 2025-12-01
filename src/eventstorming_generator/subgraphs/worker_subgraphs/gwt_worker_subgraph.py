@@ -17,6 +17,7 @@ from ...models import GWTGenerationState, State, ESValueSummaryGeneratorModel, C
 from ...utils import JsonUtil, ESValueSummarizeWithFilter, EsAliasTransManager, LogUtil
 from ...generators import CreateGWTGeneratorByFunction
 from ..es_value_summary_generator_sub_graph import create_es_value_summary_generator_subgraph
+from ...constants import ELEMENT_TYPES
 from ...config import Config
 
 # 스레드로부터 안전한 컨텍스트 변수 생성
@@ -52,9 +53,6 @@ def worker_preprocess_gwt_generation(state: State) -> State:
         LogUtil.add_error_log(state, "[GWT_WORKER] No current generation found in worker preprocess")
         return state
         
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    aggregate_name = current_gen.target_aggregate_name
-    
     try:
         es_value = {
             "elements": state.outputs.esValue.elements,
@@ -67,12 +65,22 @@ def worker_preprocess_gwt_generation(state: State) -> State:
             current_gen.target_command_id, current_gen.target_command_id
         )
 
+        target_bounded_context = None
+        for element in es_value["elements"].values():
+            if element.get("_type") == ELEMENT_TYPES.BOUNDED_CONTEXT and element.get("name") == current_gen.target_bounded_context_name:
+                target_bounded_context = element
+                break
+        if not target_bounded_context:
+            LogUtil.add_error_log(state, f"[GWT_WORKER] Target bounded context not found for command '{current_gen.target_command_id}' in aggregate '{current_gen.target_aggregate_name}'")
+            current_gen.is_failed = True
+            return state
+
         summarized_es_value = {
             "deletedProperties": [],
             "boundedContexts": [
                 ESValueSummarizeWithFilter.get_summarized_bounded_context_value(
                     es_value,
-                    current_gen.target_bounded_context,
+                    target_bounded_context,
                     [],
                     es_alias_trans_manager
                 )
@@ -82,6 +90,8 @@ def worker_preprocess_gwt_generation(state: State) -> State:
         current_gen.summarized_es_value = summarized_es_value
         
     except Exception as e:
+        bc_name = current_gen.target_bounded_context_name
+        aggregate_name = current_gen.target_aggregate_name
         LogUtil.add_exception_object_log(state, f"[GWT_WORKER] Preprocessing failed for command '{current_gen.target_command_id}' in aggregate '{aggregate_name}' context '{bc_name}'", e)
         current_gen.is_failed = True
     
@@ -97,10 +107,8 @@ def worker_generate_gwt_generation(state: State) -> State:
     if not current_gen:
         LogUtil.add_error_log(state, "[GWT_WORKER] No current generation found in worker generate")
         return state
-        
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    aggregate_name = current_gen.target_aggregate_name
     
+    aggregate_name = current_gen.target_aggregate_name
     try:
         if current_gen.es_summary_complete and current_gen.is_token_over_limit:
             current_gen.is_token_over_limit = False
@@ -119,7 +127,8 @@ def worker_generate_gwt_generation(state: State) -> State:
                     "description": current_gen.description,
                     "targetCommandAlias": current_gen.target_command_alias
                 },
-                "preferredLanguage": state.inputs.preferedLanguage
+                "preferredLanguage": state.inputs.preferedLanguage,
+                "retryCount": current_gen.retry_count
             }
         )
         
@@ -137,7 +146,8 @@ def worker_generate_gwt_generation(state: State) -> State:
                         "description": current_gen.description,
                         "targetCommandAlias": current_gen.target_command_alias
                     },
-                    "preferredLanguage": state.inputs.preferedLanguage
+                    "preferredLanguage": state.inputs.preferedLanguage,
+                    "retryCount": current_gen.retry_count
                 }
             )
 
@@ -203,6 +213,7 @@ def worker_generate_gwt_generation(state: State) -> State:
         current_gen.command_to_replace = command_to_replace
     
     except Exception as e:
+        bc_name = current_gen.target_bounded_context_name
         LogUtil.add_exception_object_log(state, f"[GWT_WORKER] Failed to generate GWT for command '{current_gen.target_command_id}' in aggregate '{aggregate_name}' context '{bc_name}'", e)
         current_gen.retry_count += 1
 
@@ -219,9 +230,7 @@ def worker_postprocess_gwt_generation(state: State) -> State:
         LogUtil.add_error_log(state, "[GWT_WORKER] No current generation found in worker postprocess")
         return state
         
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
     aggregate_name = current_gen.target_aggregate_name
-    
     try:
         if not current_gen.command_to_replace:
             current_gen.is_failed = True
@@ -230,6 +239,7 @@ def worker_postprocess_gwt_generation(state: State) -> State:
         current_gen.generation_complete = True
     
     except Exception as e:
+        bc_name = current_gen.target_bounded_context_name
         LogUtil.add_exception_object_log(state, f"[GWT_WORKER] Postprocessing failed for command '{current_gen.target_command_id}' in aggregate '{aggregate_name}' context '{bc_name}'", e)
         current_gen.retry_count += 1
         current_gen.command_to_replace = {}
@@ -246,9 +256,7 @@ def worker_validate_gwt_generation(state: State) -> State:
         LogUtil.add_error_log(state, "[GWT_WORKER] No current generation found in worker validate")
         return state
         
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
     aggregate_name = current_gen.target_aggregate_name
-    
     try:
         # 최대 재시도 횟수 초과 시 실패로 처리
         if current_gen.retry_count > state.subgraphs.createGwtGeneratorByFunctionModel.max_retry_count:
@@ -256,6 +264,7 @@ def worker_validate_gwt_generation(state: State) -> State:
             current_gen.generation_complete = False  # 실패로 표시하되 완료는 False로 유지
         
     except Exception as e:
+        bc_name = current_gen.target_bounded_context_name
         LogUtil.add_exception_object_log(state, f"[GWT_WORKER] Validation failed for command '{current_gen.target_command_id}' in aggregate '{aggregate_name}' context '{bc_name}'", e)
         current_gen.generation_complete = False
 
@@ -270,10 +279,8 @@ def worker_process_es_summary(state: State) -> State:
     if not current_gen:
         LogUtil.add_error_log(state, "[GWT_WORKER] No current generation found in worker ES summary")
         return state
-        
-    bc_name = current_gen.target_bounded_context.get("displayName", current_gen.target_bounded_context.get("name", "Unknown"))
-    aggregate_name = current_gen.target_aggregate_name
     
+    aggregate_name = current_gen.target_aggregate_name
     try:
         # ES 요약 처리가 시작되지 않았으면 초기화
         if current_gen.needs_es_summary and not current_gen.es_summary_processing:
@@ -312,6 +319,7 @@ def worker_process_es_summary(state: State) -> State:
             LogUtil.add_info_log(state, f"[GWT_WORKER] ES summary completed for command '{current_gen.target_command_id}' in aggregate '{aggregate_name}'")
     
     except Exception as e:
+        bc_name = current_gen.target_bounded_context_name
         LogUtil.add_exception_object_log(state, f"[GWT_WORKER] ES summary processing failed for command '{current_gen.target_command_id}' in aggregate '{aggregate_name}' context '{bc_name}'", e)
         current_gen.retry_count += 1
 
@@ -483,7 +491,7 @@ def _build_worker_request_context(current_gen: GWTGenerationState) -> str:
     """
     요약 요청 컨텍스트 빌드 (워커용) - XML 구조화된 프롬프트
     """
-    target_bounded_context_name = current_gen.target_bounded_context.get("name", "")
+    target_bounded_context_name = current_gen.target_bounded_context_name
     target_aggregate_name = current_gen.target_aggregate_name
     target_command_alias = current_gen.target_command_alias
     description = current_gen.description

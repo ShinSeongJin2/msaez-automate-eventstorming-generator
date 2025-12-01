@@ -5,7 +5,7 @@ from kubernetes import client, config
 
 from .systems import FirebaseSystem
 from .config import Config
-from .utils.logging_util import LoggingUtil
+from .utils import LoggingUtil
 
 class SimpleAutoScaler:
     def __init__(self):
