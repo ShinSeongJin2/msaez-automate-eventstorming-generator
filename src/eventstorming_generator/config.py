@@ -176,3 +176,8 @@ class Config:
     @staticmethod
     def set_llm_cache_path(path: str):
         os.environ['LLM_CACHE_PATH'] = path
+    
+
+    @staticmethod
+    def a2a_external_url() -> str:
+        return os.getenv('A2A_EXTERNAL_URL', 'http://localhost:5000')

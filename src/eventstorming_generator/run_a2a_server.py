@@ -18,7 +18,7 @@ from eventstorming_generator.utils.logging_util import LoggingUtil
 from eventstorming_generator.config import Config
 
 
-def create_app(host: str = "0.0.0.0", port: int = 5000) -> FastAPI:
+def create_app(a2a_external_url: str) -> FastAPI:
     """
     FastAPI 애플리케이션을 생성합니다.
     
@@ -31,7 +31,7 @@ def create_app(host: str = "0.0.0.0", port: int = 5000) -> FastAPI:
     """
     
     # 1. AgentCard 생성
-    agent_card = create_agent_card(url=f"http://{host}:{port}")
+    agent_card = create_agent_card(url=a2a_external_url)
     LoggingUtil.info("run_a2a_server", f"AgentCard 생성: {agent_card.name}")
     
     # 2. AgentExecutor 생성
@@ -108,7 +108,9 @@ def run_a2a_server(host: str = "0.0.0.0", port: int = 5000):
     if Config.is_local_run():
         host = "localhost"
 
-    app = create_app(host, port)
+    a2a_external_url = Config.a2a_external_url()
+    LoggingUtil.info("run_a2a_server", f"A2A External URL: {a2a_external_url}")
+    app = create_app(a2a_external_url)
     
     LoggingUtil.info("run_a2a_server", f"A2A 서버 시작: http://{host}:{port}")
     LoggingUtil.info("run_a2a_server", f"Agent Card: http://{host}:{port}/.well-known/agent.json")

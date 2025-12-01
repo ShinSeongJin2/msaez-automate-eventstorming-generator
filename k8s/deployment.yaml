@@ -84,6 +84,8 @@ spec:
         
         - name: MSAEZ_URL
           value: "https://www.msaez.io"
+        - name: A2A_EXTERNAL_URL
+          value: "http://34.64.136.142"
         
         volumeMounts:
         - name: firebase-key-volume
