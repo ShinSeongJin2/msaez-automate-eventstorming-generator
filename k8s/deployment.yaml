@@ -98,18 +98,25 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "300m"
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 30"]  # 종료 전 30초 대기하여 A2A 세션 정리 시간 확보
         livenessProbe:
           httpGet:
             path: /ok
             port: 5000
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         readinessProbe:
           httpGet:
             path: /ok
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 5
+          timeoutSeconds: 5
       volumes:
       - name: firebase-key-volume
         secret:

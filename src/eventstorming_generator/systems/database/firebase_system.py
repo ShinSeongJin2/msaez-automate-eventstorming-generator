@@ -69,16 +69,20 @@ class FirebaseSystem(DatabaseSystem):
     @classmethod
     def instance(cls) -> 'FirebaseSystem':
         """
-        싱글톤 인스턴스 반환
+        싱글톤 인스턴스 반환 (lazy initialization)
+        
+        Note: 모듈 import 시점이 아닌 실제 사용 시점에 초기화하여
+        서버 시작 지연을 방지합니다.
         
         Returns:
             FirebaseSystem: 초기화된 싱글톤 인스턴스
-            
-        Raises:
-            RuntimeError: 인스턴스가 초기화되지 않은 경우
         """
         if cls._instance is None or not cls._instance._initialized:
-            raise RuntimeError("FirebaseSystem 초기화되지 않았습니다. 먼저 FirebaseSystem.initialize()를 호출하세요.")
+            # Lazy initialization: 필요할 때 자동으로 초기화
+            cls._instance = cls(
+                Config.get_firebase_service_account_path(),
+                Config.get_firebase_database_url()
+            )
         return cls._instance
     
 
@@ -643,8 +647,3 @@ class FirebaseSystem(DatabaseSystem):
             return [self.restore_value(item) for item in value]
         else:
             return value
-
-FirebaseSystem.initialize(
-    service_account_path=Config.get_firebase_service_account_path(),
-    database_url=Config.get_firebase_database_url()
-)

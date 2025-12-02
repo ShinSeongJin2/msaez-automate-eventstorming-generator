@@ -225,7 +225,11 @@ async def process_job_async(job_id: str, complete_job_func: callable):
         try:
 
             LoggingUtil.debug("main", f"Job 정리: {job_id} 리소스 정리 중...")
-            JobUtil.cleanup_job_resources(job_id)
+            
+            # cleanup_job_resources를 executor에서 비동기로 실행
+            # (내부의 time.sleep이 asyncio 이벤트 루프를 블록하지 않도록)
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, lambda: JobUtil.cleanup_job_resources(job_id))
             
             # 정상 완료된 경우에만 requestedJob 삭제 및 complete_job_func 호출
             # 취소된 경우에는 DecentralizedJobManager에서 처리하므로 여기서는 하지 않음

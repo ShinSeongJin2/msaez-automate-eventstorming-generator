@@ -133,7 +133,14 @@ class JobRequestUtil:
             
         finally:
             # 7. Watch 해제 및 세션 해제
-            watch_status["clear_watch_paths"]()
+            # clear_watch_paths를 executor에서 비동기로 실행
+            # (동기적 Firebase 연결 해제가 asyncio 이벤트 루프를 블록하지 않도록)
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, watch_status["clear_watch_paths"])
+            except Exception as e:
+                LoggingUtil.exception("job_request_util", f"Watch 해제 오류: {session_id}", e)
+            
             session_manager.unregister_session(session_id)
             LoggingUtil.debug("job_request_util", f"A2A 세션 해제: {session_id}")
     

@@ -1,14 +1,30 @@
 import asyncio
 import time
 import os
+import concurrent.futures
 from kubernetes import client, config
 
 from .systems import FirebaseSystem
 from .config import Config
 from .utils import LoggingUtil
+from .utils.job_utils import A2ASessionManager
 
 class SimpleAutoScaler:
+    """
+    Kubernetes 자동 스케일러
+    
+    Note: k8s 클라이언트 초기화가 GIL을 점유할 수 있으므로,
+    모듈 레벨이 아닌 start_autoscaler() 호출 시 인스턴스가 생성됩니다.
+    """
+    
+    _instance = None
+    _initialized = False
+    
     def __init__(self):
+        # 이미 초기화된 경우 중복 초기화 방지
+        if SimpleAutoScaler._initialized:
+            return
+            
         self.namespace = Config.autoscaler_namespace()
         self.deployment_name = Config.autoscaler_deployment_name()
         self.service_name = Config.autoscaler_service_name()
@@ -27,6 +43,9 @@ class SimpleAutoScaler:
         self.required_scale_down_observations = 5  # 스케일 다운 실행 전 필요한 관찰 횟수
         self.last_processing_jobs_count = 0  # 이전 처리 중인 작업 수
         
+        # k8s API 호출을 위한 executor
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        
         # Kubernetes 클라이언트 초기화
         try:
             # Pod 내부에서 실행되는 경우
@@ -37,25 +56,43 @@ class SimpleAutoScaler:
         
         self.apps_v1 = client.AppsV1Api()
         self.core_v1 = client.CoreV1Api()
+        
+        SimpleAutoScaler._initialized = True
+        LoggingUtil.debug("simple_autoscaler", "SimpleAutoScaler 초기화 완료")
     
-    def get_current_replicas(self) -> int:
-        """현재 Deployment의 replicas 수 조회"""
+    @classmethod
+    def instance(cls) -> 'SimpleAutoScaler':
+        """싱글톤 인스턴스 반환 (lazy initialization)"""
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+    
+    async def get_current_replicas_async(self) -> int:
+        """현재 Deployment의 replicas 수 조회 (비동기)"""
         try:
-            deployment = self.apps_v1.read_namespaced_deployment(
-                name=self.deployment_name,
-                namespace=self.namespace
+            loop = asyncio.get_event_loop()
+            deployment = await loop.run_in_executor(
+                self._executor,
+                lambda: self.apps_v1.read_namespaced_deployment(
+                    name=self.deployment_name,
+                    namespace=self.namespace
+                )
             )
             return deployment.spec.replicas
         except Exception as e:
             LoggingUtil.exception("simple_autoscaler", f"현재 replicas 조회 실패: {e}", e)
             return 1
     
-    def get_active_pods_count(self) -> int:
-        """현재 실행 중인 Pod 수 조회 (Running 상태만)"""
+    async def get_active_pods_count_async(self) -> int:
+        """현재 실행 중인 Pod 수 조회 (비동기, Running 상태만)"""
         try:
-            pods = self.core_v1.list_namespaced_pod(
-                namespace=self.namespace,
-                label_selector=f"app={self.deployment_name}"
+            loop = asyncio.get_event_loop()
+            pods = await loop.run_in_executor(
+                self._executor,
+                lambda: self.core_v1.list_namespaced_pod(
+                    namespace=self.namespace,
+                    label_selector=f"app={self.deployment_name}"
+                )
             )
             
             active_count = 0
@@ -68,23 +105,31 @@ class SimpleAutoScaler:
             LoggingUtil.exception("simple_autoscaler", f"활성 Pod 수 조회 실패: {e}", e)
             return 1
     
-    def set_replicas(self, target_replicas: int) -> bool:
-        """Deployment의 replicas 수 변경"""
+    async def set_replicas_async(self, target_replicas: int) -> bool:
+        """Deployment의 replicas 수 변경 (비동기)"""
         try:
+            loop = asyncio.get_event_loop()
+            
             # Deployment 조회
-            deployment = self.apps_v1.read_namespaced_deployment(
-                name=self.deployment_name,
-                namespace=self.namespace
+            deployment = await loop.run_in_executor(
+                self._executor,
+                lambda: self.apps_v1.read_namespaced_deployment(
+                    name=self.deployment_name,
+                    namespace=self.namespace
+                )
             )
             
             # replicas 수 변경
             deployment.spec.replicas = target_replicas
             
             # 업데이트 적용
-            self.apps_v1.patch_namespaced_deployment(
-                name=self.deployment_name,
-                namespace=self.namespace,
-                body=deployment
+            await loop.run_in_executor(
+                self._executor,
+                lambda: self.apps_v1.patch_namespaced_deployment(
+                    name=self.deployment_name,
+                    namespace=self.namespace,
+                    body=deployment
+                )
             )
             
             LoggingUtil.debug("simple_autoscaler", f"Deployment replicas를 {target_replicas}개로 변경")
@@ -149,6 +194,17 @@ class SimpleAutoScaler:
             self.scale_down_observation_count = 0
             return False
         
+        # A2A 세션이 활성화되어 있으면 스케일 다운 금지
+        try:
+            a2a_session_manager = A2ASessionManager.instance()
+            if a2a_session_manager.has_active_sessions():
+                active_sessions = a2a_session_manager.get_active_session_count()
+                LoggingUtil.debug("simple_autoscaler", f"활성 A2A 세션 {active_sessions}개가 있어 스케일 다운 금지")
+                self.scale_down_observation_count = 0
+                return False
+        except Exception as e:
+            LoggingUtil.exception("simple_autoscaler", "A2A 세션 확인 중 오류", e)
+        
         # 연속 관찰 카운터 증가
         self.scale_down_observation_count += 1
         
@@ -166,15 +222,19 @@ class SimpleAutoScaler:
         LoggingUtil.debug("simple_autoscaler", f"스케일 다운 조건 충족: {self.scale_down_observation_count}회 연속 관찰 완료")
         return True
     
-    def is_leader_pod(self) -> bool:
-        """현재 Pod가 리더인지 확인 (가장 먼저 생성된 Pod가 리더)"""
+    async def is_leader_pod_async(self) -> bool:
+        """현재 Pod가 리더인지 확인 (비동기, 가장 먼저 생성된 Pod가 리더)"""
         try:
             pod_name = os.getenv('POD_ID') or os.getenv('HOSTNAME', 'unknown')
             
-            # 같은 라벨을 가진 모든 Pod 조회
-            pods = self.core_v1.list_namespaced_pod(
-                namespace=self.namespace,
-                label_selector=f"app={self.deployment_name}"
+            # 같은 라벨을 가진 모든 Pod 조회 (비동기)
+            loop = asyncio.get_event_loop()
+            pods = await loop.run_in_executor(
+                self._executor,
+                lambda: self.core_v1.list_namespaced_pod(
+                    namespace=self.namespace,
+                    label_selector=f"app={self.deployment_name}"
+                )
             )
             
             if not pods.items:
@@ -195,13 +255,13 @@ class SimpleAutoScaler:
             return False
     
     async def run_autoscaling_loop(self):
-        """자동 스케일링 메인 루프"""
+        """자동 스케일링 메인 루프 (모든 k8s API 호출이 비동기로 실행됨)"""
         LoggingUtil.info("simple_autoscaler", "고급 자동 스케일링 시작 (처리 중인 작업 보호 기능 포함)")
         
         while True:
             try:
-                # 리더 Pod만 스케일링 담당
-                if not self.is_leader_pod():
+                # 리더 Pod만 스케일링 담당 (비동기)
+                if not await self.is_leader_pod_async():
                     await asyncio.sleep(self.scale_check_interval)
                     continue
                 
@@ -209,9 +269,9 @@ class SimpleAutoScaler:
                 waiting_jobs = await self.get_waiting_jobs_count_async()
                 processing_jobs = await self.get_processing_jobs_count_async()
                 
-                # 현재 replicas 및 활성 Pod 수 조회
-                current_replicas = self.get_current_replicas()
-                active_pods = self.get_active_pods_count()
+                # 현재 replicas 및 활성 Pod 수 조회 (비동기)
+                current_replicas = await self.get_current_replicas_async()
+                active_pods = await self.get_active_pods_count_async()
                 
                 # 목표 replicas 계산
                 desired_replicas = self.calculate_desired_replicas(waiting_jobs, processing_jobs)
@@ -224,7 +284,7 @@ class SimpleAutoScaler:
                 if desired_replicas > current_replicas:
                     # 스케일 업 확인
                     if self.should_scale_up(current_replicas, desired_replicas):
-                        success = self.set_replicas(desired_replicas)
+                        success = await self.set_replicas_async(desired_replicas)
                         if success:
                             self.last_scale_time = time.time()
                             self.last_scale_action = 'up'
@@ -236,7 +296,7 @@ class SimpleAutoScaler:
                 elif desired_replicas < current_replicas:
                     # 스케일 다운 확인 (매우 보수적)
                     if self.should_scale_down(current_replicas, desired_replicas, processing_jobs):
-                        success = self.set_replicas(desired_replicas)
+                        success = await self.set_replicas_async(desired_replicas)
                         if success:
                             self.last_scale_time = time.time()
                             self.last_scale_action = 'down'
@@ -311,9 +371,12 @@ class SimpleAutoScaler:
             LoggingUtil.exception("simple_autoscaler", "처리 중인 작업 수 계산 오류", e)
             return 0
 
-# 전역 AutoScaler 인스턴스
-autoscaler = SimpleAutoScaler()
-
 async def start_autoscaler():
-    """자동 스케일러 시작"""
-    await autoscaler.run_autoscaling_loop() 
+    """
+    자동 스케일러 시작 (lazy initialization)
+    
+    Note: k8s 클라이언트 초기화가 GIL을 점유할 수 있으므로,
+    import 시점이 아닌 실제 사용 시점에 인스턴스를 생성합니다.
+    """
+    autoscaler = SimpleAutoScaler.instance()
+    await autoscaler.run_autoscaling_loop()

@@ -1,7 +1,6 @@
 import asyncio
 import time
 import signal
-import os
 from typing import Optional, List, Tuple
 
 from ..logging_util import LoggingUtil
@@ -82,7 +81,12 @@ class DecentralizedJobManager:
         await self._handle_graceful_shutdown()
 
     async def _handle_graceful_shutdown(self):
-        """Graceful shutdown 처리 - 현재 작업 완료를 기다림"""
+        """Graceful shutdown 처리 - 현재 작업 완료를 기다림
+        
+        Note: 이 메서드는 DecentralizedJobManager의 Job 처리만 대기합니다.
+        A2A 세션 대기는 main.py에서 처리됩니다.
+        shutdown_event.set() 후 main.py가 정상 종료 흐름을 이어받습니다.
+        """
         if self.is_processing and self.current_task:
             LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 현재 작업 {self.current_job_id} 완료를 기다리는 중...")
             
@@ -95,36 +99,13 @@ class DecentralizedJobManager:
             if self.current_task and self.current_task.done():
                 await self._handle_completed_task()
             
-            LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 모든 작업 완료. 안전하게 종료합니다.")
+            LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: Job 처리 완료. main.py에 종료 제어를 넘깁니다.")
         else:
-            LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 처리 중인 작업이 없어 즉시 종료합니다.")
-        
+            LoggingUtil.info("decentralized_job_manager", f"Graceful shutdown: 처리 중인 Job이 없음. main.py에 종료 제어를 넘깁니다.")
         
         # Graceful shutdown 완료 이벤트 설정
+        # main.py에서 A2A 세션 대기를 처리한 후 정상 종료합니다.
         self.shutdown_event.set()
-        
-        # 프로세스 강제 종료를 위한 추가 로직
-        LoggingUtil.info("decentralized_job_manager", "프로세스를 안전하게 종료합니다.")
-        
-        # 짧은 지연 후 프로세스 종료
-        await asyncio.sleep(1)
-        
-        # 현재 이벤트 루프의 모든 태스크 취소
-        try:
-            tasks = [task for task in asyncio.all_tasks() if not task.done()]
-            if tasks:
-                LoggingUtil.info("decentralized_job_manager", f"{len(tasks)}개의 실행 중인 태스크를 취소합니다.")
-                for task in tasks:
-                    task.cancel()
-                
-                # 취소된 태스크들이 완료될 때까지 잠시 대기
-                await asyncio.sleep(0.5)
-        except Exception as e:
-            LoggingUtil.exception("decentralized_job_manager", "태스크 취소 중 오류", e)
-        
-        # 프로세스 종료
-        LoggingUtil.info("decentralized_job_manager", "프로세스를 종료합니다.")
-        os._exit(0)
 
     def is_job_cancelled(self, job_id: str) -> bool:
         """특정 작업이 취소되었는지 확인"""
