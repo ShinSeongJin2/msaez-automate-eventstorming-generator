@@ -30,7 +30,7 @@ run_util_registry = {
     "JobRequestUtil": {
         "handler": run_job_request_util,
         "description": "JobRequestUtil 유틸리티를 즉시 실행",
-        "usage": "run runUtil JobRequestUtil <addJobRequestByRequirements> [<db_type>] [<requirements_type>]"
+        "usage": "run runUtil JobRequestUtil <addJobRequestByRequirements>"
     },
     "TextChunkerUtil": {
         "handler": run_text_chunker_util,

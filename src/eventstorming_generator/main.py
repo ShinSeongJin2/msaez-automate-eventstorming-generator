@@ -148,12 +148,10 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             LoggingUtil.warning("main", f"Job 처리 오류: {job_id}, 데이터 없음")
             return
 
-        # state 데이터 로그 출력
-        state = job_data.get("state")   
+        state = JobUtil.get_state_from_job_data_safely(job_data) 
         if not state:
             LoggingUtil.warning("main", f"Job 처리 오류: {job_id} - State 데이터 변환 실패")
             return False
-        state = State(**state)
 
         # 이벤트 루프 양보 - 모니터링 등 다른 태스크들이 실행될 수 있도록 함
         await asyncio.sleep(0)

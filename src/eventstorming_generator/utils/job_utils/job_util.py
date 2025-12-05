@@ -4,7 +4,7 @@ import queue
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 import atexit
 
 from ..json_util import JsonUtil
@@ -559,3 +559,68 @@ class JobUtil:
                 JobUtil.cleanup_job_resources(job_id)
             except Exception:
                 pass  # 무시
+    
+
+    @staticmethod
+    def get_state_from_job_data_safely(job_data: Dict[str, Any]) -> State:
+        state = job_data.get("state")   
+        if not state:
+            return None
+        
+        # Firebase에서 로드 시 딕셔너리가 리스트로 변환되는 경우 교정
+        state = JobUtil._fix_firebase_list_to_dict(state)
+        
+        state = State(**state)
+        return state
+    
+    @staticmethod
+    def _fix_firebase_list_to_dict(state: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Firebase에서 로드 시 딕셔너리가 리스트로 변환되는 경우를 교정합니다.
+        
+        Firebase는 정수 키를 가진 딕셔너리({1:6, 2:12, 3:18})를 
+        리스트([None, 6, 12, 18])로 변환하여 저장/로드합니다.
+        이 함수는 해당 리스트를 다시 딕셔너리로 변환합니다.
+        
+        Args:
+            state: Firebase에서 로드된 상태 딕셔너리
+            
+        Returns:
+            교정된 상태 딕셔너리
+        """
+        try:
+            # boundedContextRequirementIndexMapping 경로 접근
+            if not state:
+                return state
+            
+            inputs = state.get("inputs")
+            if not inputs:
+                return state
+            
+            draft = inputs.get("draft")
+            if not draft:
+                return state
+            
+            metadatas = draft.get("metadatas")
+            if not metadatas:
+                return state
+            
+            mapping = metadatas.get("boundedContextRequirementIndexMapping")
+            if not mapping:
+                return state
+            
+            # 각 BoundedContext의 mapping 값이 리스트인 경우 딕셔너리로 변환
+            for bc_name, bc_mapping in mapping.items():
+                if isinstance(bc_mapping, list):
+                    # 리스트를 딕셔너리로 변환: 인덱스가 키, 값이 값 (None 제외)
+                    converted_dict = {}
+                    for idx, value in enumerate(bc_mapping):
+                        if value is not None:
+                            converted_dict[idx] = value
+                    mapping[bc_name] = converted_dict
+            
+            return state
+            
+        except Exception as e:
+            LoggingUtil.warning("job_util", f"[State Fix Warning] Firebase 리스트->딕셔너리 변환 중 오류: {str(e)}")
+            return state

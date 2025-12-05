@@ -9,3 +9,4 @@
 **/*.egg-info
 terminal_help.md
 acknowleges/**
+sandbox.py
