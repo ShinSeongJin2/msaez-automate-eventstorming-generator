@@ -142,7 +142,7 @@ def extract_result_from_task(task: Any) -> Dict[str, Any]:
     }
 
 if __name__ == "__main__":
-    asyncio.run(send_message_to_agent("http://localhost:5000", """
+    asyncio.run(send_message_to_agent("http://34.64.136.142", """
 도서관의 도서 관리와 대출/반납을 통합적으로 관리하는 화면을 만들려고 해.
 
 '도서 관리' 화면에서는 새로운 도서를 등록하고 현재 보유한 도서들의 상태를 관리할 수 있어야 해.

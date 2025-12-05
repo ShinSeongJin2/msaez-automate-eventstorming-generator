@@ -83,7 +83,7 @@ spec:
           value: "INFO"
         
         - name: MSAEZ_URL
-          value: "https://www.msaez.io"
+          value: "https://dev.msaez.io"
         - name: A2A_EXTERNAL_URL
           value: "http://34.64.136.142"
         
