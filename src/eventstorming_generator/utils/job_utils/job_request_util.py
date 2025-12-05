@@ -146,6 +146,21 @@ class JobRequestUtil:
     
 
     @staticmethod
+    def add_job_request_by_requirements(requirements: str) -> tuple[str, str]:
+        """
+        작업 요청을 추가하고 job_id와 link를 반환 (Public API)
+        
+        비스트리밍 방식의 A2A executor에서 사용합니다.
+        
+        Args:
+            requirements: 이벤트 스토밍 생성 요구사항
+            
+        Returns:
+            tuple[str, str]: (job_id, link) 튜플
+        """
+        return JobRequestUtil._add_job_request_by_requirements_with_id(requirements)
+
+    @staticmethod
     def _add_job_request_by_requirements_with_id(requirements: str) -> tuple[str, str]:
         """작업 요청을 추가하고 job_id와 link를 함께 반환"""
         job_state = JobRequestUtil._make_job_state(requirements)
