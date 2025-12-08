@@ -6,6 +6,7 @@ import uuid
 from typing import AsyncGenerator, Dict, Any, Optional
 
 from .job_util import JobUtil
+from .job_requirements_util import JobRequirementsUtil
 from .a2a_session_manager import A2ASessionManager
 from ...config import Config
 from ...models import State, InputsModel, IdsModel
@@ -163,7 +164,8 @@ class JobRequestUtil:
     @staticmethod
     def _add_job_request_by_requirements_with_id(requirements: str) -> tuple[str, str]:
         """작업 요청을 추가하고 job_id와 link를 함께 반환"""
-        job_state = JobRequestUtil._make_job_state(requirements)
+        parsed_requirements = JobRequirementsUtil.parse_requirements(requirements)
+        job_state = JobRequestUtil._make_job_state(parsed_requirements)
         job_id = job_state.inputs.jobId
 
         db_system = DatabaseFactory.get_db_system()

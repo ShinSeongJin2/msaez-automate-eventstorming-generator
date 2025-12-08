@@ -5,6 +5,7 @@ from .run_job_util import run_job_util
 from .run_job_request_util import run_job_request_util
 from .run_text_chunker_util import run_text_chunker_util
 from .run_es_trace_util import run_es_trace_util
+from .run_job_requirements_util import run_job_requirements_util
 
 run_util_registry = {
     "XmlUtil": {
@@ -41,6 +42,11 @@ run_util_registry = {
         "handler": run_es_trace_util,
         "description": "EsTraceUtil 유틸리티를 즉시 실행",
         "usage": "run runUtil EsTraceUtil <convertRefsToIndexes>"
+    },
+    "JobRequirementsUtil": {
+        "handler": run_job_requirements_util,
+        "description": "JobRequirementsUtil 유틸리티를 즉시 실행",
+        "usage": "run runUtil JobRequirementsUtil <parseRequirements>"
     }
 }
 
