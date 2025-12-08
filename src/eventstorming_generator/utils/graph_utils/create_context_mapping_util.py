@@ -28,8 +28,9 @@ class CreateContextMappingUtil:
         requirement_lines = requirements.split('\n')
         
         for bounded_context_name, ranges in line_number_ranges.items():
-            # 라인 범위 병합
-            merged_ranges = CreateContextMappingUtil._merge_line_ranges(ranges)
+            # 라인 범위를 유효 범위로 조정 후 병합
+            clipped_ranges = CreateContextMappingUtil._clip_line_ranges(ranges, len(requirement_lines))
+            merged_ranges = CreateContextMappingUtil._merge_line_ranges(clipped_ranges)
             
             # 요구사항 추출 및 매핑 생성
             created_requirements_lines = []
@@ -92,3 +93,35 @@ class CreateContextMappingUtil:
                 merged.append(current_range)
         
         return merged
+    
+    @staticmethod
+    def _clip_line_ranges(ranges: List[LineNumberRange], max_line: int) -> List[LineNumberRange]:
+        """
+        라인 범위를 유효 범위(1 ~ max_line)로 조정(clipping)합니다.
+        
+        Args:
+            ranges: 라인 범위 리스트 [[start, end], ...]
+            max_line: 요구사항의 최대 라인 번호
+            
+        Returns:
+            유효 범위로 조정된 라인 범위 리스트
+        """
+        if not ranges:
+            return []
+        
+        if max_line < 1:
+            return []
+        
+        min_line = 1
+        clipped = []
+        
+        for range_item in ranges:
+            start, end = range_item[0], range_item[1]
+            
+            # 유효 범위로 clipping
+            clipped_start = max(min_line, min(start, max_line))
+            clipped_end = max(min_line, min(end, max_line))
+            
+            clipped.append([clipped_start, clipped_end])
+        
+        return clipped

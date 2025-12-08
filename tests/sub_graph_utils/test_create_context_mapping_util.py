@@ -165,3 +165,98 @@ class TestCreateContextMappingUtil:
         assert result[0].bounded_context_name == "SingleLineContext"
         assert result[0].created_requirements == "Second"
         assert result[0].requirement_index_mapping == {1: 2}
+    
+    def test_get_referenced_context_mappings_completely_out_of_bounds_range(self):
+        """범위가 완전히 벗어난 경우 테스트 (clipping으로 자동 조정)"""
+        # Given: 요구사항은 3줄, 범위는 7~8
+        requirements = "Line 1\nLine 2\nLine 3"
+        line_number_ranges = {
+            "OutOfBoundsContext": [[7, 8]]  # 완전히 벗어남
+        }
+        
+        # When
+        result = CreateContextMappingUtil.get_referenced_context_mappings(
+            line_number_ranges, requirements
+        )
+        
+        # Then: 7~8이 3~3으로 clipping되어 마지막 줄이 추출됨
+        assert len(result) == 1
+        assert result[0].bounded_context_name == "OutOfBoundsContext"
+        assert result[0].created_requirements == "Line 3"
+        assert result[0].requirement_index_mapping == {1: 3}
+    
+    def test_get_referenced_context_mappings_partial_out_of_bounds_range(self):
+        """범위가 부분적으로 벗어난 경우 테스트 (clipping으로 자동 조정)"""
+        # Given: 요구사항은 3줄, 범위는 2~5
+        requirements = "Line 1\nLine 2\nLine 3"
+        line_number_ranges = {
+            "PartialOutOfBoundsContext": [[2, 5]]
+        }
+        
+        # When
+        result = CreateContextMappingUtil.get_referenced_context_mappings(
+            line_number_ranges, requirements
+        )
+        
+        # Then: 2~5가 2~3으로 clipping되어 Line 2, Line 3이 추출됨
+        assert len(result) == 1
+        assert result[0].bounded_context_name == "PartialOutOfBoundsContext"
+        assert result[0].created_requirements == "Line 2\nLine 3"
+        assert result[0].requirement_index_mapping == {1: 2, 2: 3}
+    
+    def test_get_referenced_context_mappings_multiple_out_of_bounds_ranges_merge(self):
+        """여러 벗어난 범위가 clipping 후 병합되는 테스트"""
+        # Given: 요구사항은 3줄, 범위들은 모두 벗어남
+        requirements = "Line 1\nLine 2\nLine 3"
+        line_number_ranges = {
+            "MergedContext": [[5, 6], [7, 8], [10, 12]]  # 모두 완전히 벗어남
+        }
+        
+        # When
+        result = CreateContextMappingUtil.get_referenced_context_mappings(
+            line_number_ranges, requirements
+        )
+        
+        # Then: 모든 범위가 3~3으로 clipping되고 병합되어 마지막 줄만 추출됨
+        assert len(result) == 1
+        assert result[0].bounded_context_name == "MergedContext"
+        assert result[0].created_requirements == "Line 3"
+        assert result[0].requirement_index_mapping == {1: 3}
+    
+    def test_get_referenced_context_mappings_mixed_valid_and_invalid_ranges(self):
+        """유효한 범위와 유효하지 않은 범위가 혼합된 테스트"""
+        # Given: 요구사항은 5줄, 일부 범위는 유효하고 일부는 벗어남
+        requirements = "Line 1\nLine 2\nLine 3\nLine 4\nLine 5"
+        line_number_ranges = {
+            "MixedContext": [[1, 2], [10, 15]]  # [1,2]는 유효, [10,15]는 벗어남
+        }
+        
+        # When
+        result = CreateContextMappingUtil.get_referenced_context_mappings(
+            line_number_ranges, requirements
+        )
+        
+        # Then: [10,15]가 [5,5]로 clipping, [1,2]와 [5,5]는 병합되지 않음
+        assert len(result) == 1
+        assert result[0].bounded_context_name == "MixedContext"
+        assert result[0].created_requirements == "Line 1\nLine 2\nLine 5"
+        assert result[0].requirement_index_mapping == {1: 1, 2: 2, 3: 5}
+    
+    def test_get_referenced_context_mappings_clipping_with_zero_or_negative_start(self):
+        """시작 범위가 0 이하인 경우 1로 clipping되는 테스트"""
+        # Given: 시작 범위가 0 또는 음수
+        requirements = "Line 1\nLine 2\nLine 3"
+        line_number_ranges = {
+            "NegativeStartContext": [[-5, 2], [0, 1]]
+        }
+        
+        # When
+        result = CreateContextMappingUtil.get_referenced_context_mappings(
+            line_number_ranges, requirements
+        )
+        
+        # Then: [-5,2]가 [1,2]로, [0,1]이 [1,1]로 clipping되고 병합되어 [1,2]
+        assert len(result) == 1
+        assert result[0].bounded_context_name == "NegativeStartContext"
+        assert result[0].created_requirements == "Line 1\nLine 2"
+        assert result[0].requirement_index_mapping == {1: 1, 2: 2}
