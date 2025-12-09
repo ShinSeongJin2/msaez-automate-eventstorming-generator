@@ -10,5 +10,6 @@ def execute_merge_created_bounded_context_safely() -> List[BoundedContextInfoMod
         merge_created_bounded_context_generator_util_inputs["boundedContextInfos"],
         Config.get_ai_model(),
         "Korean",
-        3
+        3,
+        "temp_job_id"
     )

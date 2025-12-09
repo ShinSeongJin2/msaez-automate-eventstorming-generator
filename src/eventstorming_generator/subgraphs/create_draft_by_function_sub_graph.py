@@ -287,7 +287,8 @@ def merge_drafts(state: State) -> State:
             Config.get_ai_model(),
             state.inputs.preferedLanguage,
             5,
-            3
+            3,
+            state.inputs.jobId
         )
 
         if state.inputs.draft.structures:

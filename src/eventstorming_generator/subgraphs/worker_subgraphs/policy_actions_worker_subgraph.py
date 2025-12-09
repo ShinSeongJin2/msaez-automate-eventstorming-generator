@@ -175,7 +175,13 @@ def worker_generate_policy_actions(state: State) -> State:
             LogUtil.add_info_log(state, f"[POLICY_WORKER] Prepared ES value summary request for bounded context '{bc_name}' (available tokens: {left_token_count})")
             return state
 
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result: CreatePolicyActionsByFunctionOutput = generator_output["result"]
 
         current_gen.extractedPolicies = [policy.model_dump() for policy in generator_result.extractedPolicies]

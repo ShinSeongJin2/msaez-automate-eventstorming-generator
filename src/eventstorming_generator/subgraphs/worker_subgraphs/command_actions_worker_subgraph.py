@@ -124,7 +124,13 @@ def worker_generate_command_actions(state: State) -> State:
             }
         )
         
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result: CreateCommandActionsByFunctionOutput = generator_output["result"]
         
         actions = generator_result.commandActions + generator_result.eventActions + generator_result.readModelActions

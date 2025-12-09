@@ -7,7 +7,7 @@ from .....models import State
 
 def run_ui_component_worker_subgraph(command_args):
     run_name = "run_ui_component_worker_subgraph"
-    worker_id = '43f88581-4bae-4aaf-901b-b577be2ad3ef'
+    worker_id = '2b73cf50-9b29-4f6f-866a-c59dab79f1e8'
 
     try:
 

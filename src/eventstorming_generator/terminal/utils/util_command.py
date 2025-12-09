@@ -1,10 +1,16 @@
 from .clear_jobs import clear_jobs
+from .load_es_snapshot import load_es_snapshot
 
 util_command_registry = {
     "clearJobs": {
         "handler": clear_jobs,
         "description": "특정 NameSpace에 있는 jobs, jobStates, requestedJobs 폴더를 모두 삭제",
         "usage": "util clearJobs <NameSpace>"
+    },
+    "loadEsSnapshot": {
+        "handler": load_es_snapshot,
+        "description": "Eventstorming 스냅샷을 로드",
+        "usage": "util loadEsSnapshot <Project ID> <Eventstorming ID>"
     }
 }
 

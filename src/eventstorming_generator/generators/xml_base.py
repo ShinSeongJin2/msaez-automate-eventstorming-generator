@@ -149,7 +149,7 @@ class XmlBaseGenerator(ABC):
             
         return "<inputs>\n" + "\n".join(result) + "\n</inputs>"
     
-    def generate(self, bypass_cache: bool = False, retry_count: int = 0) -> Any:
+    def generate(self, bypass_cache: bool = False, retry_count: int = 0, extra_config_metadata: Dict[str, Any] = {}) -> Any:
         """
         LLM을 사용하여 생성 실행
         
@@ -178,11 +178,14 @@ class XmlBaseGenerator(ABC):
             )
             self._structured_model_cache[class_name] = structured_model
 
+        config_metadata = {
+            "generator_class": class_name,
+            "retry_count": retry_count
+        }
+        if extra_config_metadata:
+            config_metadata.update(extra_config_metadata)
         config = RunnableConfig(
-            metadata={
-                "generator_class": class_name,
-                "retry_count": retry_count
-            }
+            metadata=config_metadata
         )
 
         model_with_json_mode = structured_model.first

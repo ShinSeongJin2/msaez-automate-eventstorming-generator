@@ -276,7 +276,8 @@ def merge_bounded_contexts(state: State) -> State:
             model.accumulated_bounded_contexts,
             Config.get_ai_model(),
             state.inputs.preferedLanguage,
-            3
+            model.max_retry_count,
+            state.inputs.jobId
         )
 
         if model.merged_bounded_contexts:

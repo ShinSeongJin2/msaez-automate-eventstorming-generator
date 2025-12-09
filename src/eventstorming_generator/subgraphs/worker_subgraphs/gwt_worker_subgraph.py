@@ -168,26 +168,37 @@ def worker_generate_gwt_generation(state: State) -> State:
             LogUtil.add_info_log(state, f"[GWT_WORKER] Token limit exceeded, will request ES summary for command '{current_gen.target_command_id}'")
             return state
         
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result: CreateGWTGeneratorByFunctionOutput = generator_output["result"]
         
         processed_gwts = []
         for gwt in generator_result.gwts:
-            processed_gwt = {}
-            processed_gwt["scenario"] = gwt.scenario
-            processed_gwt["given"] = {
-                "aggregateName": gwt.given.aggregateName,
-                "aggregateValues": json.loads(gwt.given.aggregateValues)
-            }
-            processed_gwt["when"] = {
-                "commandName": gwt.when.commandName,
-                "commandValues": json.loads(gwt.when.commandValues)
-            }
-            processed_gwt["then"] = {
-                "eventName": gwt.then.eventName,
-                "eventValues": json.loads(gwt.then.eventValues)
-            }
-            processed_gwts.append(processed_gwt)
+            # GWT json 로드시에 에러가 발생한 경우에는 해당 gwt에 대해서는 스킵 처리에서 작업 연속성을 우선시킴
+            try:
+                processed_gwt = {}
+                processed_gwt["scenario"] = gwt.scenario
+                processed_gwt["given"] = {
+                    "aggregateName": gwt.given.aggregateName,
+                    "aggregateValues": json.loads(gwt.given.aggregateValues)
+                }
+                processed_gwt["when"] = {
+                    "commandName": gwt.when.commandName,
+                    "commandValues": json.loads(gwt.when.commandValues)
+                }
+                processed_gwt["then"] = {
+                    "eventName": gwt.then.eventName,
+                    "eventValues": json.loads(gwt.then.eventValues)
+                }
+                processed_gwts.append(processed_gwt)
+            except Exception as e:
+                LogUtil.add_warning_log(state, f"[GWT_WORKER] Failed to process GWT for command '{current_gen.target_command_id}' in aggregate '{aggregate_name}'. Skipping this GWT: {gwt.scenario}", e)
+                continue
 
         command_to_replace = {}
         if processed_gwts and len(processed_gwts) > 0:

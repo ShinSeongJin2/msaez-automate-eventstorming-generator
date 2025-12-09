@@ -9,7 +9,8 @@ class MergeCreatedBoundedContextGeneratorUtil:
         bounded_context_infos: List[BoundedContextInfoModel], 
         model_name: str,
         preferred_language: str,
-        max_retry_count: int = 3
+        max_retry_count: int,
+        job_id: str
     ) -> List[BoundedContextInfoModel]:
         """
         생성된 Bounded Context 정보들을 안전하게 병합합니다.
@@ -51,7 +52,13 @@ class MergeCreatedBoundedContextGeneratorUtil:
                 )
                 
                 # 생성 실행
-                result = generator.generate(bypass_cache=(retry_count > 0), retry_count=retry_count)
+                result = generator.generate(
+                    bypass_cache=(retry_count > 0),
+                    retry_count=retry_count,
+                    extra_config_metadata={
+                        "job_id": job_id
+                    }
+                )
                 output: MergeCreatedBoundedContextGeneratorOutput = result.get("result")
                 
                 # 데이터 정합성 검증 및 중복 제거

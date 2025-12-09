@@ -78,7 +78,13 @@ def worker_generate_context_mapping(state: State) -> State:
                 "retryCount": current_gen.retry_count
             }
         )
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result: RequirementMappingGeneratorOutput = generator_output["result"]
 
         valid_boundedcontext_names = [bc.name for bc in current_gen.boundedContexts]

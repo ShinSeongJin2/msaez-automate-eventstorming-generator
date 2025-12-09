@@ -9,5 +9,6 @@ def execute_create_draft_by_function_safely() -> BoundedContextStructureModel:
         create_draft_generator_util_inputs["requirements"],
         Config.get_ai_model(),
         "Korean",
-        3
+        3,
+        "temp_job_id"
     )

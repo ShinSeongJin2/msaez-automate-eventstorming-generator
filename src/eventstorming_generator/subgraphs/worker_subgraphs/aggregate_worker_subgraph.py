@@ -92,7 +92,13 @@ def worker_generate_aggregate(state: State) -> State:
             }
         )
         
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result:CreateAggregateActionsByFunctionOutput = generator_output["result"]
         actions = generator_result.aggregateActions + generator_result.valueObjectActions + generator_result.enumerationActions
         
@@ -268,7 +274,13 @@ def worker_assign_missing_fields(state: State) -> State:
             }
         )
         
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result:AssignFieldsToActionsGeneratorOutput = generator_output["result"]
 
         assignments = generator_result.assignments

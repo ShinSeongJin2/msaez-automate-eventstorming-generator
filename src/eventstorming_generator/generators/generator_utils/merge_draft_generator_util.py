@@ -9,8 +9,9 @@ class MergeDraftGeneratorUtil:
         target_drafts: List[BoundedContextStructureModel], 
         model_name: str,
         preferred_language: str,
-        accumulate_count: int = 5, 
-        max_retry_count: int = 3
+        accumulate_count: int, 
+        max_retry_count: int,
+        job_id: str
     ) -> List[BoundedContextStructureModel]:
         """
         타겟 드래프트를 배치로 나누어 순차적으로 병합합니다.
@@ -76,7 +77,13 @@ class MergeDraftGeneratorUtil:
                         }
                     )
                     
-                    result = generator.generate(batch_retry_count > 0, batch_retry_count)
+                    result = generator.generate(
+                        bypass_cache=(batch_retry_count > 0),
+                        retry_count=batch_retry_count,
+                        extra_config_metadata={
+                            "job_id": job_id
+                        }
+                    )
                     output: MergeDraftGeneratorOutput = result["result"]
                     
                     # 중복 Aggregate 제거 (예외 처리)

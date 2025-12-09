@@ -69,7 +69,9 @@ def worker_generate_draft(state: State) -> State:
             bounded_context_info=current_gen.bounded_context_info,
             requirements=current_gen.requirements,
             model_name=Config.get_ai_model(),
-            preferred_language=state.inputs.preferedLanguage
+            preferred_language=state.inputs.preferedLanguage,
+            max_retry_count=state.subgraphs.createDraftByFunctionModel.max_retry_count,
+            job_id=state.inputs.jobId
         )
         current_gen.generation_complete = True
     except Exception as e:

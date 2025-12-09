@@ -112,7 +112,13 @@ def worker_generate_class_id(state: State) -> State:
             }
         )
 
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result: CreateAggregateClassIdByDraftsOutput = generator_output["result"]
         actions = [action.model_dump() for action in generator_result.actions]
         if len(actions) == 0:

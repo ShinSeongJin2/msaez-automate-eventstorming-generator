@@ -109,7 +109,13 @@ def generate_es_value_summary(state: State) -> State:
             }
         )
         
-        generator_output = generator.generate(current_gen.retry_count > 0, current_gen.retry_count)
+        generator_output = generator.generate(
+            bypass_cache=(current_gen.retry_count > 0),
+            retry_count=current_gen.retry_count,
+            extra_config_metadata={
+                "job_id": state.inputs.jobId
+            }
+        )
         generator_result: ESValueSummaryGeneratorOutput = generator_output["result"]
         current_gen.sorted_element_ids = generator_result.sortedElementIds
     

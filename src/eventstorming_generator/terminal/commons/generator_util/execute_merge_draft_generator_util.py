@@ -10,5 +10,7 @@ def execute_sequential_merge_drafts_safely() -> List[BoundedContextStructureMode
         merge_draft_generator_util_inputs,
         Config.get_ai_model(),
         "Korean",
-        3
+        5,
+        3,
+        "temp_job_id"
     )
