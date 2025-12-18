@@ -9,6 +9,7 @@ from .xml_util import XmlUtil
 from .list_util import ListUtil
 from .dict_util import DictUtil
 from .text_chunker import TextChunker
+from .smart_logger import SmartLogger
 
 self_dict = DictUtil.make_self_routing_dict
 
@@ -31,5 +32,6 @@ __all__ = [
     "ListUtil",
     "DictUtil",
     "self_dict",
-    "TextChunker"
+    "TextChunker",
+    "SmartLogger"
 ]

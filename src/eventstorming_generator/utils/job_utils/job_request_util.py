@@ -12,7 +12,11 @@ from ...config import Config
 from ...models import State, InputsModel, IdsModel
 from ...constants import REQUEST_TYPES
 from ...systems import DatabaseFactory, FirebaseSystem
-from ...utils.logging_util import LoggingUtil
+from ...utils.smart_logger import SmartLogger
+
+
+# 로깅 카테고리
+CATEGORY = "job_request"
 
 
 class JobRequestUtil:
@@ -41,7 +45,10 @@ class JobRequestUtil:
             
             # 2. A2A 세션 등록
             session_manager.register_session(session_id)
-            LoggingUtil.debug("job_request_util", f"A2A 세션 등록: {session_id}, Job ID: {job_id}")
+            SmartLogger.log("DEBUG", "A2A 세션 등록", category=CATEGORY, params={
+                "session_id": session_id,
+                "job_id": job_id,
+            })
             
             # 3. 초기 응답 yield
             yield {
@@ -91,7 +98,7 @@ class JobRequestUtil:
                                 "state": "completed",
                                 "job_id": job_id,
                                 "link": link,
-                                "message": "이벤트 스토밍 생성이 완료되었습니다."
+                                "message": "Event Storming generation complete."
                             }
                             break
                     
@@ -103,7 +110,7 @@ class JobRequestUtil:
                                 "state": "failed",
                                 "job_id": job_id,
                                 "link": link,
-                                "message": "작업 처리 중 오류가 발생했습니다."
+                                "message": "An error occurred during processing."
                             }
                             break
                     
@@ -118,12 +125,16 @@ class JobRequestUtil:
                             "state": "completed",
                             "job_id": job_id,
                             "link": link,
-                            "message": "이벤트 스토밍 생성이 완료되었습니다."
+                            "message": "Event Storming generation complete."
                         }
                         break
                     
         except Exception as e:
-            LoggingUtil.exception("job_request_util", f"A2A 스트리밍 오류: {job_id}", e)
+            SmartLogger.log("ERROR", "A2A 스트리밍 오류", category=CATEGORY, params={
+                "job_id": job_id,
+                "error_type": type(e).__name__,
+                "error_message": str(e),
+            })
             yield {
                 "type": "error",
                 "state": "failed",
@@ -140,10 +151,16 @@ class JobRequestUtil:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, watch_status["clear_watch_paths"])
             except Exception as e:
-                LoggingUtil.exception("job_request_util", f"Watch 해제 오류: {session_id}", e)
+                SmartLogger.log("ERROR", "Watch 해제 오류", category=CATEGORY, params={
+                    "session_id": session_id,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                })
             
             session_manager.unregister_session(session_id)
-            LoggingUtil.debug("job_request_util", f"A2A 세션 해제: {session_id}")
+            SmartLogger.log("DEBUG", "A2A 세션 해제", category=CATEGORY, params={
+                "session_id": session_id,
+            })
     
 
     @staticmethod
@@ -239,7 +256,10 @@ class JobRequestUtil:
                     "data": data
                 }), main_loop)
             except Exception as e:
-                LoggingUtil.exception("job_request_util", "Queue 푸시 실패", e)
+                SmartLogger.log("ERROR", "Queue 푸시 실패", category=CATEGORY, params={
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                })
         
         def on_job_is_completed_change(data: Optional[Dict[str, Any]]):
             asyncio.run_coroutine_threadsafe(queue.put({
@@ -264,7 +284,11 @@ class JobRequestUtil:
                 try:
                     firebase.unwatch_data(path)
                 except Exception as e:
-                    LoggingUtil.exception("job_request_util", f"Watch 해제 실패: {path}", e)
+                    SmartLogger.log("ERROR", "Watch 해제 실패", category=CATEGORY, params={
+                        "path": path,
+                        "error_type": type(e).__name__,
+                        "error_message": str(e),
+                    })
 
         return {
             "queue": queue,

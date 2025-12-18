@@ -29,9 +29,10 @@ def create_agent_card(url: str = "http://localhost:5000") -> AgentCard:
         tags=["event-storming", "ddd", "domain-driven-design", "modeling"],
     )
     
-    # 2. 에이전트의 기능(Capabilities) 정의 - 스트리밍만 지원
+    # 2. 에이전트의 기능(Capabilities) 정의 - 스트리밍 및 Push Notification 지원
     capabilities = AgentCapabilities(
-        streaming=True
+        streaming=True,
+        push_notifications=True,  # Webhook 기반 알림 지원
     )
     
     # 3. AgentCard 생성
@@ -57,4 +58,5 @@ if __name__ == "__main__":
     print(f"📝 설명: {card.description}")
     print(f"📝 스킬 개수: {len(card.skills)}")
     print(f"📝 스트리밍 지원: {card.capabilities.streaming}")
+    print(f"📝 Push Notifications 지원: {card.capabilities.push_notifications}")
 
