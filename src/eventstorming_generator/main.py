@@ -8,10 +8,10 @@ load_dotenv()
 from eventstorming_generator.utils import LogUtil, LoggingUtil
 from eventstorming_generator.utils.job_utils import JobUtil, DecentralizedJobManager, A2ASessionManager
 from eventstorming_generator.models import State
-from eventstorming_generator.systems import FirebaseSystem
 from eventstorming_generator.config import Config
 from eventstorming_generator.run_a2a_server import run_a2a_server
 from eventstorming_generator.simple_autoscaler import start_autoscaler
+from eventstorming_generator.systems.database.database_factory import DatabaseFactory
 
 # 전역 job_manager 인스턴스 (process_job_async에서 접근하기 위함)
 _current_job_manager: DecentralizedJobManager = None
@@ -136,12 +136,14 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             LoggingUtil.warning("main", f"Job 처리 오류: {job_id}, 유효하지 않음")
             return
         
-        # Firebase 데이터 로딩을 executor에서 실행하여 이벤트 루프 블록킹 방지
+        # 데이터 로딩을 executor에서 실행하여 이벤트 루프 블록킹 방지
+        # DatabaseFactory는 이미 파일 상단에서 import됨
+        db_system = DatabaseFactory.get_db_system()
         loop = asyncio.get_event_loop()
         with concurrent.futures.ThreadPoolExecutor() as initial_executor:
             job_data = await loop.run_in_executor(
                 initial_executor, 
-                lambda: FirebaseSystem.instance().get_data(Config.get_job_path(job_id))
+                lambda: db_system.get_data(Config.get_job_path(job_id))
             )
         
         if not job_data:
@@ -214,9 +216,25 @@ async def process_job_async(job_id: str, complete_job_func: callable):
     except Exception as e:
         LoggingUtil.exception("main", f"Job 처리 오류: {job_id}", e)
 
-        state.outputs.isFailed = True
-        LogUtil.add_exception_object_log(state, f"Job 처리 오류: {job_id}", e)
-        JobUtil.update_job_to_firebase_fire_and_forget(state)
+        # state가 초기화되었는지 확인 후 오류 처리
+        try:
+            # job_data를 다시 로드하여 state 생성 시도
+            db_system = DatabaseFactory.get_db_system()
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                job_data = await loop.run_in_executor(
+                    executor, 
+                    lambda: db_system.get_data(Config.get_job_path(job_id))
+                )
+            
+            if job_data:
+                state = JobUtil.get_state_from_job_data_safely(job_data)
+                if state:
+                    state.outputs.isFailed = True
+                    LogUtil.add_exception_object_log(state, f"Job 처리 오류: {job_id}", e)
+                    JobUtil.update_job_to_firebase_fire_and_forget(state)
+        except Exception as state_error:
+            LoggingUtil.exception("main", f"Job 오류 처리 중 state 생성 실패: {job_id}", state_error)
         
     finally:
         # 작업 완료 후 항상 리소스 정리
@@ -234,7 +252,9 @@ async def process_job_async(job_id: str, complete_job_func: callable):
             current_task = asyncio.current_task()
             if current_task and not current_task.cancelled():
                 job_request_path = Config.get_requested_job_path(job_id)
-                FirebaseSystem.instance().delete_data_fire_and_forget(job_request_path)
+                db_system = DatabaseFactory.get_db_system()
+                # Fire and forget 방식으로 삭제 (비동기 실행)
+                asyncio.create_task(asyncio.to_thread(db_system.delete_data, job_request_path))
                 LoggingUtil.debug("main", f"Job 정리 완료: {job_id}")
                 complete_job_func()
             else:

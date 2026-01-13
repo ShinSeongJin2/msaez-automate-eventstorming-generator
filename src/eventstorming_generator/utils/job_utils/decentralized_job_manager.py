@@ -4,7 +4,7 @@ import signal
 from typing import Optional, List, Tuple
 
 from ..logging_util import LoggingUtil
-from ...systems import FirebaseSystem
+from ...systems.database.database_factory import DatabaseFactory
 from ...config import Config
 
 class DecentralizedJobManager:
@@ -38,7 +38,8 @@ class DecentralizedJobManager:
             try:
                 LoggingUtil.debug("decentralized_job_manager", f"Job 모니터링 중...")
 
-                requested_jobs = await FirebaseSystem.instance().get_children_data_async(Config.get_requested_job_root_path())
+                db_system = DatabaseFactory.get_db_system()
+                requested_jobs = await db_system.get_children_data_async(Config.get_requested_job_root_path())
                 
                 # 작업 삭제 요청 확인 및 처리
                 await self.check_and_handle_removal_requests(requested_jobs)
@@ -140,8 +141,18 @@ class DecentralizedJobManager:
         
         # 할당되지 않은 Job 찾기 (시간순으로)
         for job_id, job_data in sorted_jobs:
+            assigned_pod = job_data.get('assignedPodId')
+            # assignedPodId가 딕셔너리인 경우 처리 (restore_data_from_storage 이슈)
+            if isinstance(assigned_pod, dict):
+                assigned_pod = assigned_pod.get('assignedPodId')
+            
+            status = job_data.get('status')
+            # status가 딕셔너리인 경우 처리
+            if isinstance(status, dict):
+                status = status.get('status')
+            
             # assignedPodId가 없고, status가 'failed'가 아닌 작업만 고려
-            if job_data.get('assignedPodId') is None and job_data.get('status') != 'failed':
+            if assigned_pod is None and status != 'failed':
                 success = await self.atomic_claim_job(job_id)
                 if success:
                     # 성공적으로 클레임한 경우 해당 Job 처리 시작
@@ -152,43 +163,98 @@ class DecentralizedJobManager:
 
     async def atomic_claim_job(self, job_id: str) -> bool:
         """원자적 작업 클레임"""
+        db_system = DatabaseFactory.get_db_system()
+        job_path = Config.get_requested_job_path(job_id)
+        db_type = Config.get_db_type()
         
-        def update_function(current_data):
-            if current_data is None:
-                return current_data
-
-            restored_data = FirebaseSystem.instance().restore_data_from_firebase(current_data)
+        # Firebase의 경우 원자적 트랜잭션 사용
+        if db_type == 'firebase':
+            from ...systems.database.firebase_system import FirebaseSystem
+            firebase = FirebaseSystem.instance()
             
-            if restored_data.get('assignedPodId') is not None:
-                return current_data
+            def update_function(current_data):
+                if current_data is None:
+                    return current_data
 
-            restored_data['assignedPodId'] = self.pod_id
-            restored_data['claimedAt'] = time.time()
-            restored_data['status'] = 'processing'
-            restored_data['lastHeartbeat'] = time.time()
-            return FirebaseSystem.instance().sanitize_data_for_firebase(restored_data)
-        
-        try:
-            ref = FirebaseSystem.instance().database.reference(Config.get_requested_job_path(job_id))
-            transaction_result = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: ref.transaction(update_function)
-            )
+                restored_data = db_system.restore_data_from_storage(current_data)
+                
+                if restored_data.get('assignedPodId') is not None:
+                    return current_data
+
+                restored_data['assignedPodId'] = self.pod_id
+                restored_data['claimedAt'] = time.time()
+                restored_data['status'] = 'processing'
+                restored_data['lastHeartbeat'] = time.time()
+                return db_system.sanitize_data_for_storage(restored_data)
             
-            if transaction_result is None:
-                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 시도했으나, 해당 경로에 데이터가 없음.")
+            try:
+                ref = firebase.database.reference(job_path)
+                transaction_result = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: ref.transaction(update_function)
+                )
+                
+                if transaction_result is None:
+                    LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 시도했으나, 해당 경로에 데이터가 없음.")
+                    return False
+
+                final_data = db_system.restore_data_from_storage(transaction_result)
+                if final_data.get('assignedPodId') == self.pod_id:
+                    LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 성공")
+                    return True
+                else:
+                    LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id}은 다른 Pod에 의해 선점되었거나 이미 처리 중입니다.")
+                    return False
+                
+            except Exception as e:
+                LoggingUtil.exception("decentralized_job_manager", f"작업 클레임 실패", e)
                 return False
-
-            final_data = FirebaseSystem.instance().restore_data_from_firebase(transaction_result)
-            if final_data.get('assignedPodId') == self.pod_id:
-                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 성공")
-                return True
-            else:
-                LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id}은 다른 Pod에 의해 선점되었거나 이미 처리 중입니다.")
-                return False
-            
-        except Exception as e:
-            LoggingUtil.exception("decentralized_job_manager", f"작업 클레임 실패", e)
         
+        # AceBase의 경우 조건부 업데이트 사용 (원자성 보장 안됨)
+        else:
+            try:
+                # 현재 데이터 조회
+                current_data = db_system.get_data(job_path)
+                if current_data is None:
+                    LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 시도했으나, 해당 경로에 데이터가 없음.")
+                    return False
+
+                # 데이터 복원
+                restored_data = db_system.restore_data_from_storage(current_data)
+                
+                # 이미 할당된 경우 실패
+                if restored_data.get('assignedPodId') is not None:
+                    LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id}은 이미 다른 Pod에 할당되었습니다.")
+                    return False
+
+                # 클레임 정보 업데이트
+                restored_data['assignedPodId'] = self.pod_id
+                restored_data['claimedAt'] = time.time()
+                restored_data['status'] = 'processing'
+                restored_data['lastHeartbeat'] = time.time()
+                
+                # 조건부 업데이트: 기존 데이터와 비교하여 변경된 부분만 업데이트
+                success = db_system.conditional_update_data(
+                    job_path,
+                    db_system.sanitize_data_for_storage(restored_data),
+                    current_data
+                )
+                
+                if success:
+                    # 업데이트 후 다시 확인하여 실제로 클레임되었는지 검증
+                    updated_data = db_system.get_data(job_path)
+                    if updated_data:
+                        final_data = db_system.restore_data_from_storage(updated_data)
+                        if final_data.get('assignedPodId') == self.pod_id:
+                            LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id} 클레임 성공")
+                            return True
+                        else:
+                            LoggingUtil.debug("decentralized_job_manager", f"작업 {job_id}은 다른 Pod에 의해 선점되었습니다.")
+                            return False
+                
+                return False
+                
+            except Exception as e:
+                LoggingUtil.exception("decentralized_job_manager", f"작업 클레임 실패", e)
         return False
     
     async def start_job_processing(self, job_id: str):
@@ -242,7 +308,8 @@ class DecentralizedJobManager:
                 heartbeat_data['shutdownRequested'] = True
                 heartbeat_data['acceptingNewJobs'] = False
             
-            await FirebaseSystem.instance().update_data_async(
+            db_system = DatabaseFactory.get_db_system()
+            await db_system.update_data_async(
                 Config.get_requested_job_path(self.current_job_id),
                 heartbeat_data
             )
@@ -262,7 +329,17 @@ class DecentralizedJobManager:
             # 대기 중인 작업들만 필터링 (assignedPodId가 없고, status가 'failed'가 아닌 것들)
             waiting_jobs = []
             for job_id, job_data in sorted_jobs:
-                if job_data.get('assignedPodId') is None and job_data.get('status') != 'failed':
+                assigned_pod = job_data.get('assignedPodId')
+                # assignedPodId가 딕셔너리인 경우 처리
+                if isinstance(assigned_pod, dict):
+                    assigned_pod = assigned_pod.get('assignedPodId')
+                
+                status = job_data.get('status')
+                # status가 딕셔너리인 경우 처리
+                if isinstance(status, dict):
+                    status = status.get('status')
+                
+                if assigned_pod is None and status != 'failed':
                     waiting_jobs.append((job_id, job_data))
             
             # 각 대기 중인 작업의 waitingJobCount 계산 및 업데이트
@@ -272,7 +349,8 @@ class DecentralizedJobManager:
                 
                 # waitingJobCount가 없거나 기존 값과 다를 경우에만 업데이트
                 if current_waiting_count != waiting_count:
-                    await FirebaseSystem.instance().update_data_async(
+                    db_system = DatabaseFactory.get_db_system()
+                    await db_system.update_data_async(
                         Config.get_requested_job_path(job_id),
                         {'waitingJobCount': waiting_count}
                     )
@@ -291,12 +369,27 @@ class DecentralizedJobManager:
             current_time = time.time()
             for job_id, job_data in requested_jobs.items():
                 assigned_pod = job_data.get('assignedPodId')
+                # assignedPodId가 딕셔너리인 경우 처리 (restore_data_from_storage 이슈)
+                if isinstance(assigned_pod, dict):
+                    assigned_pod = assigned_pod.get('assignedPodId')
+                
                 last_heartbeat = job_data.get('lastHeartbeat', 0)
+                # lastHeartbeat가 딕셔너리인 경우 처리 (restore_data_from_storage 이슈)
+                if isinstance(last_heartbeat, dict):
+                    last_heartbeat = last_heartbeat.get('lastHeartbeat', 0)
+                # 숫자가 아닌 경우 기본값 사용
+                if not isinstance(last_heartbeat, (int, float)):
+                    last_heartbeat = 0
+                
+                status = job_data.get('status')
+                # status가 딕셔너리인 경우 처리
+                if isinstance(status, dict):
+                    status = status.get('status')
                 
                 # 다른 Pod가 할당했지만 5분간 heartbeat 없으면 실패로 간주
                 if (assigned_pod and 
                     current_time - last_heartbeat > 300 and
-                    job_data.get('status') == 'processing' and 
+                    status == 'processing' and 
                     (not job_data.get('shutdownRequested'))):
                     
                     recovery_count = job_data.get('recoveryCount', 0)
@@ -314,7 +407,8 @@ class DecentralizedJobManager:
     async def mark_job_as_failed(self, job_id: str):
         """영구적으로 실패한 작업을 'failed' 상태로 표시"""
         try:
-            await FirebaseSystem.instance().update_data_async(
+            db_system = DatabaseFactory.get_db_system()
+            await db_system.update_data_async(
                 Config.get_requested_job_path(job_id),
                 {
                     'status': 'failed',
@@ -330,7 +424,8 @@ class DecentralizedJobManager:
     async def reset_failed_job(self, job_id: str, current_recovery_count: int):
         """실패한 작업 초기화 및 복구 횟수 증가"""
         try:
-            await FirebaseSystem.instance().update_data_async(
+            db_system = DatabaseFactory.get_db_system()
+            await db_system.update_data_async(
                 Config.get_requested_job_path(job_id),
                 {
                     'assignedPodId': None,
@@ -358,7 +453,8 @@ class DecentralizedJobManager:
         """작업 삭제 요청 확인 및 처리"""
         try:
             # jobStates에서 삭제 요청된 작업들 조회
-            job_states = await FirebaseSystem.instance().get_children_data_async(Config.get_job_state_root_path())
+            db_system = DatabaseFactory.get_db_system()
+            job_states = await db_system.get_children_data_async(Config.get_job_state_root_path())
             
             if not job_states:
                 return
@@ -407,7 +503,8 @@ class DecentralizedJobManager:
                 return
             
             # jobs에서 해당 작업 확인
-            job = FirebaseSystem.instance().get_data(Config.get_job_path(job_id))
+            db_system = DatabaseFactory.get_db_system()
+            job = db_system.get_data(Config.get_job_path(job_id))
             
             if job:
                 # 완료된 작업 삭제 처리
@@ -493,8 +590,9 @@ class DecentralizedJobManager:
             LoggingUtil.debug("decentralized_job_manager", f"orphan jobState {job_id} 삭제 처리")
             
             # jobStates만 삭제
+            db_system = DatabaseFactory.get_db_system()
             job_state_path = Config.get_job_state_path(job_id)
-            success = await FirebaseSystem.instance().delete_data_async(job_state_path)
+            success = await db_system.delete_data_async(job_state_path)
             
             if success:
                 LoggingUtil.debug("decentralized_job_manager", f"orphan jobState {job_id} 삭제 완료")
@@ -508,9 +606,10 @@ class DecentralizedJobManager:
         """작업 데이터 순차적 삭제 (requestedJobs → jobs → jobStates)"""
         try:
             # 1. requestedJobs 삭제 (필요한 경우)
+            db_system = DatabaseFactory.get_db_system()
             if include_requested:
                 requested_job_path = Config.get_requested_job_path(job_id)
-                success = await FirebaseSystem.instance().delete_data_async(requested_job_path)
+                success = await db_system.delete_data_async(requested_job_path)
                 if success:
                     LoggingUtil.debug("decentralized_job_manager", f"requestedJobs에서 {job_id} 삭제 완료")
                 else:
@@ -521,7 +620,7 @@ class DecentralizedJobManager:
             
             # 2. jobs 삭제
             job_path = Config.get_job_path(job_id)
-            success = await FirebaseSystem.instance().delete_data_async(job_path)
+            success = await db_system.delete_data_async(job_path)
             if success:
                 LoggingUtil.debug("decentralized_job_manager", f"jobs에서 {job_id} 삭제 완료")
             else:
@@ -532,7 +631,7 @@ class DecentralizedJobManager:
             
             # 3. jobStates 삭제
             job_state_path = Config.get_job_state_path(job_id)
-            success = await FirebaseSystem.instance().delete_data_async(job_state_path)
+            success = await db_system.delete_data_async(job_state_path)
             if success:
                 LoggingUtil.debug("decentralized_job_manager", f"jobStates에서 {job_id} 삭제 완료")
             else:

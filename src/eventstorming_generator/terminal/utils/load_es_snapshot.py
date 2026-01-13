@@ -1,4 +1,4 @@
-from ...systems import FirebaseSystem
+from ...systems.database.database_factory import DatabaseFactory
 from ...utils import JsonUtil
 from ..terminal_helper import TerminalHelper
 
@@ -12,8 +12,8 @@ def load_es_snapshot(command_args):
     snapshot_lists_path = f"{definition_path}/snapshotLists"
     
 
-    firebase = FirebaseSystem.instance()
-    snapshot_lists = firebase.get_data(snapshot_lists_path)
+    db_system = DatabaseFactory.get_db_system()
+    snapshot_lists = db_system.get_data(snapshot_lists_path)
 
     sorted_snapshot_lists = sorted(list(snapshot_lists.values()), key=lambda x: x["timeStamp"], reverse=True)
     latest_snapshot = sorted_snapshot_lists[0]["snapshot"]

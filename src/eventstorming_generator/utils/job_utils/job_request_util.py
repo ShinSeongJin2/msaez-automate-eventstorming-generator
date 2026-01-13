@@ -11,7 +11,7 @@ from .a2a_session_manager import A2ASessionManager
 from ...config import Config
 from ...models import State, InputsModel, IdsModel
 from ...constants import REQUEST_TYPES
-from ...systems import DatabaseFactory, FirebaseSystem
+from ...systems.database.database_factory import DatabaseFactory
 from ...utils.smart_logger import SmartLogger
 
 
@@ -116,8 +116,8 @@ class JobRequestUtil:
                     
                 except asyncio.TimeoutError:
                     # 타임아웃 시 현재 상태 직접 조회
-                    firebase = FirebaseSystem.instance()
-                    current_data = firebase.get_data(job_request_path)
+                    db_system = DatabaseFactory.get_db_system()
+                    current_data = db_system.get_data(job_request_path)
                     if current_data is None:
                         # Job 데이터가 삭제됨 - 완료로 간주
                         yield {
@@ -240,7 +240,7 @@ class JobRequestUtil:
     @staticmethod
     def _watch_job_status(job_id: str):
         queue: asyncio.Queue = asyncio.Queue()
-        firebase = FirebaseSystem.instance()
+        db_system = DatabaseFactory.get_db_system()
 
 
         job_logs_path = Config.get_job_logs_path(job_id)
@@ -273,16 +273,16 @@ class JobRequestUtil:
                 "data": data
             }), main_loop)
 
-        firebase.watch_data(job_logs_path, on_job_logs_change)
-        firebase.watch_data(job_is_completed_path, on_job_is_completed_change)
-        firebase.watch_data(job_is_failed_path, on_job_is_failed_change)
+        db_system.watch_data(job_logs_path, on_job_logs_change)
+        db_system.watch_data(job_is_completed_path, on_job_is_completed_change)
+        db_system.watch_data(job_is_failed_path, on_job_is_failed_change)
 
 
         def clear_watch_paths():
-            firebase = FirebaseSystem.instance()
+            db_system = DatabaseFactory.get_db_system()
             for path in watch_paths:
                 try:
-                    firebase.unwatch_data(path)
+                    db_system.unwatch_data(path)
                 except Exception as e:
                     SmartLogger.log("ERROR", "Watch 해제 실패", category=CATEGORY, params={
                         "path": path,

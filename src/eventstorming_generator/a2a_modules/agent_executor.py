@@ -38,7 +38,7 @@ from a2a.types import (
 from ..utils.job_utils import JobRequestUtil, A2ASessionManager
 from ..utils.smart_logger import SmartLogger
 from ..config import Config
-from ..systems import FirebaseSystem
+from ..systems.database.database_factory import DatabaseFactory
 
 
 # 로깅 카테고리
@@ -371,8 +371,8 @@ class EventStormingAgentExecutor(AgentExecutor):
                 "session_id": session_id,
             })
             
-            # Firebase watch 설정
-            firebase = FirebaseSystem.instance()
+            # DB watch 설정
+            db_system = DatabaseFactory.get_db_system()
             job_is_completed_path = Config.get_job_is_completed_path(job_id)
             job_is_failed_path = Config.get_job_is_failed_path(job_id)
             watch_paths = [job_is_completed_path, job_is_failed_path]
@@ -394,11 +394,11 @@ class EventStormingAgentExecutor(AgentExecutor):
                         main_loop
                     )
             
-            # Firebase watch 시작
-            firebase.watch_data(job_is_completed_path, on_completed_change)
-            firebase.watch_data(job_is_failed_path, on_failed_change)
+            # DB watch 시작
+            db_system.watch_data(job_is_completed_path, on_completed_change)
+            db_system.watch_data(job_is_failed_path, on_failed_change)
             
-            SmartLogger.log("DEBUG", "Firebase watch 시작", category=CATEGORY, params={
+            SmartLogger.log("DEBUG", "DB watch 시작", category=CATEGORY, params={
                 "task_id": task_id,
                 "job_id": job_id,
                 "watch_paths": watch_paths,
@@ -437,8 +437,8 @@ class EventStormingAgentExecutor(AgentExecutor):
                     )
                     
                     # 직접 상태 확인 (watch 콜백이 누락된 경우 대비)
-                    current_completed = firebase.get_data(job_is_completed_path)
-                    current_failed = firebase.get_data(job_is_failed_path)
+                    current_completed = db_system.get_data(job_is_completed_path)
+                    current_failed = db_system.get_data(job_is_failed_path)
                     
                     if current_completed:
                         await self._send_completion(
@@ -470,10 +470,10 @@ class EventStormingAgentExecutor(AgentExecutor):
         finally:
             # Watch 해제
             try:
-                firebase = FirebaseSystem.instance()
+                db_system = DatabaseFactory.get_db_system()
                 for path in watch_paths:
                     try:
-                        firebase.unwatch_data(path)
+                        db_system.unwatch_data(path)
                     except Exception:
                         pass
             except Exception:

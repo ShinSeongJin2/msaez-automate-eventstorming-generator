@@ -8,6 +8,8 @@
 ```bash
 uv run pip install -e .
 uv pip install -U "langgraph-cli[inmem]"
+# grpcio 버전 호환성 문제 해결 (langgraph-api 요구사항)
+uv pip install "grpcio>=1.75.1"
 uv run langgraph dev
 ```
 

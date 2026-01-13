@@ -4,7 +4,7 @@ import os
 import concurrent.futures
 from kubernetes import client, config
 
-from .systems import FirebaseSystem
+from .systems.database.database_factory import DatabaseFactory
 from .config import Config
 from .utils import LoggingUtil
 from .utils.job_utils import A2ASessionManager
@@ -319,8 +319,9 @@ class SimpleAutoScaler:
     async def get_waiting_jobs_count_async(self):
         """대기 중인 작업 수를 비동기로 계산"""
         try:
-            # Firebase에서 현재 작업 데이터 조회
-            requested_jobs = await FirebaseSystem.instance().get_children_data_async(
+            # DB에서 현재 작업 데이터 조회
+            db_system = DatabaseFactory.get_db_system()
+            requested_jobs = await db_system.get_children_data_async(
                 Config.get_requested_job_root_path()
             )
             
@@ -343,8 +344,9 @@ class SimpleAutoScaler:
     async def get_processing_jobs_count_async(self):
         """처리 중인 작업 수를 비동기로 계산"""
         try:
-            # Firebase에서 현재 작업 데이터 조회
-            requested_jobs = await FirebaseSystem.instance().get_children_data_async(
+            # DB에서 현재 작업 데이터 조회
+            db_system = DatabaseFactory.get_db_system()
+            requested_jobs = await db_system.get_children_data_async(
                 Config.get_requested_job_root_path()
             )
             

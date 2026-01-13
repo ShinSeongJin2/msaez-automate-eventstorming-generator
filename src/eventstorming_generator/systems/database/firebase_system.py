@@ -647,3 +647,27 @@ class FirebaseSystem(DatabaseSystem):
             return [self.restore_value(item) for item in value]
         else:
             return value
+
+    def sanitize_data_for_storage(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Storage 업로드를 위해 데이터 정제 (Firebase용)
+        
+        Args:
+            data (Dict[str, Any]): 원본 데이터
+            
+        Returns:
+            Dict[str, Any]: 정제된 데이터
+        """
+        return self.sanitize_data_for_firebase(data)
+
+    def restore_data_from_storage(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Storage에서 가져온 데이터를 복원 (Firebase용)
+        
+        Args:
+            data (Dict[str, Any]): Storage에서 가져온 데이터
+            
+        Returns:
+            Dict[str, Any]: 복원된 데이터
+        """
+        return self.restore_data_from_firebase(data)

@@ -42,7 +42,8 @@ class Config:
 
     @staticmethod
     def get_namespace() -> str:
-        return os.getenv('NAMESPACE')
+        # NAMESPACE 환경 변수가 없으면 기본값 'eventstorming_generator' 사용
+        return os.getenv('NAMESPACE', 'eventstorming_generator')
 
     @staticmethod
     def get_pod_id() -> str:

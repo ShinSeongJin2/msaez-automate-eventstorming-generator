@@ -1,9 +1,12 @@
+import os
 from typing import Dict
 
 from .database_system import DatabaseSystem
 from .firebase_system import FirebaseSystem
 from .memory_db_system import MemoryDBSystem
+from .acebase_system import AceBaseSystem
 from ...config import Config
+from ...utils.logging_util import LoggingUtil
 
 class DatabaseFactory:
     _db_system_instance: Dict[str, DatabaseSystem] = {}
@@ -24,6 +27,30 @@ class DatabaseFactory:
             DatabaseFactory._db_system_instance[db_type] = FirebaseSystem.initialize(
                 service_account_path=Config.get_firebase_service_account_path(),
                 database_url=Config.get_firebase_database_url()
+            )
+        elif db_type == "acebase":
+            # AceBase 초기화
+            host = os.getenv('ACEBASE_HOST', '127.0.0.1')
+            port = int(os.getenv('ACEBASE_PORT', '5757'))
+            dbname = os.getenv('ACEBASE_DB_NAME', 'mydb')
+            https = os.getenv('ACEBASE_HTTPS', 'false').lower() == 'true'
+            # 인증은 선택적: 환경 변수가 설정된 경우에만 인증 시도
+            username = os.getenv('ACEBASE_USERNAME', None)
+            password = os.getenv('ACEBASE_PASSWORD', None)
+            
+            LoggingUtil.info("database_factory", f"AceBase 시스템 초기화: {host}:{port}/{dbname}")
+            if username and password:
+                LoggingUtil.info("database_factory", f"AceBase 인증 정보 제공됨: {username}")
+            else:
+                LoggingUtil.info("database_factory", "AceBase 인증 정보 없음: 인증 없이 진행")
+            
+            DatabaseFactory._db_system_instance[db_type] = AceBaseSystem.initialize(
+                host=host,
+                port=port,
+                dbname=dbname,
+                https=https,
+                username=username,
+                password=password
             )
         else:
             raise Exception(f"Invalid database system type: {db_type}")

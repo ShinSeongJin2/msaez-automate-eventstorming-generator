@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
+import asyncio
 
 class DatabaseSystem(ABC):
     """
@@ -40,6 +41,110 @@ class DatabaseSystem(ABC):
             bool: 성공 여부
         """
         pass
+
+    def get_children_data(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
+        """
+        특정 경로의 모든 자식 노드 데이터를 조회합니다.
+        
+        Args:
+            path (str): 데이터베이스 경로
+            
+        Returns:
+            Optional[Dict[str, Dict[str, Any]]]: 자식 노드들의 데이터
+        """
+        data = self.get_data(path)
+        if data is None or not isinstance(data, dict):
+            return None
+        return data
+
+    async def get_children_data_async(self, path: str) -> Optional[Dict[str, Dict[str, Any]]]:
+        """
+        특정 경로의 모든 자식 노드 데이터를 비동기로 조회합니다.
+        
+        Args:
+            path (str): 데이터베이스 경로
+            
+        Returns:
+            Optional[Dict[str, Dict[str, Any]]]: 자식 노드들의 데이터
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.get_children_data, path)
+
+    async def update_data_async(self, path: str, data: Dict[str, Any]) -> bool:
+        """
+        특정 경로의 데이터를 비동기로 업데이트합니다.
+        
+        Args:
+            path (str): 데이터베이스 경로
+            data (Dict[str, Any]): 업데이트할 데이터
+            
+        Returns:
+            bool: 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.update_data, path, data)
+
+    async def delete_data_async(self, path: str) -> bool:
+        """
+        특정 경로의 데이터를 비동기로 삭제합니다.
+        
+        Args:
+            path (str): 데이터베이스 경로
+            
+        Returns:
+            bool: 성공 여부
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.delete_data, path)
+
+    def sanitize_data_for_storage(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        데이터를 저장소에 저장하기 위해 정제합니다.
+        
+        Args:
+            data (Dict[str, Any]): 원본 데이터
+            
+        Returns:
+            Dict[str, Any]: 정제된 데이터
+        """
+        return data
+
+    def restore_data_from_storage(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        저장소에서 가져온 데이터를 복원합니다.
+        
+        Args:
+            data (Dict[str, Any]): 저장소에서 가져온 데이터
+            
+        Returns:
+            Dict[str, Any]: 복원된 데이터
+        """
+        return data
+
+    def watch_data(self, path: str, callback: Callable[[Optional[Dict[str, Any]]], None]) -> bool:
+        """
+        특정 경로의 데이터 변화를 감시하고 콜백 함수 호출합니다.
+        
+        Args:
+            path (str): 데이터베이스 경로
+            callback (Callable): 데이터 변화 시 호출할 콜백 함수
+            
+        Returns:
+            bool: 감시 시작 성공 여부
+        """
+        raise NotImplementedError("watch_data must be implemented by subclass")
+
+    def unwatch_data(self, path: str) -> bool:
+        """
+        특정 경로의 데이터 감시를 중단합니다.
+        
+        Args:
+            path (str): 데이터베이스 경로
+            
+        Returns:
+            bool: 감시 중단 성공 여부
+        """
+        raise NotImplementedError("unwatch_data must be implemented by subclass")
 
 
     def _find_data_differences(self, new_data: Dict[str, Any], old_data: Dict[str, Any], path_prefix: str = "") -> Dict[str, Any]:
