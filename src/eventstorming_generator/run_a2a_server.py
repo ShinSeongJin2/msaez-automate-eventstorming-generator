@@ -264,11 +264,15 @@ def run_a2a_server(host: str = "0.0.0.0", port: int = 5000):
     별도 스레드에서 호출되어 동기적으로 실행됩니다.
     
     Args:
-        host: 서버 호스트 (기본: localhost)
+        host: 서버 호스트 (기본: 환경변수 A2A_HOST 또는 localhost)
         port: 서버 포트 (기본: 5000)
     """
-    # 로컬 환경 > localhost, k8s 환경 > 0.0.0.0
-    if Config.is_local_run():
+    # 환경변수에서 호스트 가져오기 (없으면 기본값 사용)
+    import os
+    a2a_host_env = os.getenv('A2A_HOST')
+    if a2a_host_env:
+        host = a2a_host_env
+    elif Config.is_local_run():
         host = "localhost"
 
     a2a_external_url = Config.a2a_external_url()

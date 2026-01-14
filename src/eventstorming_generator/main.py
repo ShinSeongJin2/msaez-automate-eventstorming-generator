@@ -2,6 +2,7 @@ import asyncio
 import concurrent.futures
 import threading
 import multiprocessing
+import os
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -45,10 +46,12 @@ async def main():
             if a2a_thread is None:
                 a2a_thread = threading.Thread(target=run_a2a_server, daemon=True)
                 a2a_thread.start()
-                LoggingUtil.info("main", "A2A 서버가 포트 5000에서 시작되었습니다.")
-                LoggingUtil.info("main", "헬스체크 엔드포인트: http://localhost:5000/ok")
-                LoggingUtil.info("main", "A2A 엔드포인트: http://localhost:5000/")
-                LoggingUtil.info("main", "Agent Card: http://localhost:5000/.well-known/agent.json")
+                a2a_host = os.getenv('A2A_HOST', 'localhost')
+                a2a_port = os.getenv('A2A_PORT', '5000')
+                LoggingUtil.info("main", f"A2A 서버가 포트 {a2a_port}에서 시작되었습니다.")
+                LoggingUtil.info("main", f"헬스체크 엔드포인트: http://{a2a_host}:{a2a_port}/ok")
+                LoggingUtil.info("main", f"A2A 엔드포인트: http://{a2a_host}:{a2a_port}/")
+                LoggingUtil.info("main", f"Agent Card: http://{a2a_host}:{a2a_port}/.well-known/agent.json")
 
             if restart_count > 0:
                 LoggingUtil.info("main", f"메인 함수 재시작 중... (재시작 횟수: {restart_count})")
