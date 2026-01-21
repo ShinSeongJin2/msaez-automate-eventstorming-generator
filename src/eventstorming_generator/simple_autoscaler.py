@@ -3,6 +3,7 @@ import time
 import os
 import concurrent.futures
 from kubernetes import client, config
+from kubernetes.config.config_exception import ConfigException
 
 from .systems.database.database_factory import DatabaseFactory
 from .config import Config
@@ -50,9 +51,19 @@ class SimpleAutoScaler:
         try:
             # Pod 내부에서 실행되는 경우
             config.load_incluster_config()
-        except:
+            LoggingUtil.debug("simple_autoscaler", "Kubernetes incluster config 로드 성공")
+        except ConfigException as e:
             # 로컬에서 테스트하는 경우
-            config.load_kube_config()
+            try:
+                config.load_kube_config()
+                LoggingUtil.debug("simple_autoscaler", "Kubernetes kube config 로드 성공")
+            except ConfigException as kube_error:
+                # Kubernetes 설정이 없는 경우 (Docker Compose 환경 등)
+                LoggingUtil.warning("simple_autoscaler", f"Kubernetes config를 찾을 수 없습니다. Autoscaler가 비활성화됩니다: {kube_error}")
+                raise kube_error
+        except Exception as e:
+            LoggingUtil.exception("simple_autoscaler", "Kubernetes config 로드 중 예상치 못한 오류", e)
+            raise
         
         self.apps_v1 = client.AppsV1Api()
         self.core_v1 = client.CoreV1Api()
@@ -380,5 +391,17 @@ async def start_autoscaler():
     Note: k8s 클라이언트 초기화가 GIL을 점유할 수 있으므로,
     import 시점이 아닌 실제 사용 시점에 인스턴스를 생성합니다.
     """
-    autoscaler = SimpleAutoScaler.instance()
-    await autoscaler.run_autoscaling_loop()
+    try:
+        autoscaler = SimpleAutoScaler.instance()
+        await autoscaler.run_autoscaling_loop()
+    except ConfigException as e:
+        LoggingUtil.warning("simple_autoscaler", f"Kubernetes config가 없어 autoscaler를 시작할 수 없습니다. Docker Compose 환경에서는 IS_LOCAL_RUN=true로 설정하세요: {e}")
+        # Kubernetes가 없는 환경에서는 autoscaler를 시작하지 않고 무한 대기
+        # 이렇게 하면 태스크가 완료되지 않아 메인 루프가 계속 실행됨
+        while True:
+            await asyncio.sleep(60)  # 1분마다 체크
+    except Exception as e:
+        LoggingUtil.exception("simple_autoscaler", "Autoscaler 시작 중 예상치 못한 오류", e)
+        # 예상치 못한 오류도 무한 대기로 처리
+        while True:
+            await asyncio.sleep(60)
