@@ -204,7 +204,12 @@ def complete(state: State):
     current_progress = state.outputs.currentProgressCount
     
     LogUtil.add_info_log(state, f"[ROOT_GRAPH] Event storming generation process completed successfully. Final progress: {current_progress}/{total_progress}")
+    
+    # 전체 state 업데이트
     JobUtil.update_job_to_firebase_fire_and_forget(state)
+    
+    # UI가 watch하는 isCompleted 경로에 명시적으로 업데이트 (AceBase 연결 불안정성 대비)
+    JobUtil.update_job_is_completed_fire_and_forget(state, True)
 
     return state
 

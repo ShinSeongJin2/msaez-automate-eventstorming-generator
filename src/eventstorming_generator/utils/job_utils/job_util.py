@@ -128,6 +128,35 @@ class JobUtil:
         JobUtil._add_update_to_queue(JobUtil._convert_state_to_firebase_data(state), "update")
     
     @staticmethod
+    def update_job_is_completed_fire_and_forget(state: State, is_completed: bool):
+        """
+        작업 완료 상태를 명시적으로 업데이트 (UI watch 경로에 직접 업데이트)
+        
+        Args:
+            state (State): 상태 객체
+            is_completed (bool): 완료 여부
+        """
+        from ...config import Config
+        from ...systems import DatabaseFactory
+        
+        job_id = state.inputs.jobId
+        job_is_completed_path = Config.get_job_is_completed_path(job_id)
+        
+        # isCompleted 값을 직접 업데이트 (별도 스레드에서 실행하여 블로킹 방지)
+        def update_is_completed():
+            try:
+                db_system = DatabaseFactory.get_db_system()
+                db_system.update_data(job_is_completed_path, is_completed)
+                LoggingUtil.debug("job_util", f"[Job Completion] Job ID {job_id} isCompleted={is_completed} 업데이트 완료")
+            except Exception as e:
+                LoggingUtil.exception("job_util", f"[Job Completion Error] Job ID {job_id} isCompleted 업데이트 실패", e)
+        
+        # 별도 스레드에서 실행
+        import threading
+        thread = threading.Thread(target=update_is_completed, daemon=True)
+        thread.start()
+    
+    @staticmethod
     def _add_update_to_queue(state: Dict[str, any], operation_type: str, path_suffix: Optional[str] = None):
         """
         업데이트 요청을 큐에 추가
