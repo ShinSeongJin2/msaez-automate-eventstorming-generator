@@ -237,13 +237,20 @@ class AceBaseSystem(DatabaseSystem):
     # 데이터 업데이트 메서드들
     # =============================================================================
     
-    def update_data(self, path: str, data: Dict[str, Any]) -> bool:
-        """특정 경로의 데이터를 부분 업데이트"""
+    def update_data(self, path: str, data: Any) -> bool:
+        """특정 경로의 데이터를 부분 업데이트 (딕셔너리 또는 단일 값 모두 지원)"""
         def _update_operation():
             url = self._get_path_url(path)
-            sanitized_data = self.sanitize_data_for_storage(data)
-            # AceBase는 update 시 POST를 사용하고 {"val": {...}} 형식을 요구함
-            payload = {"val": sanitized_data}
+            
+            # 단일 값(primitive type)인 경우 딕셔너리로 변환
+            if not isinstance(data, dict):
+                # 단일 값을 직접 전달 (AceBase는 {"val": value} 형식 사용)
+                payload = {"val": data}
+            else:
+                # 딕셔너리인 경우 sanitize 후 전달
+                sanitized_data = self.sanitize_data_for_storage(data)
+                payload = {"val": sanitized_data}
+            
             response = self.session.post(
                 url,
                 json=payload,
