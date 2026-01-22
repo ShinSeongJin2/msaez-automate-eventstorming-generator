@@ -142,19 +142,14 @@ class JobUtil:
         job_id = state.inputs.jobId
         job_is_completed_path = Config.get_job_is_completed_path(job_id)
         
-        # isCompleted 값을 직접 업데이트 (별도 스레드에서 실행하여 블로킹 방지)
-        def update_is_completed():
-            try:
-                db_system = DatabaseFactory.get_db_system()
-                db_system.update_data(job_is_completed_path, is_completed)
-                LoggingUtil.debug("job_util", f"[Job Completion] Job ID {job_id} isCompleted={is_completed} 업데이트 완료")
-            except Exception as e:
-                LoggingUtil.exception("job_util", f"[Job Completion Error] Job ID {job_id} isCompleted 업데이트 실패", e)
-        
-        # 별도 스레드에서 실행
-        import threading
-        thread = threading.Thread(target=update_is_completed, daemon=True)
-        thread.start()
+        # isCompleted 값을 직접 업데이트 (동기적으로 실행하여 UI에 반영 보장)
+        try:
+            LoggingUtil.debug("job_util", f"[Job Completion] Job ID {job_id} isCompleted={is_completed} 업데이트 시작")
+            db_system = DatabaseFactory.get_db_system()
+            db_system.update_data(job_is_completed_path, is_completed)
+            LoggingUtil.debug("job_util", f"[Job Completion] Job ID {job_id} isCompleted={is_completed} 업데이트 완료")
+        except Exception as e:
+            LoggingUtil.exception("job_util", f"[Job Completion Error] Job ID {job_id} isCompleted 업데이트 실패", e)
     
     @staticmethod
     def _add_update_to_queue(state: Dict[str, any], operation_type: str, path_suffix: Optional[str] = None):

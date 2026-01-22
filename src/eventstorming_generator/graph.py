@@ -180,6 +180,8 @@ def route_after_create_ui_components(state: State):
     return RG.COMPLETE
 
 def complete(state: State):
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] complete 함수 호출됨 - 완료 처리 시작")
+    
     # 오류가 발생한 경우에는 향후 작업 큐에서 다시 재수행을 하기 위해서 COMPLETE 처리를 하지 않음
     if state.subgraphs.createBoundedContextByFunctionsModel.is_failed or \
        state.subgraphs.createContextMappingModel.is_failed or \
@@ -195,6 +197,7 @@ def complete(state: State):
 
     # 디버깅을 위한 Stop 노드가 설정된 상태에서는 향후 연계를 위해서 COMPLETE 처리를 하지 않음
     if state.inputs.after_stop_node:
+        LogUtil.add_info_log(state, "[ROOT_GRAPH] after_stop_node가 설정되어 있어 완료 처리를 건너뜀")
         return state
 
 
@@ -209,7 +212,9 @@ def complete(state: State):
     JobUtil.update_job_to_firebase_fire_and_forget(state)
     
     # UI가 watch하는 isCompleted 경로에 명시적으로 업데이트 (AceBase 연결 불안정성 대비)
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] isCompleted 플래그를 AceBase에 업데이트 중...")
     JobUtil.update_job_is_completed_fire_and_forget(state, True)
+    LogUtil.add_info_log(state, "[ROOT_GRAPH] isCompleted 플래그 업데이트 완료")
 
     return state
 
